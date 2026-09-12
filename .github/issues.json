@@ -1,165 +1,1937 @@
 {
   "phases": [
-    { "id": 0, "title": "Phase 0 · Setup (h0–2)" },
-    { "id": 1, "title": "Phase 1 · Core build (h2–10)" },
-    { "id": 2, "title": "Phase 2 · Integration (h10–14)" },
-    { "id": 3, "title": "Phase 3 · Group + AI (h14–18)" },
-    { "id": 4, "title": "Phase 4 · Polish (h18–20)" },
-    { "id": 5, "title": "Phase 5 · Demo prep (h20–24)" }
+    {
+      "id": 0,
+      "title": "Phase 0 · Setup (h0–2)"
+    },
+    {
+      "id": 1,
+      "title": "Phase 1 · Core build (h2–10)"
+    },
+    {
+      "id": 2,
+      "title": "Phase 2 · Integration (h10–14)"
+    },
+    {
+      "id": 3,
+      "title": "Phase 3 · Group + AI (h14–18)"
+    },
+    {
+      "id": 4,
+      "title": "Phase 4 · Polish (h18–20)"
+    },
+    {
+      "id": 5,
+      "title": "Phase 5 · Demo prep (h20–24)"
+    }
   ],
   "labels": [
-    { "name": "P0", "color": "d73a4a", "description": "MVP — must work for the demo" },
-    { "name": "P1", "color": "e4a11b", "description": "Aim to include" },
-    { "name": "P2", "color": "9e9e9e", "description": "Stretch" },
-    { "name": "owner:A-mobile", "color": "5319e7", "description": "Person A — mobile UI / swipe / video / audio" },
-    { "name": "owner:B-backend", "color": "0e8a16", "description": "Person B — backend / TMDB / group sessions / domain" },
-    { "name": "owner:C-ai-demo", "color": "1d76db", "description": "Person C — algorithm / Gemini / ElevenLabs / demo" },
-    { "name": "owner:all", "color": "bfd4f2", "description": "Whole team" },
-    { "name": "area:setup", "color": "c5def5" },
-    { "name": "area:mobile", "color": "c5def5" },
-    { "name": "area:backend", "color": "c5def5" },
-    { "name": "area:algorithm", "color": "c5def5" },
-    { "name": "area:gemini", "color": "c5def5" },
-    { "name": "area:elevenlabs", "color": "c5def5" },
-    { "name": "area:domain", "color": "c5def5" },
-    { "name": "area:demo", "color": "c5def5" },
-    { "name": "prize-track", "color": "fbca04", "description": "Directly supports a HackWesTX 26 prize category" }
+    {
+      "name": "P0",
+      "color": "d73a4a",
+      "description": "MVP — must work for the demo"
+    },
+    {
+      "name": "P1",
+      "color": "e4a11b",
+      "description": "Aim to include"
+    },
+    {
+      "name": "P2",
+      "color": "9e9e9e",
+      "description": "Stretch"
+    },
+    {
+      "name": "owner:A-mobile",
+      "color": "5319e7",
+      "description": "Person A — mobile UI / swipe / video / audio"
+    },
+    {
+      "name": "owner:B-backend",
+      "color": "0e8a16",
+      "description": "Person B — backend / TMDB / group sessions / domain"
+    },
+    {
+      "name": "owner:C-ai-demo",
+      "color": "1d76db",
+      "description": "Person C — algorithm / Gemini / ElevenLabs / demo"
+    },
+    {
+      "name": "owner:all",
+      "color": "bfd4f2",
+      "description": "Whole team"
+    },
+    {
+      "name": "area:setup",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:mobile",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:backend",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:algorithm",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:gemini",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:elevenlabs",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:domain",
+      "color": "c5def5"
+    },
+    {
+      "name": "area:demo",
+      "color": "c5def5"
+    },
+    {
+      "name": "prize-track",
+      "color": "fbca04",
+      "description": "Directly supports a HackWesTX 26 prize category"
+    }
   ],
   "issues": [
-    { "id": 1, "title": "Scaffold Expo app + navigation", "priority": "P0", "owner": "A", "area": "setup", "phase": 0, "est": "1h", "deps": [],
+    {
+      "id": 1,
+      "title": "Scaffold Expo app + navigation",
+      "priority": "P0",
+      "owner": "A",
+      "area": "setup",
+      "phase": 0,
+      "est": "1h",
+      "deps": [],
       "desc": "Create the Expo app (SDK 52+) with expo-router and three route stubs: Onboarding, Swipe, Group. Wrap the root layout in GestureHandlerRootView.",
-      "ac": ["Runs in Expo Go on a physical device", "Tabs/routes navigate between the three stubs"] },
-    { "id": 2, "title": "Create Firebase project + Anonymous Auth + Hosting", "priority": "P0", "owner": "B", "area": "setup", "phase": 0, "est": "1h", "deps": [],
+      "ac": [
+        "Runs in Expo Go on a physical device",
+        "Tabs/routes navigate between the three stubs"
+      ],
+      "agent": {
+        "goal": "A running Expo app with the five routes the demo walks through, so every other mobile issue has somewhere to land. Nothing renders real data yet.",
+        "files": [
+          "app/_layout.tsx — root layout: GestureHandlerRootView, anonymous-auth bootstrap slot",
+          "app/index.tsx — Onboarding stub",
+          "app/swipe.tsx — Swipe deck stub",
+          "app/group.tsx — Group session stub",
+          "app/saved.tsx — Saved tab stub (#41)",
+          "app/about.tsx — About/attributions stub (#27)",
+          "src/ — created empty; all non-route code lives here"
+        ],
+        "steps": [
+          "npx create-expo-app@latest . --template blank-typescript (SDK 52+), then npx expo install expo-router react-native-gesture-handler react-native-reanimated react-native-safe-area-context react-native-screens",
+          "Set \"main\": \"expo-router/entry\" in package.json and add the reanimated plugin LAST in babel.config.js plugins array.",
+          "app/_layout.tsx must wrap <Stack /> in <GestureHandlerRootView style={{flex:1}}> — rn-swiper-list (#6) silently fails to receive gestures without it.",
+          "Add a scheme to app.json (\"scheme\": \"moviematch\") now — #19 needs moviematch://join/{code} and changing it later breaks the QR.",
+          "Each stub renders its own name plus a link to the others so navigation is provably wired."
+        ],
+        "contract": "Route paths other issues import: /(index) onboarding, /swipe, /group, /saved, /about. Non-route code goes in src/, never app/ — expo-router treats every file under app/ as a route.",
+        "gotchas": [
+          "TypeScript strict is required by AGENTS.md §4. Turn it on in tsconfig now, not later.",
+          "Expo Go on a physical device is the only acceptable verification — simulators lie about gestures and autoplay (AGENTS.md §6)."
+        ],
+        "refs": [
+          "PLAN.md §E (stack)",
+          "AGENTS.md §4"
+        ],
+        "verify": [
+          "npx expo start, scan the QR with Expo Go on a real phone",
+          "Navigate between all five routes",
+          "npx tsc --noEmit is clean"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "Create Firebase project + Anonymous Auth + Hosting",
+      "priority": "P0",
+      "owner": "B",
+      "area": "setup",
+      "phase": 0,
+      "est": "1h",
+      "deps": [],
       "desc": "Create the Firebase project. Enable Firestore, Anonymous Auth, and Hosting (Hosting will serve the .tech landing/join page). Add the client config to the app.",
-      "ac": ["App signs in anonymously on launch and logs a uid", "Firestore is reachable from the app", "Hosting is enabled (default URL loads a placeholder)"] },
-    { "id": 3, "title": "TMDB, Gemini, and ElevenLabs keys + secrets", "priority": "P0", "owner": "C", "area": "setup", "phase": 0, "est": "1h", "deps": [2],
+      "ac": [
+        "App signs in anonymously on launch and logs a uid",
+        "Firestore is reachable from the app",
+        "Hosting is enabled (default URL loads a placeholder)"
+      ],
+      "agent": {
+        "goal": "Anonymous auth and Firestore reachable from the app, plus Hosting enabled so #32/#33 have somewhere to point the .tech domain.",
+        "files": [
+          "src/lib/firebase.ts — initializeApp, getAuth, getFirestore, exported singletons",
+          "app/_layout.tsx — calls signInAnonymously on mount",
+          "firebase.json + .firebaserc — Hosting config for the web/ directory (#33)",
+          "firestore.rules — open-for-hackathon rules, see gotchas"
+        ],
+        "steps": [
+          "Create the Firebase project. Enable Firestore (test mode), Anonymous Auth, and Hosting.",
+          "npx expo install firebase. In src/lib/firebase.ts export `app`, `auth`, `db` as module singletons — every other file imports these, never calls initializeApp again.",
+          "Use initializeAuth with getReactNativePersistence(AsyncStorage) so the uid survives app reloads; plain getAuth loses it and breaks #18's 'survives a reload' AC.",
+          "In app/_layout.tsx: if (!auth.currentUser) await signInAnonymously(auth), then console.log the uid. Block route rendering until the uid exists — #16/#18 write under users/{uid} and will throw on a null uid.",
+          "firebase deploy --only hosting with a placeholder index.html to prove Hosting works."
+        ],
+        "contract": "```ts\n// src/lib/firebase.ts\nexport const app: FirebaseApp;\nexport const auth: Auth;\nexport const db: Firestore;\nexport function useUid(): string | null; // null until anon sign-in resolves\n```",
+        "gotchas": [
+          "Firebase client config is NOT a secret and belongs in the repo; the ElevenLabs and TMDB write keys are (AGENTS.md §3).",
+          "Firestore test-mode rules expire after 30 days — irrelevant for 24h, but do not ship them anywhere real.",
+          "Cloud Functions need the Blaze plan. That decision belongs to #3, not here — Hosting and Firestore work on free Spark."
+        ],
+        "refs": [
+          "PLAN.md §E (Backend)",
+          "PLAN.md §J phase 0"
+        ],
+        "verify": [
+          "App logs a uid on launch",
+          "A hand-written doc in Firestore is readable from the app",
+          "The default Hosting URL loads the placeholder"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "title": "TMDB, Gemini, and ElevenLabs keys + secrets",
+      "priority": "P0",
+      "owner": "C",
+      "area": "setup",
+      "phase": 0,
+      "est": "1h",
+      "deps": [
+        2
+      ],
       "desc": "Obtain a TMDB API key. Set up Gemini via Firebase AI Logic (Gemini Developer API backend, works on the free Spark plan). Store the ElevenLabs key as a Cloud Function / proxy secret — never in the app bundle. Decide in this hour whether someone adds a card for the Blaze plan (Cloud Functions) or whether the `tts` proxy runs as a tiny Express server on Vultr free credits.",
-      "ac": ["A test TMDB call succeeds from the app", "A test Gemini call succeeds via Firebase AI Logic", "A test ElevenLabs call succeeds from the function/proxy", "No raw API key appears in the client bundle"] },
-    { "id": 4, "title": "Shared data model + seed.json with curated clip keys", "priority": "P0", "owner": "B", "area": "setup", "phase": 0, "est": "3h", "deps": [],
+      "ac": [
+        "A test TMDB call succeeds from the app",
+        "A test Gemini call succeeds via Firebase AI Logic",
+        "A test ElevenLabs call succeeds from the function/proxy",
+        "No raw API key appears in the client bundle"
+      ],
+      "agent": {
+        "goal": "All three API credentials working, with none of them in the client bundle. This unblocks C's entire lane — it is the hour-0 issue to finish first.",
+        "files": [
+          ".env — TMDB + EXPO_PUBLIC_* values (gitignored)",
+          "src/lib/gemini.ts — Firebase AI Logic client init only, no prompts yet",
+          "functions/src/index.ts OR proxy/server.js — whichever the Blaze decision picks"
+        ],
+        "steps": [
+          "TMDB: request a free API key (non-commercial). Read v4 bearer token, not the v3 key, for /discover calls.",
+          "Gemini: enable Firebase AI Logic on the project (Gemini Developer API backend, free Spark plan). npx expo install firebase — the AI Logic client ships inside the firebase package; do NOT install @google/genai in the app, that is for server-side code only.",
+          "Pin the model string gemini-3.5-flash. Run /verify-apis to confirm it is live before anyone writes prompts against it — gemini-2.0-flash is shut down and 1.x returns 404 (AGENTS.md §3).",
+          "ElevenLabs: free account, no card, 10,000 credits/month. Key goes in a Cloud Function secret or the Express proxy env — never in the app.",
+          "DECIDE IN THIS HOUR and write the answer in the issue: Blaze plan with Cloud Functions (someone adds a card, still free within quota) or a ~40-line Express proxy on Vultr free credits. #34 cannot start until this is settled.",
+          "Create the spare ElevenLabs account on a second teammate's email now, while you are in the flow."
+        ],
+        "contract": "Env var names other issues rely on: TMDB_BEARER (server/scripts), EXPO_PUBLIC_FIREBASE_* (client config), ELEVENLABS_API_KEY (function/proxy secret only). TTS endpoint URL is exported as EXPO_PUBLIC_TTS_URL for #36.",
+        "gotchas": [
+          "EXPO_PUBLIC_* ships to users' phones in plaintext. TMDB read key is tolerable there; ElevenLabs is not (AGENTS.md §3).",
+          "A PostToolUse hook blocks writes that look like leaked keys — if it fires, you are putting a key somewhere it must not go.",
+          "Gemini free tier is ~1,500 req/day and 15 RPM. Do not burn it on smoke tests in a loop."
+        ],
+        "refs": [
+          "PLAN.md §F (Gemini API facts)",
+          "PLAN.md §G (ElevenLabs API facts)",
+          "AGENTS.md §3",
+          ".env.example"
+        ],
+        "verify": [
+          "A test TMDB /discover call returns results",
+          "A test Gemini call returns JSON via Firebase AI Logic",
+          "curl the tts endpoint returns playable mp3 bytes",
+          "grep the bundle: no raw ElevenLabs key"
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "title": "Shared data model + seed.json with curated clip keys",
+      "priority": "P0",
+      "owner": "B",
+      "area": "setup",
+      "phase": 0,
+      "est": "3h",
+      "deps": [],
       "desc": "Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema.",
-      "ac": ["seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`)", "App loads seed.json with Wi-Fi off", "Schema reviewed by C"] },
-    { "id": 5, "title": "Shared TypeScript types", "priority": "P1", "owner": "C", "area": "setup", "phase": 0, "est": "0.5h", "deps": [4],
+      "ac": [
+        "seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`)",
+        "App loads seed.json with Wi-Fi off",
+        "Schema reviewed by C"
+      ],
+      "agent": {
+        "goal": "A committed seed.json of ~60 movies with validated YouTube keys. This is the offline safety net the whole demo rests on, and it gates #12, #15 and #38.",
+        "files": [
+          "scripts/curate.js — the curation script (Node, runs once, output committed)",
+          "src/lib/seed.json — the committed output",
+          "examples/seed.sample.json — the shape to match, already in the repo"
+        ],
+        "steps": [
+          "Pick ~60 recognisable, visually varied titles. Judges must recognise them on sight.",
+          "For each: GET /movie/{id}?append_to_response=videos,watch/providers,keywords with the TMDB bearer.",
+          "Video key preference order is Clip > Teaser > Trailer, site == 'YouTube', official == true where available. Fall back to a YouTube Data API v3 search restricted to the Movieclips channel.",
+          "VALIDATE every key with YouTube videos.list part=status,contentDetails: embeddable === true, not region-blocked for US, not age-restricted. An unvalidated key is a black rectangle in front of judges.",
+          "Set start to skip studio logos (5–10s is usually right) and end at start+15..20s.",
+          "Write { key, start, end, source } or video: null. A null video is fine — the card falls back to the poster (#7).",
+          "Map providers from watch/providers.results.US.flatrate[].provider_name.",
+          "Commit src/lib/seed.json. C reviews the schema against src/types.ts (#5) before it is considered done."
+        ],
+        "contract": "Output must satisfy the Movie[] interface in examples/types.ts exactly — id, title, year, genreIds, genreNames, keywords, poster, providers, video. #12 reads genreIds and keywords; #15 returns this shape; #38 iterates it.",
+        "gotchas": [
+          "Never download, rehost or clip the video files themselves. Keys only — this is the legal decision the whole project rests on (AGENTS.md §3).",
+          "The end field is advisory: the IFrame API cannot reliably hard-stop at a timestamp, so #7 loops via seekTo(start) on ended.",
+          "poster must be the full https://image.tmdb.org/t/p/w780/... URL, not the bare path, so the app never string-concatenates it."
+        ],
+        "refs": [
+          "PLAN.md §D (content sourcing pipeline)",
+          "PLAN.md §H (data model)",
+          "examples/seed.sample.json",
+          "examples/types.ts"
+        ],
+        "verify": [
+          "node scripts/curate.js writes ~60 entries",
+          "Every non-null video key loads in a browser embed",
+          "The app reads seed.json with Wi-Fi off"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "title": "Shared TypeScript types",
+      "priority": "P1",
+      "owner": "C",
+      "area": "setup",
+      "phase": 0,
+      "est": "0.5h",
+      "deps": [
+        4
+      ],
       "desc": "One `types.ts` exporting Movie, MovieVideo, TasteVector, Session, Member.",
-      "ac": ["Imported by all screens and the fetch layer with no `any`"] },
-
-    { "id": 6, "title": "Swipe card stack", "priority": "P0", "owner": "A", "area": "mobile", "phase": 1, "est": "3h", "deps": [1],
+      "ac": [
+        "Imported by all screens and the fetch layer with no `any`"
+      ],
+      "agent": {
+        "goal": "One types file every screen and every lib imports, so three people building in parallel cannot disagree about shapes.",
+        "files": [
+          "src/types.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
+        ],
+        "steps": [
+          "Start from examples/types.ts verbatim — Movie, MovieVideo, VideoSource are already agreed.",
+          "Add: TasteVector = Record<string, number> keyed 'genre:28' | 'keyword:heist' | 'cast:3223' (#12 depends on this key format).",
+          "Add: Session { code: string; createdAt: number; hostUid: string }, Member { uid: string; name?: string; likes: number[]; dislikes: number[] }, Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string; narration?: string }.",
+          "Export everything. No `any` anywhere — that is the AC."
+        ],
+        "contract": "```ts\nexport type TasteVector = Record<string, number>; // 'genre:28' | 'keyword:heist' | 'cast:3223'\nexport interface Session { code: string; createdAt: number; hostUid: string }\nexport interface Member { uid: string; name?: string; likes: number[]; dislikes: number[] }\nexport interface Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string; narration?: string }\n```",
+        "gotchas": [
+          "This issue is small but blocks nothing formally — do it anyway before #12 and #16 diverge on the Member shape."
+        ],
+        "refs": [
+          "examples/types.ts",
+          "PLAN.md §H"
+        ],
+        "verify": [
+          "npx tsc --noEmit clean across the app with zero `any` in shared types"
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "title": "Swipe card stack",
+      "priority": "P0",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 1,
+      "est": "3h",
+      "deps": [
+        1
+      ],
       "desc": "Integrate `rn-swiper-list` (reanimated + gesture-handler). Like/Nope stamps positioned in the card chrome (bottom of card), never over the video. Programmatic swipeLeft/swipeRight via ref for the buttons.",
-      "ac": ["Smooth 60fps swipe on a physical device", "onSwipeLeft/Right fire with the card index", "Stamps render in the chrome region only", "Buttons trigger the same swipe as a gesture"] },
-    { "id": 7, "title": "YouTube trailer/clip card", "priority": "P0", "owner": "A", "area": "mobile", "phase": 1, "est": "3h", "deps": [1],
+      "ac": [
+        "Smooth 60fps swipe on a physical device",
+        "onSwipeLeft/Right fire with the card index",
+        "Stamps render in the chrome region only",
+        "Buttons trigger the same swipe as a gesture"
+      ],
+      "agent": {
+        "goal": "The swipe deck itself — the interaction the entire product is built around. It must hit 60fps on a real phone.",
+        "files": [
+          "src/components/SwipeDeck.tsx",
+          "app/swipe.tsx — mounts the deck",
+          "examples/SwipeDeck.tsx — starting point, already in the repo"
+        ],
+        "steps": [
+          "npx expo install rn-swiper-list react-native-reanimated react-native-gesture-handler.",
+          "Start from examples/SwipeDeck.tsx.",
+          "Expose a ref with swipeLeft()/swipeRight() so the Nope/Like buttons fire the same path as a gesture — #24 tests both.",
+          "onSwipeLeft/onSwipeRight receive the card index; map to the Movie and call the taste-vector update from #12.",
+          "Only the top card is `active` — #7 uses that prop to decide which player is allowed to play. Two playing iframes will stutter the deck.",
+          "Like/Nope stamps render in the chrome region BELOW the player, never over it (#8)."
+        ],
+        "contract": "```tsx\n<SwipeDeck ref={deckRef} movies={Movie[]} onSwipe={(m: Movie, dir: 'left'|'right') => void} />\ndeckRef.current.swipeLeft(); deckRef.current.swipeRight();\n```",
+        "gotchas": [
+          "GestureHandlerRootView must wrap the root layout (#1) or gestures silently never fire.",
+          "The reanimated babel plugin must be last in babel.config.js.",
+          "Drawing anything over the YouTube player breaks playback on Android — chrome goes below (AGENTS.md §3)."
+        ],
+        "refs": [
+          "PLAN.md §E (swipe libs)",
+          "examples/SwipeDeck.tsx"
+        ],
+        "verify": [
+          "60fps swipe on a physical device — simulators lie",
+          "Buttons and gestures produce identical callbacks"
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "title": "YouTube trailer/clip card",
+      "priority": "P0",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 1,
+      "est": "3h",
+      "deps": [
+        1
+      ],
       "desc": "`react-native-youtube-iframe` inside a `pointerEvents=\"none\"` wrapper. Muted autoplay, `initialPlayerParams: { start, end, controls: false, rel: false }`, `forceAndroidAutoplay`. Poster shows until onReady and on any error (embed_not_allowed / video_not_found). On `ended`, seekTo(start) to loop the segment. Tap-to-unmute button in the chrome. See TrailerCard.tsx in the examples folder.",
-      "ac": ["Clip autoplays muted from `start` on iOS and Android devices", "Embed-disabled/removed videos fall back to poster without crashing", "Unmute works after a tap", "No UI is drawn over the player"] },
-    { "id": 8, "title": "Card content overlay (chrome)", "priority": "P0", "owner": "A", "area": "mobile", "phase": 1, "est": "2h", "deps": [6, 7],
+      "ac": [
+        "Clip autoplays muted from `start` on iOS and Android devices",
+        "Embed-disabled/removed videos fall back to poster without crashing",
+        "Unmute works after a tap",
+        "No UI is drawn over the player"
+      ],
+      "agent": {
+        "goal": "A card that autoplays a muted clip and degrades to the poster rather than crashing. This is the 'clips, not posters' differentiator — step 1 of the demo path.",
+        "files": [
+          "src/components/TrailerCard.tsx",
+          "examples/TrailerCard.tsx — near-complete starting point, read it first"
+        ],
+        "steps": [
+          "npx expo install react-native-webview && npm i react-native-youtube-iframe.",
+          "Copy examples/TrailerCard.tsx and wire it to the real Movie type.",
+          "Player props: play={active && ready}, mute={muted}, initialPlayerParams={{ start, end, controls: false, rel: false, modestbranding: true }}, forceAndroidAutoplay.",
+          "Wrap the player in <View pointerEvents=\"none\"> so swipe gestures pass through to the deck instead of being eaten by the WebView.",
+          "Show the poster until onReady fires, and permanently on error (embed_not_allowed, video_not_found) — set failed and never retry in a loop.",
+          "onChangeState 'ended' → playerRef.current.seekTo(start, true) to loop the segment.",
+          "Tap-to-unmute button lives in the chrome (#8), not over the player."
+        ],
+        "contract": "```tsx\n<TrailerCard movie={Movie} width={number} active={boolean} whyLine={string | undefined} />\n```",
+        "gotchas": [
+          "Autoplay works ONLY when muted on mobile. There is no way around it; the tap-to-unmute is the design answer.",
+          "Never draw UI over the player (AGENTS.md §3).",
+          "Age-restricted and region-blocked videos fail at play time, not load time — the poster fallback must handle a mid-playback error too.",
+          "Test on both iOS and Android hardware. This component is the single most device-dependent thing in the app."
+        ],
+        "refs": [
+          "PLAN.md §D (YouTube embedding)",
+          "examples/TrailerCard.tsx"
+        ],
+        "verify": [
+          "Clip autoplays muted from `start` on a real iPhone and a real Android",
+          "A deliberately broken key falls back to the poster with no crash",
+          "Unmute works after one tap"
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "title": "Card content overlay (chrome)",
+      "priority": "P0",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 1,
+      "est": "2h",
+      "deps": [
+        6,
+        7
+      ],
       "desc": "Below the player: title + year, genres, where-to-watch badge(s), Gemini \"why\" slot, mute toggle, and a speaker-icon placeholder for the ElevenLabs read-aloud.",
-      "ac": ["Renders entirely from a Movie object", "Layout holds for long titles and 3+ providers"] },
-    { "id": 9, "title": "Onboarding polarizing deck (cold start)", "priority": "P1", "owner": "A", "area": "mobile", "phase": 4, "est": "1.5h", "deps": [6, 12],
+      "ac": [
+        "Renders entirely from a Movie object",
+        "Layout holds for long titles and 3+ providers"
+      ],
+      "agent": {
+        "goal": "Everything the judges read on a card: title, providers, and the slots the Gemini line and Reel's speaker icon drop into later.",
+        "files": [
+          "src/components/CardChrome.tsx",
+          "src/components/TrailerCard.tsx — renders chrome beneath the player"
+        ],
+        "steps": [
+          "Render from a Movie object alone: title + year, genreNames (2–3 max), provider badges, the whyLine slot, mute toggle, speaker-icon placeholder.",
+          "Leave the whyLine slot a fixed height so the card does not jump when Gemini's text arrives asynchronously (#20).",
+          "The speaker icon is a placeholder here; #37 wires it to speak().",
+          "Long titles: numberOfLines={2} with ellipsis. 3+ providers: horizontal scroll or +N badge — the AC explicitly tests both."
+        ],
+        "contract": "```tsx\n<CardChrome movie={Movie} whyLine?={string} muted={boolean} onToggleMute={() => void} onSpeak?={() => void} />\n```",
+        "gotchas": [
+          "Layout must hold before Gemini responds — the why slot renders empty, not absent.",
+          "Provider logos come from JustWatch data via TMDB; plain text names are acceptable and faster to build."
+        ],
+        "refs": [
+          "PLAN.md §D",
+          "examples/TrailerCard.tsx"
+        ],
+        "verify": [
+          "Renders entirely from a Movie object",
+          "Holds layout for a 60-character title and 4 providers"
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "title": "Onboarding polarizing deck (cold start)",
+      "priority": "P1",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 4,
+      "est": "1.5h",
+      "deps": [
+        6,
+        12
+      ],
       "desc": "6–8 fixed titles spanning blockbuster/arthouse, horror/feel-good, old/new. Swipes seed the taste vector, then route to the main deck.",
-      "ac": ["After onboarding the main deck is visibly personalized", "Skippable"] },
-    { "id": 10, "title": "\"It's a Match!\" reveal screen", "priority": "P1", "owner": "A", "area": "mobile", "phase": 3, "est": "2h", "deps": [17, 21],
+      "ac": [
+        "After onboarding the main deck is visibly personalized",
+        "Skippable"
+      ],
+      "agent": {
+        "goal": "A cold-start deck so the very first swipe in the demo already personalises. Without it the first minute of the demo shows a random-looking deck.",
+        "files": [
+          "app/index.tsx — the onboarding route",
+          "src/lib/onboarding.ts — the fixed title list"
+        ],
+        "steps": [
+          "Hard-code 6–8 TMDB ids from seed.json spanning blockbuster/arthouse, horror/feel-good, old/new. Polarizing is the point — a title everyone likes teaches the taste vector nothing.",
+          "Reuse SwipeDeck (#6) rather than building a second swipe surface.",
+          "Each swipe calls the same applySwipe() from #12 that the main deck uses.",
+          "On completion route to /swipe. Provide a Skip control — the AC requires it, and you will use it constantly during rehearsals.",
+          "Persist a done flag so onboarding does not reappear on every reload."
+        ],
+        "contract": "Consumes applySwipe() from src/lib/taste.ts (#12). Exports ONBOARDING_IDS: number[] so #24 can assert the deck changed.",
+        "gotchas": [
+          "Phase 4 (h18–20) is late for a P1 — if the deck already personalises visibly from the main flow, this is droppable.",
+          "Feature freeze is hour 20 (AGENTS.md §3)."
+        ],
+        "refs": [
+          "PLAN.md §H (cold start)"
+        ],
+        "verify": [
+          "Main deck order visibly differs after onboarding vs. after skipping"
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "title": "\"It's a Match!\" reveal screen",
+      "priority": "P1",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 3,
+      "est": "2h",
+      "deps": [
+        17,
+        21
+      ],
       "desc": "Full-screen celebratory reveal on the group match event: poster, title, where-to-watch, Gemini `why`. Expose an onMounted hook so narration audio can start ~1s in.",
-      "ac": ["Triggers on match event on every member's device", "Shows poster + why + providers", "Hook fires for audio"] },
-    { "id": 11, "title": "Mood filter input UI", "priority": "P2", "owner": "A", "area": "mobile", "phase": 3, "est": "1.5h", "deps": [22],
+      "ac": [
+        "Triggers on match event on every member's device",
+        "Shows poster + why + providers",
+        "Hook fires for audio"
+      ],
+      "agent": {
+        "goal": "The money shot. Full-screen 'It's a Match!' on every device at once, with the poster, Gemini's why, and a hook for Reel's voice. This is what the judges remember.",
+        "files": [
+          "src/components/MatchReveal.tsx",
+          "app/group.tsx — renders the reveal over the session"
+        ],
+        "steps": [
+          "Subscribe to the match event from #17 and mount full-screen on every member's device simultaneously.",
+          "Show: poster (large), title + year, where-to-watch, and Gemini's `why` text (#21).",
+          "Expose onMounted so #37 can start narration ~1s in, after the poster lands. Fire it once, not on re-render.",
+          "Pre-warm matters: #37 kicks off Gemini + TTS the instant the match is DETECTED (#17), not when this screen mounts — otherwise judges watch a spinner.",
+          "Add a dismiss that routes to /saved — that is the closing beat in #42."
+        ],
+        "contract": "```tsx\n<MatchReveal match={Match} movie={Movie} onMounted={() => void} onDismiss={() => void} />\n```",
+        "gotchas": [
+          "Must trigger on ALL devices — it is driven by the Firestore match doc, never by the local swipe that happened to complete it.",
+          "If Gemini's why has not arrived, render the poster and title immediately and let the text fill in. Never block the reveal on a network call."
+        ],
+        "refs": [
+          "PLAN.md §G (demo moment)",
+          "PLAN.md §H (group consensus)"
+        ],
+        "verify": [
+          "Reveal fires on two phones from one swipe",
+          "onMounted fires exactly once"
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "title": "Mood filter input UI",
+      "priority": "P2",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 3,
+      "est": "1.5h",
+      "deps": [
+        22
+      ],
       "desc": "Text box + suggestion chips (\"funny but not dumb\", \"something to cry to\"). Calls the mood-filter function and reloads the deck.",
-      "ac": ["Typed mood produces a visibly different deck"] },
-
-    { "id": 12, "title": "Taste vector + scoring model", "priority": "P0", "owner": "C", "area": "algorithm", "phase": 1, "est": "3h", "deps": [4],
+      "ac": [
+        "Typed mood produces a visibly different deck"
+      ],
+      "agent": {
+        "goal": "Natural-language mood entry in the swipe loop — differentiator #3. P2: only after the demo path is solid.",
+        "files": [
+          "src/components/MoodInput.tsx",
+          "app/swipe.tsx"
+        ],
+        "steps": [
+          "Text input plus 3–4 suggestion chips ('funny but not dumb', 'something to cry to', 'popcorn with the family').",
+          "On submit call moodToFilters() from #22, then reload the deck from the filtered /discover results.",
+          "Show a loading state and the parsed tone back to the user so the AI's interpretation is visible — that is what sells it to judges.",
+          "Provide a clear/reset back to the default deck."
+        ],
+        "contract": "Consumes moodToFilters(text) from src/lib/gemini.ts (#22) and the fetch layer from #15.",
+        "gotchas": [
+          "Blocked on #22, which is itself P2. If #22 is dropped, this must be dropped too — do not stub it with fake filters for the demo."
+        ],
+        "refs": [
+          "PLAN.md §F feature #2"
+        ],
+        "verify": [
+          "A typed mood produces a visibly different deck"
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "title": "Taste vector + scoring model",
+      "priority": "P0",
+      "owner": "C",
+      "area": "algorithm",
+      "phase": 1,
+      "est": "3h",
+      "deps": [
+        4
+      ],
       "desc": "Weighted feature dict over TMDB genre ids + keywords + top cast. Like → +w on the movie's features, dislike → −w. score(m) = Σ tasteVector[f] for f in features(m), normalized by feature count. Re-rank remaining deck after each swipe.",
-      "ac": ["Liking two action movies moves action titles up the deck", "Disliking demotes", "Runs in < 5 ms for 60 movies"] },
-    { "id": 13, "title": "Similar/recommendations candidate seeding", "priority": "P1", "owner": "C", "area": "algorithm", "phase": 2, "est": "1.5h", "deps": [12, 15],
+      "ac": [
+        "Liking two action movies moves action titles up the deck",
+        "Disliking demotes",
+        "Runs in < 5 ms for 60 movies"
+      ],
+      "agent": {
+        "goal": "The recommendation engine. Small, synchronous, no network — and the single biggest unlock in the project: seven issues wait on it.",
+        "files": [
+          "src/lib/taste.ts"
+        ],
+        "steps": [
+          "features(movie) → string[]: genreIds map to 'genre:28', keywords to 'keyword:heist', top-3 cast to 'cast:3223'. Exactly the key format frozen in #5.",
+          "applySwipe(vector, movie, dir): like adds +w to each feature, dislike subtracts. w = 1 is fine; weight genres slightly above keywords if you want a knob.",
+          "score(vector, movie): sum vector[f] over features(movie), normalized by features.length so long-keyword movies do not dominate.",
+          "rank(vector, movies): sort by score descending, return a new array — never mutate the deck in place.",
+          "Keep it pure and synchronous. Persistence is #18's job, Firestore never appears in this file."
+        ],
+        "contract": "```ts\nexport function features(m: Movie): string[];\nexport function applySwipe(v: TasteVector, m: Movie, dir: 'left'|'right'): TasteVector;\nexport function score(v: TasteVector, m: Movie): number;\nexport function rank(v: TasteVector, ms: Movie[]): Movie[];\n```\nEverything downstream (#13 #14 #17 #18 #20 #24 #9) imports exactly these four.",
+        "gotchas": [
+          "Must run under 5ms for 60 movies — it re-ranks on every swipe, inside the gesture. No async, no I/O.",
+          "Freeze this signature early and tell B and A. Changing it after #17 and #18 are underway costs more than it saves."
+        ],
+        "refs": [
+          "PLAN.md §H (scoring spec)",
+          "src/types.ts (#5)"
+        ],
+        "verify": [
+          "Liking two action films moves action titles up the deck",
+          "Disliking demotes",
+          "console.time shows <5ms for 60 movies"
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "title": "Similar/recommendations candidate seeding",
+      "priority": "P1",
+      "owner": "C",
+      "area": "algorithm",
+      "phase": 2,
+      "est": "1.5h",
+      "deps": [
+        12,
+        15
+      ],
       "desc": "For the user's top-3 liked titles, pull TMDB `/similar` and `/recommendations` into the candidate pool (deduped, with video keys resolved by the fetch layer).",
-      "ac": ["Pool grows with related titles after 5 likes", "No duplicates"] },
-    { "id": 14, "title": "ε-greedy exploration", "priority": "P2", "owner": "C", "area": "algorithm", "phase": 3, "est": "1h", "deps": [12],
+      "ac": [
+        "Pool grows with related titles after 5 likes",
+        "No duplicates"
+      ],
+      "agent": {
+        "goal": "Keeps the deck from running dry by pulling related titles once the user has liked a few things.",
+        "files": [
+          "src/lib/candidates.ts"
+        ],
+        "steps": [
+          "Take the top-3 liked titles by score, call TMDB /movie/{id}/similar and /movie/{id}/recommendations via the fetch layer (#15).",
+          "Dedupe against ids already in the deck AND already swiped. The AC is explicitly 'no duplicates'.",
+          "Resolve video keys through #15's mapper so new candidates are playable, not poster-only.",
+          "Cap the pool — 100 candidates is plenty; unbounded growth slows rank()."
+        ],
+        "contract": "```ts\nexport async function seedCandidates(v: TasteVector, liked: Movie[]): Promise<Movie[]>;\n```",
+        "gotchas": [
+          "Every new candidate needs a validated video key or it becomes a poster card mid-demo.",
+          "Offline, this must no-op and leave the seed deck intact rather than throwing."
+        ],
+        "refs": [
+          "PLAN.md §H (collaborative substitute)"
+        ],
+        "verify": [
+          "Pool grows with related titles after 5 likes",
+          "No id appears twice"
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "title": "ε-greedy exploration",
+      "priority": "P2",
+      "owner": "C",
+      "area": "algorithm",
+      "phase": 3,
+      "est": "1h",
+      "deps": [
+        12
+      ],
       "desc": "With ε = 0.2, inject a trending/random title instead of the top-scored one so the deck doesn't collapse into one genre.",
-      "ac": ["Roughly 1 in 5 cards is off-profile"] },
-
-    { "id": 15, "title": "TMDB fetch layer with seed fallback", "priority": "P0", "owner": "B", "area": "backend", "phase": 1, "est": "3h", "deps": [3, 4],
+      "ac": [
+        "Roughly 1 in 5 cards is off-profile"
+      ],
+      "agent": {
+        "goal": "Stops the deck collapsing into one genre after a few swipes. Cheap insurance against a boring demo.",
+        "files": [
+          "src/lib/taste.ts — or a small explore.ts beside it"
+        ],
+        "steps": [
+          "With probability ε = 0.2, serve a trending or random title instead of the top-scored one.",
+          "Prefer TMDB /trending when online, a random unswiped seed title offline.",
+          "Make ε a single exported constant so it can be turned to 0 for a deterministic rehearsal."
+        ],
+        "contract": "```ts\nexport const EPSILON = 0.2;\nexport function nextCard(v: TasteVector, deck: Movie[]): Movie;\n```",
+        "gotchas": [
+          "Set ε = 0 before recording the demo video (#28) — you want the deck you rehearsed, not a surprise."
+        ],
+        "refs": [
+          "PLAN.md §H (exploration)"
+        ],
+        "verify": [
+          "Roughly 1 in 5 cards is off-profile over 20 swipes"
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "title": "TMDB fetch layer with seed fallback",
+      "priority": "P0",
+      "owner": "B",
+      "area": "backend",
+      "phase": 1,
+      "est": "3h",
+      "deps": [
+        3,
+        4
+      ],
       "desc": "`/discover/movie` + `/movie/{id}?append_to_response=videos,watch/providers` mapped to the Movie type. Prefer Clip > Teaser > Trailer for the video key. On any error or offline, return seed.json.",
-      "ac": ["Returns ≥ 20 movies with video keys when online", "Wi-Fi off → seed data, no error surfaced to the user"] },
-    { "id": 16, "title": "Group session + join code (Firestore realtime)", "priority": "P0", "owner": "B", "area": "backend", "phase": 1, "est": "3h", "deps": [2],
+      "ac": [
+        "Returns ≥ 20 movies with video keys when online",
+        "Wi-Fi off → seed data, no error surfaced to the user"
+      ],
+      "agent": {
+        "goal": "One catalog API for the whole app that never fails loudly — online it is TMDB, offline it is seed.json, and callers cannot tell the difference.",
+        "files": [
+          "src/lib/tmdb.ts",
+          "src/lib/seed.json — the fallback from #4"
+        ],
+        "steps": [
+          "getDeck(filters?) → /discover/movie with the v4 bearer; then hydrate each result with /movie/{id}?append_to_response=videos,watch/providers,keywords.",
+          "Map into the Movie type from #5. Video key preference: Clip > Teaser > Trailer, site 'YouTube'.",
+          "Wrap every call: on ANY error, timeout, or offline, return seed.json mapped through the same mapper. The user must never see an error state — that is the AC.",
+          "Add a short timeout (3s). A hanging TMDB call on venue wifi is the same as an outage and must fall back just as fast.",
+          "Cache hydrated movies in memory by id so re-ranking never refetches."
+        ],
+        "contract": "```ts\nexport async function getDeck(filters?: DiscoverFilters): Promise<Movie[]>;\nexport async function getMovie(id: number): Promise<Movie | null>;\nexport async function similar(id: number): Promise<Movie[]>;\nexport function isOffline(): boolean; // last call fell back to seed\n```",
+        "gotchas": [
+          "TMDB rate limit is generous (~40-50 req/s) but hydrating 60 movies is 60 calls — batch and cache, do not refetch per swipe.",
+          "Attribution is contractual and lands in #27 — do not skip it.",
+          "Venue wifi is the documented top risk. The offline path is not theoretical; #26 tests it for real."
+        ],
+        "refs": [
+          "PLAN.md §D (TMDB specifics)",
+          "PLAN.md §L (risks)"
+        ],
+        "verify": [
+          "≥20 movies with video keys online",
+          "Wi-Fi off returns seed data with no visible error",
+          "Airplane mode mid-session does not crash the deck"
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "title": "Group session + join code (Firestore realtime)",
+      "priority": "P0",
+      "owner": "B",
+      "area": "backend",
+      "phase": 1,
+      "est": "3h",
+      "deps": [
+        2
+      ],
       "desc": "Create `sessions/{code}` (4-letter code). Members write to `sessions/{code}/members/{uid}` with their likes/dislikes. Every device subscribes with onSnapshot.",
-      "ac": ["Two devices join the same code and see the member list update live", "Swipes appear in Firestore within ~1s"] },
-    { "id": 17, "title": "Match detection (Average-without-Misery) + persist match", "priority": "P0", "owner": "B", "area": "backend", "phase": 3, "est": "2.5h", "deps": [16, 12],
+      "ac": [
+        "Two devices join the same code and see the member list update live",
+        "Swipes appear in Firestore within ~1s"
+      ],
+      "agent": {
+        "goal": "Two phones in one session, seeing each other live. Everything about the group demo depends on this working over venue wifi.",
+        "files": [
+          "src/lib/session.ts",
+          "app/group.tsx"
+        ],
+        "steps": [
+          "createSession() → 4-letter code, uppercase, no vowels (avoids accidental words) — write sessions/{code} with createdAt and hostUid.",
+          "joinSession(code) → write sessions/{code}/members/{uid} with empty likes/dislikes.",
+          "recordSwipe(code, movieId, dir) → update the member doc's likes/dislikes arrays (arrayUnion).",
+          "subscribe(code, cb) → onSnapshot over sessions/{code}/members, delivering Member[] on every change. #17 consumes this.",
+          "Handle rejoin: the same uid joining twice must not duplicate a member or wipe their swipes.",
+          "Show the code large on screen — judges and your second phone both need to read it."
+        ],
+        "contract": "```ts\nexport async function createSession(): Promise<string>; // returns code\nexport async function joinSession(code: string): Promise<void>;\nexport async function recordSwipe(code: string, movieId: number, dir: 'left'|'right'): Promise<void>;\nexport function subscribe(code: string, cb: (m: Member[]) => void): Unsubscribe;\n```",
+        "gotchas": [
+          "Swipes must reach Firestore within ~1s — batch nothing, write on each swipe.",
+          "Anonymous uid must exist before any write (#2). A null uid throws a permissions error that looks like a Firestore bug.",
+          "Unsubscribe on unmount or you will leak listeners across rehearsal runs."
+        ],
+        "refs": [
+          "PLAN.md §E (Firestore sessions)",
+          "PLAN.md §I (zero-friction group)"
+        ],
+        "verify": [
+          "Two devices on one code see the member list update live",
+          "A swipe appears in Firestore within a second"
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "title": "Match detection (Average-without-Misery) + persist match",
+      "priority": "P0",
+      "owner": "B",
+      "area": "backend",
+      "phase": 3,
+      "est": "2.5h",
+      "deps": [
+        16,
+        12
+      ],
       "desc": "Compute each member's per-title score; rank by Average-without-Misery (exclude any title a member swiped left / scored below threshold); tie-break by mutual-like count. Emit a match event when a title crosses the mutual threshold. On match, write `{tmdbId, sessionCode, matchedAt}` to every member's `users/{uid}/matches` so it shows in the Saved tab.",
-      "ac": ["A mutual like triggers the match event on all devices", "A vetoed title never wins", "Match document exists for every member after the reveal"] },
-    { "id": 18, "title": "Persist taste vector to Firestore", "priority": "P1", "owner": "B", "area": "backend", "phase": 2, "est": "1h", "deps": [12],
+      "ac": [
+        "A mutual like triggers the match event on all devices",
+        "A vetoed title never wins",
+        "Match document exists for every member after the reveal"
+      ],
+      "agent": {
+        "goal": "The algorithm that decides the group's film and fires the match event on every phone. Step 4 of the demo path.",
+        "files": [
+          "src/lib/match.ts"
+        ],
+        "steps": [
+          "For each candidate title, compute every member's score via score() from #12 — reuse it, do not reimplement scoring here.",
+          "Average-without-Misery: DROP any title that any member swiped left on or scored below a floor. Then rank the survivors by mean score. A vetoed title must never win — that is an explicit AC.",
+          "Tie-break by mutual-like count.",
+          "Emit the match when a title crosses the mutual threshold (every member liked it, or the top survivor once all members have swiped N cards).",
+          "Write the match to sessions/{code}/match AND to each member's users/{uid}/matches so #41's Saved tab shows it for everyone.",
+          "The match doc is the single source of truth — every device reacts to the doc, never to its own local swipe."
+        ],
+        "contract": "```ts\nexport function rankGroup(members: Member[], movies: Movie[]): Movie[]; // misery-filtered\nexport function detectMatch(members: Member[], movies: Movie[]): Movie | null;\nexport async function persistMatch(code: string, movie: Movie, members: Member[]): Promise<void>;\n```",
+        "gotchas": [
+          "Fire the pre-warm for Gemini + TTS (#37) at DETECTION time, not at reveal time.",
+          "Guard against double-firing: once sessions/{code}/match exists, do not overwrite it.",
+          "Depends on #12's score() — if that signature moves, this breaks silently."
+        ],
+        "refs": [
+          "PLAN.md §H (group consensus)"
+        ],
+        "verify": [
+          "A mutual like triggers the reveal on both devices",
+          "A title one member vetoed never wins",
+          "A match doc exists under every member's uid"
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "title": "Persist taste vector to Firestore",
+      "priority": "P1",
+      "owner": "B",
+      "area": "backend",
+      "phase": 2,
+      "est": "1h",
+      "deps": [
+        12
+      ],
       "desc": "Save/load `users/{uid}/taste` and `users/{uid}/likes` (movie ids + timestamps).",
-      "ac": ["Taste and likes survive an app reload"] },
-    { "id": 19, "title": "QR / shareable join link on the .tech domain", "priority": "P1", "owner": "B", "area": "backend", "phase": 3, "est": "1.5h", "deps": [16, 32],
+      "ac": [
+        "Taste and likes survive an app reload"
+      ],
+      "agent": {
+        "goal": "Taste and likes survive an app reload, which is what makes the Saved tab (#41) possible and rehearsals repeatable.",
+        "files": [
+          "src/lib/persist.ts",
+          "src/lib/taste.ts — reads on boot"
+        ],
+        "steps": [
+          "saveTaste(uid, vector) → setDoc users/{uid}/taste, debounced (every ~5 swipes or 2s), not on every swipe.",
+          "loadTaste(uid) → returns the stored vector or {} on first run.",
+          "saveLike(uid, movieId) → users/{uid}/likes with a timestamp; #41 reads this.",
+          "Hydrate the in-memory vector on app launch before the deck renders, or the first ranking is wrong."
+        ],
+        "contract": "```ts\nexport async function saveTaste(uid: string, v: TasteVector): Promise<void>;\nexport async function loadTaste(uid: string): Promise<TasteVector>;\nexport async function saveLike(uid: string, movieId: number): Promise<void>;\n```",
+        "gotchas": [
+          "Firestore writes on every swipe will rate-limit and stutter the deck — debounce.",
+          "Requires the persisted anon uid from #2; without getReactNativePersistence the uid changes on reload and the data is orphaned."
+        ],
+        "refs": [
+          "PLAN.md §H (data model)"
+        ],
+        "verify": [
+          "Taste and likes survive a full app reload"
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "title": "QR / shareable join link on the .tech domain",
+      "priority": "P1",
+      "owner": "B",
+      "area": "backend",
+      "phase": 3,
+      "est": "1.5h",
+      "deps": [
+        16,
+        32
+      ],
       "desc": "QR encodes `https://<domain>.tech/j/{code}`. App handles a `moviematch://join/{code}` scheme link. Universal https links need an EAS build + AASA file, so in Expo Go fall back to the scheme link or manual code entry.",
-      "ac": ["Scanning the QR reaches a page that opens the app or shows the code big"] },
-
-    { "id": 20, "title": "Gemini: \"why you'd like this\" one-liner", "priority": "P1", "owner": "C", "area": "gemini", "phase": 1, "est": "2h", "deps": [3, 12],
+      "ac": [
+        "Scanning the QR reaches a page that opens the app or shows the code big"
+      ],
+      "agent": {
+        "goal": "A guest joins by scanning a QR instead of typing — the zero-friction story, and it puts the .tech domain on screen during the demo.",
+        "files": [
+          "src/components/JoinQR.tsx",
+          "web/j/[code] — the landing route from #33"
+        ],
+        "steps": [
+          "QR encodes https://<domain>.tech/j/{code} — the domain must be visible in the demo video, so use the real one, not a localhost URL.",
+          "npx expo install expo-barcode-scanner or render-only via react-native-qrcode-svg (rendering is enough; scanning happens with the phone camera).",
+          "App handles moviematch://join/{code} via the scheme set in #1.",
+          "Universal https links need an EAS build plus an AASA file — in Expo Go they will NOT open the app. Fall back to the scheme link or a big readable code on the web page.",
+          "Test the actual scan with a second physical phone, not a screenshot."
+        ],
+        "contract": "URL shape: https://<domain>.tech/j/{CODE} and moviematch://join/{CODE}. #33 serves the web side, this issue renders the QR and handles the inbound link.",
+        "gotchas": [
+          "Do not promise universal links in the pitch unless #31's EAS build is done — in Expo Go they silently fail.",
+          "DNS may still be propagating (#32); have the raw Hosting URL as a backup."
+        ],
+        "refs": [
+          "PLAN.md §I",
+          "PLAN.md §B (prize strategy)"
+        ],
+        "verify": [
+          "Scanning the QR on a second phone reaches the join page and gets into the session"
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "title": "Gemini: \"why you'd like this\" one-liner",
+      "priority": "P1",
+      "owner": "C",
+      "area": "gemini",
+      "phase": 1,
+      "est": "2h",
+      "deps": [
+        3,
+        12
+      ],
       "desc": "`gemini-3.5-flash` with responseMimeType application/json + responseSchema `{reason: string, confidence: number}`. Input: the user's recent likes + the candidate. Max 20 words, no spoilers, in \"Reel\" the concierge's voice. Cache per movie id. Exponential backoff on 429.",
-      "ac": ["Returns a ≤ 20-word reason", "Second request for the same movie hits cache", "429 does not crash the deck"] },
-    { "id": 21, "title": "Gemini: group compromise pick + narration script", "priority": "P1", "owner": "C", "area": "gemini", "phase": 3, "est": "2h", "deps": [16, 3],
+      "ac": [
+        "Returns a ≤ 20-word reason",
+        "Second request for the same movie hits cache",
+        "429 does not crash the deck"
+      ],
+      "agent": {
+        "goal": "Reel's one-line explanation under every card. Highest impact per hour of any AI feature in the plan, and the anchor of the Gemini prize story.",
+        "files": [
+          "src/lib/gemini.ts",
+          "src/components/CardChrome.tsx — renders the line (#8)"
+        ],
+        "steps": [
+          "Use the Firebase AI Logic client from #3 with model gemini-3.5-flash pinned explicitly.",
+          "config: { responseMimeType: 'application/json', responseSchema: { type:'object', properties:{ reason:{type:'string'}, confidence:{type:'number'} }, required:['reason'] } } — schema plus mime type is what guarantees parseable JSON.",
+          "System prompt: 'You are Reel, a witty film concierge. Given a user's liked movies and one candidate, explain in ONE sentence (max 20 words) why they'd like it. No spoilers.'",
+          "Input: the user's 3–5 most recent likes (titles only) plus the candidate title and genres.",
+          "Cache by tmdb id in memory AND on disk — the second request for the same movie must make zero network calls (explicit AC).",
+          "Exponential backoff on 429. On repeated failure return null and let the card render without a why line. The deck must never block on Gemini."
+        ],
+        "contract": "```ts\nexport async function whyLine(candidate: Movie, likes: Movie[]): Promise<string | null>;\n```\n#8 renders it, #37 speaks it, #23 and #39 build on the same client.",
+        "gotchas": [
+          "Free tier: ~1,500 req/day, 15 RPM. Prefetching a why line for all 60 cards will exhaust the minute quota — fetch for the top 2-3 upcoming cards only.",
+          "Keep LLM calls out of the swipe gesture path (AGENTS.md §3).",
+          "Pin the model string. gemini-2.0-flash is shut down; 1.x returns 404."
+        ],
+        "refs": [
+          "PLAN.md §F feature #1",
+          "AGENTS.md §3"
+        ],
+        "verify": [
+          "Returns a ≤20-word reason",
+          "Second call for the same movie hits cache with no network",
+          "A forced 429 does not crash the deck"
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "title": "Gemini: group compromise pick + narration script",
+      "priority": "P1",
+      "owner": "C",
+      "area": "gemini",
+      "phase": 3,
+      "est": "2h",
+      "deps": [
+        16,
+        3
+      ],
       "desc": "Send each member's liked/disliked titles. Schema `{pick, tmdb_id, why, narration, runner_up}`. `narration` is a ≤ 35-word spoken script in Reel's voice addressing the group by name and ending with where to watch (this is what ElevenLabs reads). Validate `tmdb_id` against the catalog before display.",
-      "ac": ["Returns a title that exists in the session's catalog", "why is on-screen text; narration is speakable and ≤ 35 words"] },
-    { "id": 22, "title": "Gemini: natural-language mood → TMDB filters", "priority": "P2", "owner": "C", "area": "gemini", "phase": 3, "est": "2h", "deps": [15, 3],
+      "ac": [
+        "Returns a title that exists in the session's catalog",
+        "why is on-screen text; narration is speakable and ≤ 35 words"
+      ],
+      "agent": {
+        "goal": "The pitch's centrepiece: Gemini reads three people's swipes, picks a film nobody vetoed, and writes both the on-screen why and the spoken narration.",
+        "files": [
+          "src/lib/gemini.ts"
+        ],
+        "steps": [
+          "Send each member's liked and disliked titles, plus the session's candidate catalog.",
+          "responseSchema: { pick: string, tmdb_id: integer, why: string, narration: string, runner_up: string }, required ['pick','why','narration'].",
+          "narration prompt addition, verbatim from PLAN.md §F: 'narration is read aloud by a voice actor. Max 35 words. Address the group directly, name who compromised on what, end with where to watch.'",
+          "VALIDATE tmdb_id against the session catalog before anything reaches the screen. Gemini hallucinates titles and a made-up film in front of judges is fatal (AGENTS.md §3).",
+          "If validation fails, fall back to #17's algorithmic winner and ask Gemini only to explain that title.",
+          "Put the schema on a pitch slide — #29 references it directly."
+        ],
+        "contract": "```ts\nexport interface Compromise { pick: string; tmdb_id: number; why: string; narration: string; runner_up?: string }\nexport async function groupCompromise(members: Member[], catalog: Movie[]): Promise<Compromise | null>;\n```\n#10 renders why, #36/#37 speak narration, #35 tunes the narration field.",
+        "gotchas": [
+          "why is on-screen text and can be denser; narration is speech and must be punchy. Keeping them separate is deliberate — do not collapse them into one field.",
+          "Call this at match DETECTION time (#17) so audio is ready before the reveal mounts."
+        ],
+        "refs": [
+          "PLAN.md §F feature #3",
+          "PLAN.md §G (where the voice appears)"
+        ],
+        "verify": [
+          "Returns a title that exists in the catalog",
+          "narration is ≤35 words and reads naturally aloud",
+          "A hallucinated id falls back instead of displaying"
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "title": "Gemini: natural-language mood → TMDB filters",
+      "priority": "P2",
+      "owner": "C",
+      "area": "gemini",
+      "phase": 3,
+      "est": "2h",
+      "deps": [
+        15,
+        3
+      ],
       "desc": "Structured output `{genres[], exclude_genres[], keywords[], min_rating, tone}` mapped to TMDB genre ids and fed to `/discover`.",
-      "ac": ["\"funny but not dumb\" yields comedy with a rating floor and no slapstick keywords"] },
-    { "id": 23, "title": "Gemini: ranked recommender fallback", "priority": "P2", "owner": "C", "area": "gemini", "phase": 4, "est": "2h", "deps": [20],
+      "ac": [
+        "\"funny but not dumb\" yields comedy with a rating floor and no slapstick keywords"
+      ],
+      "agent": {
+        "goal": "Natural language to TMDB filters — 'funny but not dumb' becomes real query parameters. P2, and #11 depends on it.",
+        "files": [
+          "src/lib/gemini.ts",
+          "src/lib/tmdb.ts — accepts the filter object"
+        ],
+        "steps": [
+          "responseSchema: { genres: string[], exclude_genres: string[], keywords: string[], min_rating: number, tone: string }, required ['genres'].",
+          "Map genre NAMES to TMDB genre ids via /genre/movie/list — Gemini returns names, /discover needs ids.",
+          "Feed into getDeck(filters) from #15: with_genres, without_genres, vote_average.gte, with_keywords.",
+          "Handle the empty case: if Gemini returns nothing usable, keep the current deck rather than emptying it."
+        ],
+        "contract": "```ts\nexport interface DiscoverFilters { withGenres: number[]; withoutGenres: number[]; keywords: string[]; minRating?: number; tone?: string }\nexport async function moodToFilters(text: string): Promise<DiscoverFilters | null>;\n```",
+        "gotchas": [
+          "Keyword ids, not keyword strings, are what /discover accepts — resolve via /search/keyword or drop the keyword filter.",
+          "P2: drop it if the demo path is not solid by hour 16."
+        ],
+        "refs": [
+          "PLAN.md §F feature #2"
+        ],
+        "verify": [
+          "'funny but not dumb' yields comedy with a rating floor and no slapstick keywords"
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "title": "Gemini: ranked recommender fallback",
+      "priority": "P2",
+      "owner": "C",
+      "area": "gemini",
+      "phase": 4,
+      "est": "2h",
+      "deps": [
+        20
+      ],
       "desc": "Ask Gemini for a ranked list of next candidates as JSON; validate every title via TMDB search before showing.",
-      "ac": ["Every returned title resolves to a TMDB id"] },
-
-    { "id": 24, "title": "End-to-end single-player loop", "priority": "P0", "owner": "all", "area": "demo", "phase": 2, "est": "2h", "deps": [6, 7, 12, 15],
+      "ac": [
+        "Every returned title resolves to a TMDB id"
+      ],
+      "agent": {
+        "goal": "A Gemini-ranked candidate list as a backup recommender. P2 insurance for the Gemini prize, not part of the demo path.",
+        "files": [
+          "src/lib/gemini.ts"
+        ],
+        "steps": [
+          "Ask for a ranked JSON array of next candidate titles given the taste profile.",
+          "Resolve EVERY returned title through TMDB /search/movie before it can be shown. Unresolvable titles are dropped silently — the AC is that every displayed title has a real id.",
+          "Only use this when the algorithmic pool (#12/#13) runs dry."
+        ],
+        "contract": "```ts\nexport async function rankedCandidates(v: TasteVector, liked: Movie[]): Promise<Movie[]>;\n```",
+        "gotchas": [
+          "Gemini will confidently invent films. Validation is not optional (AGENTS.md §3).",
+          "P2 — drop without hesitation if behind."
+        ],
+        "refs": [
+          "PLAN.md §F feature #4"
+        ],
+        "verify": [
+          "Every returned title resolves to a real TMDB id"
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "title": "End-to-end single-player loop",
+      "priority": "P0",
+      "owner": "all",
+      "area": "demo",
+      "phase": 2,
+      "est": "2h",
+      "deps": [
+        6,
+        7,
+        12,
+        15
+      ],
       "desc": "Deck → TMDB/seed → scoring → re-rank, on a real device. A + B pair on this.",
-      "ac": ["Full solo flow works online and with Wi-Fi off"] },
-    { "id": 25, "title": "End-to-end group flow", "priority": "P0", "owner": "all", "area": "demo", "phase": 5, "est": "2h", "deps": [16, 17, 10, 21, 37],
+      "ac": [
+        "Full solo flow works online and with Wi-Fi off"
+      ],
+      "agent": {
+        "goal": "First proof the product exists: one person swipes a real deck that re-ranks, online and offline. A and B pair on this.",
+        "files": [
+          "app/swipe.tsx — the integration point",
+          "no new modules; this issue wires existing ones"
+        ],
+        "steps": [
+          "Wire getDeck() (#15) → rank() (#12) → SwipeDeck (#6) → TrailerCard (#7) on a physical device.",
+          "Each swipe: applySwipe → re-rank remaining deck → next card reflects it.",
+          "Run the whole flow with Wi-Fi ON, then OFF, without restarting the app.",
+          "Log the break points rather than fixing them inline — file follow-ups, keep this issue about integration.",
+          "This is the first honest read on demo risk. If it is rough at hour 14, cut P2 scope rather than pushing through."
+        ],
+        "contract": "No new API. Consumes #6, #7, #12, #15.",
+        "gotchas": [
+          "Physical device only — simulators lie about autoplay and gesture smoothness (AGENTS.md §6).",
+          "Do not let this drift into polish; it is a checkpoint, not a feature."
+        ],
+        "refs": [
+          "PLAN.md §J phase 2"
+        ],
+        "verify": [
+          "Full solo flow works online",
+          "Same flow works with Wi-Fi off, no visible errors"
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "title": "End-to-end group flow",
+      "priority": "P0",
+      "owner": "all",
+      "area": "demo",
+      "phase": 5,
+      "est": "2h",
+      "deps": [
+        16,
+        17,
+        10,
+        21,
+        37
+      ],
       "desc": "Two devices: join by code, swipe, match reveal, Gemini why, Reel's voice.",
-      "ac": ["Runs start-to-finish twice in a row without intervention"] },
-    { "id": 26, "title": "Offline fallback verification", "priority": "P0", "owner": "B", "area": "demo", "phase": 5, "est": "1h", "deps": [24, 38],
+      "ac": [
+        "Runs start-to-finish twice in a row without intervention"
+      ],
+      "agent": {
+        "goal": "The actual demo, end to end on two phones, twice in a row without intervention. If this does not pass, nothing else matters.",
+        "files": [
+          "no new files — integration of #16, #17, #10, #21, #37"
+        ],
+        "steps": [
+          "Phone 1 creates a session; phone 2 joins by code (and by QR if #19 is in).",
+          "Both swipe until a match fires. Confirm the reveal mounts on BOTH devices from the match doc.",
+          "Confirm Gemini's why renders and Reel's narration plays on at least one device.",
+          "Run it twice back to back without restarting either app — the AC is explicitly 'twice in a row'.",
+          "Do it on the venue network, with the iPhone silent switch ON."
+        ],
+        "contract": "Consumes #16 session, #17 match, #10 reveal, #21 compromise, #37 voice.",
+        "gotchas": [
+          "Session state left over from run 1 is the most common failure — make sure a fresh code is generated and old listeners are torn down.",
+          "This gates every demo-prep issue (#28, #29, #30, #42). It is the tail of the critical chain; protect its inputs."
+        ],
+        "refs": [
+          "PLAN.md §J phase 5",
+          "PLAN.md §G (demo moment)"
+        ],
+        "verify": [
+          "Two clean consecutive runs on real hardware, silent switch on"
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "title": "Offline fallback verification",
+      "priority": "P0",
+      "owner": "B",
+      "area": "demo",
+      "phase": 5,
+      "est": "1h",
+      "deps": [
+        24,
+        38
+      ],
       "desc": "Kill Wi-Fi. Confirm seed data, cached Gemini text, and cached narration mp3 all render/play.",
-      "ac": ["Demo path works with no network"] },
-    { "id": 27, "title": "About screen with attributions", "priority": "P1", "owner": "A", "area": "mobile", "phase": 4, "est": "0.5h", "deps": [1],
+      "ac": [
+        "Demo path works with no network"
+      ],
+      "agent": {
+        "goal": "Proof the demo survives venue wifi collapsing — the top documented risk. Everything must come from cache.",
+        "files": [
+          "no new files — verification of #15 seed fallback and #38 cached audio"
+        ],
+        "steps": [
+          "Turn Wi-Fi and cellular fully off on both phones.",
+          "Confirm: deck loads from seed.json, cards play (YouTube will NOT play offline — confirm the poster fallback looks intentional, not broken), cached Gemini text renders, cached narration mp3 plays.",
+          "Write down exactly what degrades, and make sure the pitch script (#29) never promises a thing that only works online.",
+          "If the trailer cannot play offline, the honest answer is to demo online and keep offline as the fallback story — decide this now, not on stage."
+        ],
+        "contract": "Verification issue. Depends on #24 and #38.",
+        "gotchas": [
+          "YouTube embeds require network, full stop. The offline story is seed data + cached why text + cached audio + posters — be precise about that in the pitch."
+        ],
+        "refs": [
+          "PLAN.md §D (fallback plan)",
+          "PLAN.md §L (risks)"
+        ],
+        "verify": [
+          "Demo path runs with no network",
+          "Narration still plays from cache"
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "title": "About screen with attributions",
+      "priority": "P1",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 4,
+      "est": "0.5h",
+      "deps": [
+        1
+      ],
       "desc": "TMDB notice (\"This product uses the TMDB API but is not endorsed or certified by TMDB.\") + approved TMDB logo, \"Voice by ElevenLabs\" (required on the free plan), \"Powered by Gemini\".",
-      "ac": ["All three attributions visible in About"] },
-    { "id": 28, "title": "Record demo video ×2 (with audio)", "priority": "P0", "owner": "C", "area": "demo", "phase": 5, "est": "1h", "deps": [25],
+      "ac": [
+        "All three attributions visible in About"
+      ],
+      "agent": {
+        "goal": "Contractual attributions. Missing them can disqualify the ElevenLabs and TMDB prize entries — cheap to build, expensive to forget.",
+        "files": [
+          "app/about.tsx"
+        ],
+        "steps": [
+          "TMDB: the exact sentence 'This product uses the TMDB API but is not endorsed or certified by TMDB.' plus the approved TMDB logo.",
+          "ElevenLabs: 'Voice by ElevenLabs' — required on the free plan.",
+          "'Powered by Gemini'.",
+          "Link it from somewhere reachable in the demo, and repeat the attributions in the Devpost writeup (#40)."
+        ],
+        "contract": "Route /about, linked from the swipe screen.",
+        "gotchas": [
+          "ElevenLabs free tier REQUIRES attribution — this is a licence condition, not a nicety (AGENTS.md §3)."
+        ],
+        "refs": [
+          "PLAN.md §D (TMDB attribution)",
+          "PLAN.md §G (ElevenLabs free tier)"
+        ],
+        "verify": [
+          "All three attributions visible in About"
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "title": "Record demo video ×2 (with audio)",
+      "priority": "P0",
+      "owner": "C",
+      "area": "demo",
+      "phase": 5,
+      "est": "1h",
+      "deps": [
+        25
+      ],
       "desc": "Two clean screen recordings of the full flow including the voice line. Save locally and to Drive.",
-      "ac": ["Two backups exist and play back with audio"] },
-    { "id": 29, "title": "Pitch deck + 2-minute script", "priority": "P0", "owner": "C", "area": "demo", "phase": 5, "est": "2h", "deps": [25],
+      "ac": [
+        "Two backups exist and play back with audio"
+      ],
+      "agent": {
+        "goal": "Two recorded backups of the full flow with audio, so a dead phone or dead wifi cannot cost you the demo.",
+        "files": [
+          "recordings/ — local, plus a Drive upload"
+        ],
+        "steps": [
+          "Record the full flow twice on the actual demo devices, including Reel's voice. iOS screen recording captures app audio; confirm the audio is actually in the file before you stop.",
+          "Save locally AND to Drive, and put the Drive link in the Devpost draft (#40).",
+          "Watch both back with sound before calling this done."
+        ],
+        "contract": "Depends on #25 passing.",
+        "gotchas": [
+          "Screen recordings routinely capture silent video. Play back with sound — that is the AC.",
+          "Record before the last hour; the network gets worse as the venue fills."
+        ],
+        "refs": [
+          "PLAN.md §J phase 5"
+        ],
+        "verify": [
+          "Two backups exist and play with audio"
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "title": "Pitch deck + 2-minute script",
+      "priority": "P0",
+      "owner": "C",
+      "area": "demo",
+      "phase": 5,
+      "est": "2h",
+      "deps": [
+        25
+      ],
       "desc": "5 slides. One slide shows the compromise JSON schema. Script per PLAN.md §J: hook with the domain → solo swipe with Reel reading the why → QR join, match, voice verdict → close naming Expo + Firebase + Gemini + ElevenLabs.",
-      "ac": ["Deliverable in ≤ 2 minutes when rehearsed"] },
-    { "id": 30, "title": "Demo rehearsal ×5", "priority": "P1", "owner": "all", "area": "demo", "phase": 5, "est": "1.5h", "deps": [25],
+      "ac": [
+        "Deliverable in ≤ 2 minutes when rehearsed"
+      ],
+      "agent": {
+        "goal": "Five slides and a two-minute script that lands the differentiators and names every sponsor tech.",
+        "files": [
+          "pitch/ — deck plus script"
+        ],
+        "steps": [
+          "Five slides. One MUST show the compromise JSON schema from #21 — that is the Gemini-prize slide.",
+          "Script beats per PLAN.md §J: hook with the .tech domain → solo swipe with Reel reading the why → QR join, match, voice verdict → close naming Expo + Firebase + Gemini + ElevenLabs.",
+          "Include the line: 'Gemini read three people's swipes, picked a film nobody vetoed, and wrote — then spoke — the reason.'",
+          "Add the #42 closing beat if it is in.",
+          "Time it. Two minutes means two minutes."
+        ],
+        "contract": "Depends on #25. Feeds #30 rehearsals and #40 submission.",
+        "gotchas": [
+          "Do not promise anything that only works online unless you are demoing online (#26 settles this)."
+        ],
+        "refs": [
+          "PLAN.md §J",
+          "PLAN.md §I (pitch line)",
+          "PLAN.md §B (prize strategy)"
+        ],
+        "verify": [
+          "Deliverable in ≤2 minutes when rehearsed aloud"
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "title": "Demo rehearsal ×5",
+      "priority": "P1",
+      "owner": "all",
+      "area": "demo",
+      "phase": 5,
+      "est": "1.5h",
+      "deps": [
+        25
+      ],
       "desc": "Run the live demo five times on the actual devices and venue network. Silent switch ON. One run with Wi-Fi OFF. Log every break point and fix.",
-      "ac": ["5 clean runs logged"] },
-    { "id": 31, "title": "EAS build / TestFlight backup", "priority": "P2", "owner": "B", "area": "mobile", "phase": 4, "est": "1.5h", "deps": [24],
+      "ac": [
+        "5 clean runs logged"
+      ],
+      "agent": {
+        "goal": "Five real rehearsals on the real devices and the real network, with every break point logged and fixed.",
+        "files": [
+          "pitch/rehearsal-log.md"
+        ],
+        "steps": [
+          "Five full runs on the demo hardware, on venue wifi, silent switch ON.",
+          "One run with Wi-Fi OFF (pairs with #26).",
+          "Log every break point with the issue number it belongs to. Fix P0 breaks immediately; file the rest.",
+          "Set ε = 0 (#14) so the deck is the one you rehearsed."
+        ],
+        "contract": "Depends on #25.",
+        "gotchas": [
+          "Rehearsals burn ElevenLabs credits unless #38's cache is warm — check the balance before and after.",
+          "Silent switch ON is the point: it is the classic demo-day failure (PLAN.md §E)."
+        ],
+        "refs": [
+          "PLAN.md §J phase 5",
+          "PLAN.md §L"
+        ],
+        "verify": [
+          "5 clean runs logged",
+          "Credit balance unchanged across them"
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "title": "EAS build / TestFlight backup",
+      "priority": "P2",
+      "owner": "B",
+      "area": "mobile",
+      "phase": 4,
+      "est": "1.5h",
+      "deps": [
+        24
+      ],
       "desc": "Installable build in case Expo Go misbehaves on the demo device.",
-      "ac": ["Build installs and runs the demo path"] },
-
-    { "id": 32, "title": "Register the .tech domain (hour 0)", "priority": "P0", "owner": "B", "area": "domain", "phase": 0, "est": "0.5h", "deps": [2], "prize": true,
+      "ac": [
+        "Build installs and runs the demo path"
+      ],
+      "agent": {
+        "goal": "An installable build as insurance against Expo Go misbehaving on the demo phone. P2.",
+        "files": [
+          "eas.json"
+        ],
+        "steps": [
+          "npx eas build --profile preview --platform ios (and/or android). Start it EARLY — queue times run long and it is useless after the deadline.",
+          "Install on the actual demo device and run the full path once.",
+          "This also enables universal https links for #19, which Expo Go cannot do."
+        ],
+        "contract": "Depends on #24.",
+        "gotchas": [
+          "EAS queues can exceed an hour on a hackathon weekend. Kick it off during phase 4, not phase 5.",
+          "iOS installs need the device registered in the provisioning profile."
+        ],
+        "refs": [
+          "PLAN.md §E"
+        ],
+        "verify": [
+          "Build installs and runs the demo path"
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "title": "Register the .tech domain (hour 0)",
+      "priority": "P0",
+      "owner": "B",
+      "area": "domain",
+      "phase": 0,
+      "est": "0.5h",
+      "deps": [
+        2
+      ],
+      "prize": true,
       "desc": "10-minute name brainstorm (candidates in PLAN.md §B — a pun beats a description; judged on creativity). Redeem the MLH coupon at get.tech/mlh (code is in the day-of MLH hacker email). Point DNS at Firebase Hosting. Register under a team member's MLH-registered email.",
-      "ac": ["Domain resolves to Firebase Hosting (allow up to a few hours for DNS)"] },
-    { "id": 33, "title": "Landing + join page on the .tech domain", "priority": "P1", "owner": "B", "area": "domain", "phase": 2, "est": "1.5h", "deps": [32, 16], "prize": true,
+      "ac": [
+        "Domain resolves to Firebase Hosting (allow up to a few hours for DNS)"
+      ],
+      "agent": {
+        "goal": "The .tech domain live and pointed at Firebase Hosting, in hour 0, because DNS propagation is measured in hours and the prize is judged on the name.",
+        "files": [
+          "DNS records at get.tech",
+          "firebase.json — hosting target"
+        ],
+        "steps": [
+          "Ten-minute name brainstorm, no longer. Candidates are in PLAN.md §B. A pun beats a description — the prize is judged on creativity, not clarity.",
+          "Redeem the MLH coupon at get.tech/mlh. The code arrives in the day-of MLH hacker email.",
+          "Register under a team member's MLH-registered email or the coupon is rejected.",
+          "Point DNS at Firebase Hosting (A records or the custom-domain flow in the Hosting console), then verify in the console.",
+          "Do this FIRST. Everything else in the domain track waits on propagation."
+        ],
+        "contract": "Domain name is consumed by #19 (QR URL), #33 (landing page), #29 (pitch hook) and #40 (submission).",
+        "gotchas": [
+          "DNS can take hours. Registering at hour 18 means no domain in the demo.",
+          "Have the raw Firebase Hosting URL as a fallback for the QR (#19) in case propagation is slow."
+        ],
+        "refs": [
+          "PLAN.md §B (prize strategy, name candidates)"
+        ],
+        "verify": [
+          "The domain resolves to Firebase Hosting",
+          "HTTPS certificate is issued"
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "title": "Landing + join page on the .tech domain",
+      "priority": "P1",
+      "owner": "B",
+      "area": "domain",
+      "phase": 2,
+      "est": "1.5h",
+      "deps": [
+        32,
+        16
+      ],
+      "prize": true,
       "desc": "Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an \"Open in app\" scheme link, and the Expo Go QR.",
-      "ac": ["`https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session"] },
-
-    { "id": 34, "title": "ElevenLabs account, voice pick, and `tts` function", "priority": "P0", "owner": "C", "area": "elevenlabs", "phase": 0, "est": "1h", "deps": [3], "prize": true,
+      "ac": [
+        "`https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session"
+      ],
+      "agent": {
+        "goal": "The page a guest lands on after scanning the QR. It is also the first thing judges see in the pitch, so it carries the name.",
+        "files": [
+          "web/index.html — landing",
+          "web/j/index.html — the /j/{code} join route",
+          "firebase.json — rewrites"
+        ],
+        "steps": [
+          "Single static page: app name, one-line pitch, and the Expo Go QR for installing the app.",
+          "Add a Hosting rewrite so /j/** serves the join page; read the code from the path client-side.",
+          "The join page shows the code in very large type, an 'Open in app' moviematch://join/{code} link, and the Expo Go QR as a fallback.",
+          "Keep it one file with inline CSS. This is a signpost, not a website — an hour here is an hour not spent on the demo path."
+        ],
+        "contract": "Serves https://<domain>.tech/j/{CODE}, the URL #19 encodes in the QR.",
+        "gotchas": [
+          "The scheme link only opens the app if the app is installed; the big code is what actually gets a guest in.",
+          "Do not put analytics or fonts on it — venue wifi is slow and it must load instantly on a phone."
+        ],
+        "refs": [
+          "PLAN.md §I",
+          "PLAN.md §B"
+        ],
+        "verify": [
+          "https://<domain>.tech/j/ABCD loads on a phone and gets a guest into the session"
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "title": "ElevenLabs account, voice pick, and `tts` function",
+      "priority": "P0",
+      "owner": "C",
+      "area": "elevenlabs",
+      "phase": 0,
+      "est": "1h",
+      "deps": [
+        3
+      ],
+      "prize": true,
       "desc": "Free account (no card; 10,000 credits/month). Pick Reel's premade voice and commit to it. Cloud Function (or Express proxy) `tts({text}) → {audioBase64}` using `eleven_flash_v2_5`, output `mp3_44100_128`. Key in a secret. Create a spare free account on a second teammate's email.",
-      "ac": ["curl the function → playable mp3", "Key not in the client bundle"] },
-    { "id": 35, "title": "Narration field in Gemini prompts", "priority": "P1", "owner": "C", "area": "elevenlabs", "phase": 3, "est": "0.5h", "deps": [21], "prize": true,
+      "ac": [
+        "curl the function → playable mp3",
+        "Key not in the client bundle"
+      ],
+      "agent": {
+        "goal": "Reel's voice exists as a callable endpoint with the key server-side. Gates the whole ElevenLabs prize track.",
+        "files": [
+          "functions/src/tts.ts OR proxy/server.js — whichever #3 decided",
+          "src/lib/tts.ts — client caller comes in #36"
+        ],
+        "steps": [
+          "Free ElevenLabs account (no card, 10,000 credits/month, API access included).",
+          "Pick ONE premade voice and commit to it — consistency across the demo matters more than the exact choice. The docs' warm-narrator id JBFqnCBsd6RMkjVDRZzb is a reasonable default.",
+          "Implement tts({ text }) → { audioBase64 }: client.textToSpeech.convert(voiceId, { text, modelId: 'eleven_flash_v2_5', outputFormat: 'mp3_44100_128' }).",
+          "eleven_flash_v2_5 specifically: ~75ms latency and HALF the credit cost of the alternatives.",
+          "Key lives in a Cloud Function secret or proxy env var. Never in the app bundle.",
+          "Create the spare free account on a second teammate's email — a blown credit budget mid-rehearsal is a documented risk."
+        ],
+        "contract": "```\nPOST <EXPO_PUBLIC_TTS_URL>  { text: string }  →  { audioBase64: string }\n```\n#36 is the only caller.",
+        "gotchas": [
+          "Cloud Functions require the Blaze plan. If nobody adds a card, the Express-proxy-on-Vultr path from #3 applies — and incidentally qualifies for that prize too.",
+          "Free tier is premade voices only; the community voice library is not available via API.",
+          "Per-request cap ~2,500 characters — irrelevant at 35 words, but do not batch the whole seed catalog into one call."
+        ],
+        "refs": [
+          "PLAN.md §G (API facts, pipeline)",
+          "AGENTS.md §3"
+        ],
+        "verify": [
+          "curl the endpoint returns playable mp3 bytes",
+          "No ElevenLabs key anywhere in the client bundle"
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "title": "Narration field in Gemini prompts",
+      "priority": "P1",
+      "owner": "C",
+      "area": "elevenlabs",
+      "phase": 3,
+      "est": "0.5h",
+      "deps": [
+        21
+      ],
+      "prize": true,
       "desc": "Add `narration` to the compromise schema/prompt (#21) with the example line from PLAN.md §F. Optionally a `spoken` variant of the \"why\" reason (#20).",
-      "ac": ["narration ≤ 35 words, names who compromised on what, ends with where to watch"] },
-    { "id": 36, "title": "TTS playback util with cache (expo-audio)", "priority": "P1", "owner": "C", "area": "elevenlabs", "phase": 1, "est": "2h", "deps": [34], "prize": true,
+      "ac": [
+        "narration ≤ 35 words, names who compromised on what, ends with where to watch"
+      ],
+      "agent": {
+        "goal": "Tune the spoken script so it sounds like a person, not a caption read aloud. Tiny issue, large effect on the demo.",
+        "files": [
+          "src/lib/gemini.ts — the #21 prompt and schema"
+        ],
+        "steps": [
+          "Add narration to the compromise schema (#21) if it is not already there, with the example line from PLAN.md §F: 'You three finally agree on something. Everyone gets the action, Sam gets the jokes. It's on Netflix — go.'",
+          "Constrain: max 35 words, address the group directly, name who compromised on what, end with where to watch.",
+          "Optionally add a spoken variant of the #20 why line — shorter and punchier than the on-screen text.",
+          "Read the output ALOUD before accepting it. Text that scans fine on screen often stumbles in speech."
+        ],
+        "contract": "Refines the narration field of Compromise from #21. No new API.",
+        "gotchas": [
+          "Longer narration costs credits and delays the reveal. 35 words is the ceiling, not the target."
+        ],
+        "refs": [
+          "PLAN.md §F feature #3",
+          "PLAN.md §G"
+        ],
+        "verify": [
+          "narration is ≤35 words, names who compromised, ends with where to watch"
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "title": "TTS playback util with cache (expo-audio)",
+      "priority": "P1",
+      "owner": "C",
+      "area": "elevenlabs",
+      "phase": 1,
+      "est": "2h",
+      "deps": [
+        34
+      ],
+      "prize": true,
       "desc": "`speak(text)`: hash(text) → check expo-file-system cache → miss: call `tts`, write mp3 → play with `expo-audio`. `setAudioModeAsync({ playsInSilentMode: true })` so the iPhone mute switch doesn't kill the demo.",
-      "ac": ["Second call for the same text makes zero network requests", "Plays with the mute switch on"] },
-    { "id": 37, "title": "Wire Reel's voice into the UI", "priority": "P1", "owner": "A", "area": "elevenlabs", "phase": 3, "est": "1.5h", "deps": [10, 36], "prize": true,
+      "ac": [
+        "Second call for the same text makes zero network requests",
+        "Plays with the mute switch on"
+      ],
+      "agent": {
+        "goal": "speak(text) — the util that makes every voice moment possible, and the cache that keeps five rehearsals inside the free tier.",
+        "files": [
+          "src/lib/tts.ts"
+        ],
+        "steps": [
+          "npx expo install expo-audio expo-file-system. expo-av is deprecated — never import it (AGENTS.md §4).",
+          "Call setAudioModeAsync({ playsInSilentMode: true }) once at app start, or the iPhone mute switch silences the demo. This is a documented high-likelihood failure.",
+          "speak(text): hash the text (a simple djb2 is fine) → look for <cacheDir>/tts/<hash>.mp3 → hit: play it, zero network. Miss: POST to the tts endpoint (#34), write the base64 to that path, then play.",
+          "Expose prewarm(text) that does everything except play, so #37 can fetch during the match animation and #38 can batch-generate.",
+          "Handle overlapping calls: stop any playing sound before starting a new one."
+        ],
+        "contract": "```ts\nexport async function speak(text: string): Promise<void>;\nexport async function prewarm(text: string): Promise<void>;\nexport function cachePath(text: string): string;\n```",
+        "gotchas": [
+          "The second call for the same text must make ZERO network requests — that is the AC and it is what protects the credit budget.",
+          "expo-file-system cacheDir can be cleared by the OS; #38 writes to a bundled or documents path for demo-critical audio."
+        ],
+        "refs": [
+          "PLAN.md §G (pipeline, credit math)",
+          "AGENTS.md §4"
+        ],
+        "verify": [
+          "Second call for the same text makes no network request",
+          "Audio plays with the iPhone mute switch ON"
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "title": "Wire Reel's voice into the UI",
+      "priority": "P1",
+      "owner": "A",
+      "area": "elevenlabs",
+      "phase": 3,
+      "est": "1.5h",
+      "deps": [
+        10,
+        36
+      ],
+      "prize": true,
       "desc": "(a) Match reveal: pre-warm Gemini + TTS the instant the match is detected; play ~1s after the reveal mounts. (b) Speaker icon on the card reads the \"why\" line.",
-      "ac": ["Voice plays in both places on a physical device"] },
-    { "id": 38, "title": "Pre-generate cached narration audio (offline safety)", "priority": "P1", "owner": "C", "area": "elevenlabs", "phase": 4, "est": "1h", "deps": [36, 4], "prize": true,
+      "ac": [
+        "Voice plays in both places on a physical device"
+      ],
+      "agent": {
+        "goal": "Reel actually speaks during the demo — at the match reveal and on any card. This is the beat judges quote back to you.",
+        "files": [
+          "src/components/MatchReveal.tsx",
+          "src/components/CardChrome.tsx"
+        ],
+        "steps": [
+          "(a) Match reveal: call prewarm(narration) the INSTANT #17 detects the match, before MatchReveal mounts. On the reveal's onMounted, wait ~1s (poster lands) then speak(). Judges must not watch a spinner.",
+          "(b) Speaker icon on the card: tap reads the #20 why line via speak(). One line of code once #36 exists, and it gives judges a second touchpoint.",
+          "Guard double-taps — stop the previous sound before starting another.",
+          "Verify on a physical device with the silent switch ON."
+        ],
+        "contract": "Consumes speak()/prewarm() from #36, narration from #21, the onMounted hook from #10.",
+        "gotchas": [
+          "If the audio arrives late the reveal still works — never block the animation on the fetch.",
+          "Pre-warm at detection, not at mount. This is the difference between instant and awkward."
+        ],
+        "refs": [
+          "PLAN.md §G (where the voice appears)"
+        ],
+        "verify": [
+          "Voice plays at the reveal and from the card icon, on real hardware, silent switch on"
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "title": "Pre-generate cached narration audio (offline safety)",
+      "priority": "P1",
+      "owner": "C",
+      "area": "elevenlabs",
+      "phase": 4,
+      "est": "1h",
+      "deps": [
+        36,
+        4
+      ],
+      "prize": true,
       "desc": "Script that runs `speak()` for every seed movie's \"why\" line plus three canned group verdicts; bundle the mp3s (or warm the cache dir) so the live demo and all rehearsals never hit ElevenLabs live. B takes this if C is behind.",
-      "ac": ["Wi-Fi off → reveal still talks", "Credit balance unchanged across 5 rehearsals"] },
-
-    { "id": 39, "title": "Gemini multimodal poster \"vibe tags\"", "priority": "P2", "owner": "C", "area": "gemini", "phase": 4, "est": "1.5h", "deps": [20], "prize": true,
+      "ac": [
+        "Wi-Fi off → reveal still talks",
+        "Credit balance unchanged across 5 rehearsals"
+      ],
+      "agent": {
+        "goal": "Every line the demo can possibly speak, already on disk. Protects both the offline story and the credit budget.",
+        "files": [
+          "scripts/pregen-audio.js",
+          "assets/narration/ — gitignored mp3s, regenerate rather than commit"
+        ],
+        "steps": [
+          "Script iterates seed.json (#4): for each movie's why line call prewarm() so the cache fills.",
+          "Add three canned group verdicts covering the likely demo matches.",
+          "Write into the same cache path #36 reads, or bundle and copy into it on first launch.",
+          "Note: assets/narration/*.mp3 is gitignored by project convention — the script is the artifact, not the audio.",
+          "Run it BEFORE rehearsals (#30) so those five runs cost zero credits."
+        ],
+        "contract": "Fills the cache #36's speak() reads. No runtime API.",
+        "gotchas": [
+          "10,000 credits ≈ 40–60 narrations. Generating for all 60 seed movies is most of the monthly budget — generate why lines only for the ~10 movies the demo actually reaches, plus the canned verdicts.",
+          "B takes this issue if C is behind at hour 14 (PLAN.md §K load check)."
+        ],
+        "refs": [
+          "PLAN.md §G (credit math)",
+          "PLAN.md §D (fallback)"
+        ],
+        "verify": [
+          "Wi-Fi off → the reveal still talks",
+          "Credit balance unchanged across 5 rehearsals"
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "title": "Gemini multimodal poster \"vibe tags\"",
+      "priority": "P2",
+      "owner": "C",
+      "area": "gemini",
+      "phase": 4,
+      "est": "1.5h",
+      "deps": [
+        20
+      ],
+      "prize": true,
       "desc": "Send the poster (inline base64) + title to `gemini-3.5-flash`; JSON `{tags: string[3]}`; render as chips on the card. Gemini-prize insurance — only if #20, #21 are done by hour 16.",
-      "ac": ["Three sensible tags on ≥ 5 seed movies", "Cached per movie"] },
-    { "id": 40, "title": "Prize submission checklist", "priority": "P0", "owner": "C", "area": "demo", "phase": 5, "est": "1h", "deps": [28, 29], "prize": true,
+      "ac": [
+        "Three sensible tags on ≥ 5 seed movies",
+        "Cached per movie"
+      ],
+      "agent": {
+        "goal": "Visible multimodality for the Gemini prize: the poster image itself becomes three vibe tags on the card. Insurance, not demo path.",
+        "files": [
+          "src/lib/gemini.ts",
+          "src/components/CardChrome.tsx — renders the chips"
+        ],
+        "steps": [
+          "Fetch the poster, send it inline as base64 with the title to gemini-3.5-flash.",
+          "responseSchema: { tags: { type:'array', items:{type:'string'}, minItems:3, maxItems:3 } }.",
+          "Render as small chips in the chrome (#8).",
+          "Cache per movie id — poster analysis is expensive and never changes.",
+          "ONLY build this if #20 and #21 are done by hour 16. It is explicitly prize insurance."
+        ],
+        "contract": "```ts\nexport async function vibeTags(m: Movie): Promise<string[] | null>;\n```",
+        "gotchas": [
+          "Image payloads are far heavier than text against the 15 RPM free-tier limit — pre-generate for the seed movies rather than calling live during the demo."
+        ],
+        "refs": [
+          "PLAN.md §F feature #5"
+        ],
+        "verify": [
+          "Three sensible tags on ≥5 seed movies",
+          "Cached per movie"
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "title": "Prize submission checklist",
+      "priority": "P0",
+      "owner": "C",
+      "area": "demo",
+      "phase": 5,
+      "est": "1h",
+      "deps": [
+        28,
+        29
+      ],
+      "prize": true,
       "desc": "Devpost: select Best Use of Gemini API, Best Use of ElevenLabs, and Best .Tech Domain Name. Writeup names each sponsor tech with one sentence on what it did. Demo video shows the domain, the JSON schema, and the voice. Attributions present (#27). Submit early, not at the deadline.",
-      "ac": ["Checklist complete ≥ 30 min before the submission deadline"] },
-
-    { "id": 41, "title": "Saved tab (watch later)", "priority": "P1", "owner": "A", "area": "mobile", "phase": 3, "est": "1.5h", "deps": [18, 17],
+      "ac": [
+        "Checklist complete ≥ 30 min before the submission deadline"
+      ],
+      "agent": {
+        "goal": "The submission itself. Three prize categories, submitted early rather than at the deadline — the plan calls this out specifically.",
+        "files": [
+          "submission/devpost.md — the writeup draft"
+        ],
+        "steps": [
+          "On Devpost select all three: Best Use of Gemini API, Best Use of ElevenLabs, Best .Tech Domain Name.",
+          "Writeup names each sponsor tech with ONE sentence on what it actually did — judges skim.",
+          "Demo video (#28) must visibly show: the .tech domain, the JSON schema moment, and the voice playing.",
+          "Confirm attributions are present in-app (#27) and repeated in the writeup: TMDB notice, 'Voice by ElevenLabs', 'Powered by Gemini'.",
+          "Submit at least 30 minutes before the deadline. That is the AC, and it is the single cheapest risk reduction in the plan."
+        ],
+        "contract": "Depends on #28 (video) and #29 (deck/script).",
+        "gotchas": [
+          "Missing ElevenLabs attribution can invalidate that prize entry.",
+          "Devpost submissions routinely fail in the last ten minutes when everyone uploads at once."
+        ],
+        "refs": [
+          "PLAN.md §B (prize strategy)",
+          "PLAN.md §J phase 5"
+        ],
+        "verify": [
+          "Checklist complete ≥30 min before the deadline"
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "title": "Saved tab (watch later)",
+      "priority": "P1",
+      "owner": "A",
+      "area": "mobile",
+      "phase": 3,
+      "est": "1.5h",
+      "deps": [
+        18,
+        17
+      ],
       "desc": "List of liked movies and group matches from Firestore (`users/{uid}/likes`, `users/{uid}/matches`): poster, title, where-to-watch badge. Long-press to remove. A like is a save — no third swipe direction.",
-      "ac": ["A like appears in the tab within a second", "A group match appears for every member after the reveal"] },
-    { "id": 42, "title": "Closing demo beat: Saved tab on both phones", "priority": "P2", "owner": "all", "area": "demo", "phase": 5, "est": "0.25h", "deps": [41, 25],
+      "ac": [
+        "A like appears in the tab within a second",
+        "A group match appears for every member after the reveal"
+      ],
+      "agent": {
+        "goal": "Somewhere the likes and group matches land, so the demo can close by showing the pick already saved on both phones.",
+        "files": [
+          "app/saved.tsx",
+          "src/lib/persist.ts — reads from #18"
+        ],
+        "steps": [
+          "Read users/{uid}/likes and users/{uid}/matches (written by #18 and #17).",
+          "Render poster, title, where-to-watch badge. Two sections or one merged list — merged reads better in the demo.",
+          "Long-press to remove.",
+          "A like IS a save. Do not add a third swipe direction — that is an explicit product decision.",
+          "Subscribe with onSnapshot so a like appears within a second (the AC)."
+        ],
+        "contract": "Consumes users/{uid}/likes (#18) and users/{uid}/matches (#17).",
+        "gotchas": [
+          "The match must appear for EVERY member, which is why #17 writes a match doc per uid rather than only to the session."
+        ],
+        "refs": [
+          "PLAN.md §K issue 41"
+        ],
+        "verify": [
+          "A like appears in the tab within a second",
+          "A group match appears for every member after the reveal"
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "title": "Closing demo beat: Saved tab on both phones",
+      "priority": "P2",
+      "owner": "all",
+      "area": "demo",
+      "phase": 5,
+      "est": "0.25h",
+      "deps": [
+        41,
+        25
+      ],
       "desc": "After Reel's verdict, one tap to the Saved tab on both devices shows the pick sitting there. Add to the pitch script (#29).",
-      "ac": ["Beat included in the 2-minute script and rehearsed"] }
+      "ac": [
+        "Beat included in the 2-minute script and rehearsed"
+      ],
+      "agent": {
+        "goal": "The last ten seconds of the pitch: after Reel speaks, one tap on both phones shows the film already saved. Cheap, and it lands the 'it's a real product' note.",
+        "files": [
+          "pitch/ — script update",
+          "app/saved.tsx — must already work (#41)"
+        ],
+        "steps": [
+          "After the verdict, tap through to /saved on both devices; the pick is sitting there on both.",
+          "Add the beat to the #29 script and rehearse it in #30.",
+          "15 minutes of work if #41 works. Drop it without regret if #41 slipped."
+        ],
+        "contract": "Depends on #41 and #25.",
+        "gotchas": [
+          "Only include it if it has been rehearsed — an unrehearsed closing beat is how demos end on a fumble."
+        ],
+        "refs": [
+          "PLAN.md §K issue 42"
+        ],
+        "verify": [
+          "Beat is in the 2-minute script and rehearsed"
+        ]
+      }
+    }
   ]
 }
