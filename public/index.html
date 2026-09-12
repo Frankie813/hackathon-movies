@@ -3,8 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MovieMatch</title>
+    <title>MovieNight — MovieMatch</title>
     <meta name="description" content="Swipe trailers. Match with friends. Watch something tonight." />
+    <meta name="theme-color" content="#0b0b10" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🍿</text></svg>" />
+    <!-- No web fonts, no analytics, no CDN. Venue wifi is the highest-rated
+         risk in PLAN.md §L and this page is the first thing a guest loads. -->
     <style>
       :root { color-scheme: dark; }
       * { box-sizing: border-box; }
@@ -13,34 +17,60 @@
         min-height: 100vh;
         display: grid;
         place-items: center;
-        padding: 24px;
+        padding: 32px 20px;
         background: #0b0b10;
         color: #f4f4f6;
         font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
         text-align: center;
       }
-      main { max-width: 34rem; }
-      h1 { margin: 0 0 0.4em; font-size: clamp(2.25rem, 9vw, 3.5rem); letter-spacing: -0.03em; }
-      p { margin: 0 0 1.25em; color: #a9a9b8; }
-      .tag {
-        display: inline-block;
-        padding: 0.35em 0.9em;
-        border: 1px solid #2a2a38;
-        border-radius: 999px;
-        font-size: 0.8rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #7c7c90;
+      main { max-width: 30rem; width: 100%; }
+      h1 { margin: 0 0 0.3em; font-size: clamp(2.5rem, 11vw, 3.75rem); letter-spacing: -0.035em; }
+      .pitch { margin: 0 0 2.25em; font-size: clamp(1rem, 4.4vw, 1.2rem); color: #c9c9d6; }
+      .qr {
+        width: min(220px, 62vw);
+        margin: 0 auto 1em;
+        padding: 12px;
+        background: #fff;
+        border-radius: 14px;
+      }
+      .qr svg { display: block; width: 100%; height: auto; }
+      .label { margin: 0 0 0.35em; font-size: 0.95rem; color: #f4f4f6; }
+      .sub { margin: 0; font-size: 0.85rem; color: #8a8a9c; }
+      a { color: #8ab4ff; }
+      hr { margin: 2.5em 0 1.75em; border: 0; border-top: 1px solid #23232e; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #f4f4f6;
+        background: #17171f;
+        padding: 0.15em 0.45em;
+        border-radius: 6px;
       }
     </style>
   </head>
   <body>
     <main>
       <h1>MovieMatch</h1>
-      <p>Swipe trailers. Match with friends. Watch something tonight.</p>
-      <!-- Placeholder for issue #2. Issue #33 replaces this with the real
-           landing page and the /j/{code} join route on the .tech domain. -->
-      <span class="tag">Hosting placeholder</span>
+      <p class="pitch">Swipe trailers. Match with friends. Watch something tonight.</p>
+
+      <div class="qr" id="install-qr"></div>
+      <p class="label">Scan to get the app</p>
+      <p class="sub"><a id="install-link" href="https://expo.dev/go">or open the download page</a></p>
+
+      <hr />
+
+      <p class="label">Already have a code?</p>
+      <p class="sub">Open <code>movienight.tech/j/YOURCODE</code>, or type it on the Group tab in the app.</p>
     </main>
+
+    <script src="/qr.js"></script>
+    <script>
+      (function () {
+        var mm = window.MovieMatch;
+        var link = document.getElementById('install-link');
+        link.href = mm.INSTALL_URL;
+        document.getElementById('install-qr').innerHTML =
+          mm.qrSvg(mm.INSTALL_URL, { label: 'QR code to install MovieMatch' });
+      })();
+    </script>
   </body>
 </html>
