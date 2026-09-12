@@ -1,6 +1,11 @@
 // Covers the three acceptance criteria of issue #20: a ≤20-word reason, a
 // second request served from cache with zero network, and a 429 that leaves the
 // deck running instead of throwing.
+//
+// Named for whyLine() rather than the module, because there are two Gemini
+// modules: lib/gemini.ts is the shared client plus this per-card line (#3, #20),
+// while src/lib/gemini.ts is the group compromise (#21) and has its own
+// __tests__/gemini.test.ts.
 
 import type { Movie } from '../src/types';
 
