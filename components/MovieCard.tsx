@@ -145,6 +145,17 @@ export function MovieCard({
         </View>
       ))}
 
+      {/* Loading animation while the trailer's network fetch/init is in flight */}
+      {showVideo && !videoReady && (
+        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay]} pointerEvents="none">
+          <Image
+            source={require('@/assets/trailer-loading.gif')}
+            style={styles.loadingGif}
+            resizeMode="contain"
+          />
+        </View>
+      )}
+
       {showVideo && (
         // pointerEvents="none": taps/drags go to the swipe gesture, not the
         // player. The card's own chrome (gradients, title, mute button) is
@@ -300,6 +311,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+  },
+  loadingOverlay: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingGif: {
+    width: 90,
+    height: 80,
   },
   placeholderEmoji: {
     fontSize: 54,
