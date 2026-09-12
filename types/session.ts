@@ -45,9 +45,9 @@ export interface Match {
   sessionCode: string;
   matchedAt: number;
   /**
-   * Gemini's one-liner and the script Reel speaks (#21, #35). Optional because
-   * the reveal must render before — and without — the LLM round trip.
+   * Gemini's compromise one-liner (#21) — the whole payoff on the reveal
+   * screen. Optional because the reveal must render before — and without —
+   * the LLM round trip.
    */
   why?: string;
-  narration?: string;
 }

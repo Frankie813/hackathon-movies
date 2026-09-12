@@ -1,5 +1,5 @@
 // types/movie.ts — the shape of the catalog, shared by seed.json, the TMDB
-// fetch layer (#15), the taste vector (#12) and the narration pre-gen (#38).
+// fetch layer (#15) and the taste vector (#12).
 //
 // This is the contract issue #4 produces. Changing it after the fact breaks
 // those consumers silently, so change scripts/curate.mjs and lib/seed.json in

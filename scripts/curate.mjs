@@ -5,8 +5,7 @@
  * Runs once, locally, by a human. The OUTPUT (lib/seed.json) is committed;
  * the app never calls this at runtime. seed.json is the offline safety net the
  * whole demo rests on (PLAN.md §L rates venue Wi-Fi as the top risk), and it
- * gates #12 (taste vector), #15 (fetch layer fallback) and #38 (pre-generated
- * narration).
+ * gates #12 (taste vector) and #15 (fetch layer fallback).
  *
  * Pipeline, per AGENTS.md §4 and PLAN.md §D:
  *
@@ -532,9 +531,9 @@ function buildMovie(detail, video) {
 }
 
 /**
- * Guards the contract in examples/types.ts. #12 reads genreIds and keywords,
- * #15 returns this shape and #38 iterates it — a drift here breaks them
- * silently, hours later, on someone else's branch.
+ * Guards the contract in examples/types.ts. #12 reads genreIds and keywords
+ * and #15 returns this shape — a drift here breaks them silently, hours
+ * later, on someone else's branch.
  */
 function assertMovieShape(movie) {
   const problems = [];
