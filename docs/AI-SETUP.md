@@ -24,6 +24,30 @@ phone, not secret) and server-only keys is the whole point of the file.
 `.claude/settings.json`. A `PostToolUse` hook additionally refuses to write a
 file containing something that looks like a real key.
 
+Treat `.env` as visible to anything that runs in this repo, agents included —
+the deny rule stops casual reads, not code that loads the file on purpose
+(`scripts/curate.mjs` has to). Keys you would actually mind leaking belong in
+the Cloud Function secret store (#34), per AGENTS.md §3.
+
+### `YOUTUBE_API_KEY` — not yet in `.env.example`
+
+Only `scripts/curate.mjs` (issue #4) uses it, to prove every embed key is
+embeddable, public, not age-restricted and not US-region-blocked before it ships
+in `lib/seed.json`. It never reaches the app. You only need it to regenerate the
+seed — the committed `lib/seed.json` works without it.
+
+1. Enable the API in the same Google Cloud project as Firebase:
+   <https://console.cloud.google.com/apis/library/youtube.googleapis.com?project=moviematch-hackwestx>
+2. Create an API key:
+   <https://console.cloud.google.com/apis/credentials?project=moviematch-hackwestx>
+3. Add to `.env` (the restriction dropdown only lists APIs already enabled, so
+   enable first, then hard-reload the credentials page):
+
+```bash
+YOUTUBE_API_KEY=
+MOVIECLIPS_CHANNEL_ID=   # optional; only if the @MOVIECLIPS handle lookup fails
+```
+
 ## 3. Claude Code
 
 Nothing to install. Open the repo and it picks up:

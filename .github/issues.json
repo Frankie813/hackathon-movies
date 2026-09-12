@@ -248,7 +248,7 @@
       "phase": 0,
       "est": "3h",
       "deps": [],
-      "desc": "Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema.",
+      "desc": "Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.mjs`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema.",
       "ac": [
         "seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`)",
         "App loads seed.json with Wi-Fi off",
@@ -257,8 +257,8 @@
       "agent": {
         "goal": "A committed seed.json of ~60 movies with validated YouTube keys. This is the offline safety net the whole demo rests on, and it gates #12 and #15.",
         "files": [
-          "scripts/curate.js — the curation script (Node, runs once, output committed)",
-          "src/lib/seed.json — the committed output",
+          "scripts/curate.mjs — the curation script (Node, runs once, output committed)",
+          "lib/seed.json — the committed output",
           "examples/seed.sample.json — the shape to match, already in the repo"
         ],
         "steps": [
@@ -269,7 +269,7 @@
           "Set start to skip studio logos (5–10s is usually right) and end at start+15..20s.",
           "Write { key, start, end, source } or video: null. A null video is fine — the card falls back to the poster (#7).",
           "Map providers from watch/providers.results.US.flatrate[].provider_name.",
-          "Commit src/lib/seed.json. C reviews the schema against src/types.ts (#5) before it is considered done."
+          "Commit lib/seed.json. C reviews the schema against types/movie.ts (#5) before it is considered done."
         ],
         "contract": "Output must satisfy the Movie[] interface in examples/types.ts exactly — id, title, year, genreIds, genreNames, keywords, poster, providers, video. #12 reads genreIds and keywords; #15 returns this shape.",
         "gotchas": [
@@ -284,7 +284,7 @@
           "examples/types.ts"
         ],
         "verify": [
-          "node scripts/curate.js writes ~60 entries",
+          "node scripts/curate.mjs writes ~60 entries",
           "Every non-null video key loads in a browser embed",
           "The app reads seed.json with Wi-Fi off"
         ]
@@ -308,7 +308,7 @@
       "agent": {
         "goal": "One types file every screen and every lib imports, so three people building in parallel cannot disagree about shapes.",
         "files": [
-          "src/types.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
+          "types/movie.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
         ],
         "steps": [
           "Start from examples/types.ts verbatim — Movie, MovieVideo, VideoSource are already agreed.",
@@ -634,7 +634,7 @@
         ],
         "refs": [
           "PLAN.md §H (scoring spec)",
-          "src/types.ts (#5)"
+          "types/movie.ts (#5)"
         ],
         "verify": [
           "Liking two action films moves action titles up the deck",
@@ -743,7 +743,7 @@
         "goal": "One catalog API for the whole app that never fails loudly — online it is TMDB, offline it is seed.json, and callers cannot tell the difference.",
         "files": [
           "src/lib/tmdb.ts",
-          "src/lib/seed.json — the fallback from #4"
+          "lib/seed.json — the fallback from #4"
         ],
         "steps": [
           "getDeck(filters?) → /discover/movie with the v4 bearer; then hydrate each result with /movie/{id}?append_to_response=videos,watch/providers,keywords.",
