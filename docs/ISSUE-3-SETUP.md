@@ -6,12 +6,13 @@ Express/Vultr, Blaze, ElevenLabs, and any other server-side component.
 ## Already prepared
 
 - The Firebase JavaScript SDK is installed.
-- `src/lib/gemini.ts` initializes Firebase AI Logic with the Gemini Developer API
-  backend and pins `gemini-3.5-flash`.
+- `lib/gemini.ts` initializes Firebase AI Logic with the Gemini Developer API
+  backend and pins `gemini-3.5-flash`. It sits beside `lib/firebase.ts` from #2.
 - `/api-check` is a development-only screen for one manual TMDB request and one
   manual Gemini request. It never runs automatically.
-- `TMDB_BEARER` stays in ignored `.env` for local scripts. The screen accepts the
-  token at runtime so the credential is not compiled into the client bundle.
+- The TMDB read bearer stays in ignored `.env` for local scripts, under either
+  `TMDB_BEARER` or `TMDB_READ_ACCESS_TOKEN`. The dev screen accepts the token at
+  runtime so the credential is never compiled into the client bundle.
 - `scripts/scan-client-secrets.mjs` compares the real local credential against an
   exported client without printing it.
 
@@ -28,8 +29,9 @@ Express/Vultr, Blaze, ElevenLabs, and any other server-side component.
 
 No further TMDB account work is needed: the saved v4 API Read Access Token has
 already returned 20 results from `/discover/movie`.
-The existing curation script from issue #4 reads `TMDB_READ_ACCESS_TOKEN`, so
-`.env.example` preserves that name alongside issue #3's `TMDB_BEARER` contract.
+The curation script from issue #4 reads `TMDB_READ_ACCESS_TOKEN` while issue #3's
+contract names `TMDB_BEARER`. They are the same v4 token, so both scripts here
+accept either name and a `.env` filled in for one issue works for the other.
 
 ## Verification
 

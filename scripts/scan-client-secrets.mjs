@@ -16,8 +16,13 @@ const secrets = names
   .map((name) => ({ name, value: process.env[name]?.trim() }))
   .filter(({ value }) => value);
 
-if (!secrets.some(({ name }) => name === 'TMDB_BEARER')) {
-  throw new Error('TMDB_BEARER is required for the scan; its value will not be printed.');
+// The scan is only meaningful if it has a real credential to look for, so
+// require a TMDB token under either accepted name (see scripts/check-issue-3.mjs).
+if (!secrets.some(({ name }) => name === 'TMDB_BEARER' || name === 'TMDB_READ_ACCESS_TOKEN')) {
+  throw new Error(
+    'Set TMDB_BEARER or TMDB_READ_ACCESS_TOKEN in .env before scanning; ' +
+      'the value will not be printed.',
+  );
 }
 
 let files = 0;

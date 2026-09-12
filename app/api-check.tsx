@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, ScrollView, Text, TextInput } from 'react-native';
-import { apiCheckError, checkGemini, checkTmdb } from '../src/lib/api-smoke';
+import { apiCheckError, checkGemini, checkTmdb } from '../lib/api-smoke';
 
 /** Development-only, manually triggered checks; never runs during startup. */
 export default function ApiCheckScreen() {

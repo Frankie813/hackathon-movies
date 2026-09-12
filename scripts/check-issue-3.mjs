@@ -5,22 +5,32 @@ import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
 
 let failed = false;
 
-try {
-  const response = await fetch(
-    'https://api.themoviedb.org/3/discover/movie?include_adult=false&language=en-US&page=1',
-    {
-      headers: { Authorization: `Bearer ${process.env.TMDB_BEARER}` },
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
-  const body = await response.json();
-  if (!response.ok || !Array.isArray(body.results) || body.results.length === 0) {
-    throw new Error('TMDB verification failed.');
-  }
-  console.log(`TMDB: passed (${body.results.length} discover results)`);
-} catch {
-  console.error('TMDB: failed (credential value suppressed)');
+// TMDB_BEARER is issue #3's contract name; TMDB_READ_ACCESS_TOKEN is what the
+// #4 curation script already reads. Same v4 token — accept either so a .env
+// filled in for one issue does not fail the other.
+const tmdbBearer = (process.env.TMDB_BEARER || process.env.TMDB_READ_ACCESS_TOKEN || '').trim();
+
+if (!tmdbBearer) {
+  console.error('TMDB: failed (set TMDB_BEARER or TMDB_READ_ACCESS_TOKEN in .env)');
   failed = true;
+} else {
+  try {
+    const response = await fetch(
+      'https://api.themoviedb.org/3/discover/movie?include_adult=false&language=en-US&page=1',
+      {
+        headers: { Authorization: `Bearer ${tmdbBearer}` },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    const body = await response.json();
+    if (!response.ok || !Array.isArray(body.results) || body.results.length === 0) {
+      throw new Error('TMDB verification failed.');
+    }
+    console.log(`TMDB: passed (${body.results.length} discover results)`);
+  } catch {
+    console.error('TMDB: failed (credential value suppressed)');
+    failed = true;
+  }
 }
 
 if (process.argv.includes('--gemini')) {
