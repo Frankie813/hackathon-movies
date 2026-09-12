@@ -3,9 +3,8 @@ description: Re-verify the volatile external facts the plan depends on (model na
 allowed-tools: Bash, Read, Edit, WebFetch, WebSearch, mcp__context7
 ---
 
-`PLAN.md` ends with an explicit verification note: Gemini model names, ElevenLabs
-credit costs, and the MLH coupon mechanics were checked against 2026 sources but
-all move quickly. This command re-checks them. Run it at the start of the build,
+`PLAN.md` ends with an explicit verification note: Gemini model names and the
+MLH coupon mechanics were checked against 2026 sources but both move quickly. This command re-checks them. Run it at the start of the build,
 and again before the demo.
 
 Check each of these and report **current value vs. what the plan assumes**:
@@ -16,13 +15,10 @@ Check each of these and report **current value vs. what the plan assumes**:
 | Gemini JS SDK | `@google/genai` (not `@google/generative-ai`) | `npm view @google/genai version` |
 | Gemini free tier | ~1,500 req/day, 15 RPM | ai.google.dev/pricing |
 | Structured output | `responseMimeType` + `responseSchema` in `config` | context7 |
-| ElevenLabs model | `eleven_flash_v2_5`, `mp3_44100_128` | elevenlabs.io/docs |
-| ElevenLabs SDK | `@elevenlabs/elevenlabs-js` | `npm view @elevenlabs/elevenlabs-js version` |
-| ElevenLabs free tier | 10,000 credits/mo, attribution required | elevenlabs.io pricing |
-| Expo audio module | `expo-audio` (`expo-av` is deprecated) | context7 `/expo/expo` |
+| Expo audio module | `expo-audio`, audio session only (`expo-av` is deprecated) | context7 `/expo/expo` |
 | Expo SDK | 52+ | `npx expo --version`, docs.expo.dev |
 | Swipe / video libs | `rn-swiper-list`, `react-native-youtube-iframe` | `npm view <pkg> version`, check Expo-Go compatibility |
-| Firebase AI Logic | GA; App Check enforcement Nov 2 2026 | firebase.google.com/docs/ai-logic |
+| Firebase AI Logic | GA; free on Spark via the **Gemini Developer API** backend (Vertex backend needs Blaze); App Check enforcement Nov 2 2026 | firebase.google.com/docs/ai-logic |
 | TMDB | free non-commercial, ~40–50 req/s, attribution required | developer.themoviedb.org |
 
 Prefer **context7** for SDK shapes and npm for versions. Use the web only for
