@@ -92,6 +92,28 @@ describe('seedCandidates', () => {
     expect(pool.map((m) => m.id)).toEqual([102]);
   });
 
+  it('counts only un-swiped cards against maxPool', async () => {
+    const { vector, liked } = fiveLikes();
+    // SwipeDeck keeps the consumed prefix in its deck array, so a caller passes
+    // swiped ids inside `deck`. Counting those would starve the pool exactly
+    // when the deck is closest to running dry.
+    similar.mockResolvedValue([movie(100)]);
+
+    const deck = [901, 902, 903];
+    const pool = await seedCandidates(vector, liked, { deck, swiped: [901, 902], maxPool: 2 });
+
+    expect(pool.map((m) => m.id)).toEqual([100]);
+  });
+
+  it('expands a repeated like once', async () => {
+    const { vector } = fiveLikes();
+    similar.mockResolvedValue([]);
+
+    await seedCandidates(vector, [movie(1), movie(1), movie(2), movie(3)]);
+
+    expect(similar.mock.calls.map(([id]) => id)).toEqual([1, 2, 3]);
+  });
+
   it('adds nothing when the pool is already full', async () => {
     const { vector, liked } = fiveLikes();
     similar.mockResolvedValue([movie(100)]);

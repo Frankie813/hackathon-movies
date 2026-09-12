@@ -33,11 +33,13 @@ export interface SeedCandidatesOptions {
   /**
    * TMDB ids currently in the deck. Deduped against, and counted against
    * MAX_POOL — pass this, or the caller gets back titles it is already showing.
+   * Safe to pass the whole deck including cards already behind the user, as
+   * long as those ids are in `swiped`: only the ones still ahead are counted.
    */
   deck?: Iterable<number>;
   /** TMDB ids already swiped. Never returned again, liked or disliked. */
   swiped?: Iterable<number>;
-  /** Ceiling on `deck.length + result.length`. Defaults to 100. */
+  /** Ceiling on `un-swiped deck + result.length`. Defaults to 100. */
   maxPool?: number;
 }
 
@@ -62,29 +64,45 @@ export async function seedCandidates(
   opts: SeedCandidatesOptions = {},
 ): Promise<Movie[]> {
   const deck = new Set(opts.deck ?? []);
+  const swiped = new Set(opts.swiped ?? []);
   const maxPool = opts.maxPool ?? MAX_POOL;
 
-  const room = maxPool - deck.size;
+  // Count only cards still ahead of the user. A caller whose deck array retains
+  // the consumed prefix — components/SwipeDeck.tsx does, it advances an index
+  // rather than shifting — would otherwise hit maxPool on swipe 100 and stop
+  // seeding for good, exactly when the deck is closest to running dry.
+  let ahead = 0;
+  for (const id of deck) if (!swiped.has(id)) ahead += 1;
+
+  const room = maxPool - ahead;
   if (room <= 0 || liked.length === 0) return [];
 
   // Top-3 by the *current* taste vector, not swipe order: after five swipes the
   // vector knows which of the likes was on-taste and which was a one-off.
-  const seeds = rank(v, liked).slice(0, TOP_LIKES);
+  // Deduped by id first: a repeated entry in `liked` (a likes array replayed
+  // from Firestore, a card re-inserted by a re-rank) would otherwise spend one
+  // of the three expansions on a round-trip we already made.
+  const seedIds = [...new Set(rank(v, liked).map((movie) => movie.id))].slice(0, TOP_LIKES);
 
-  // In parallel: each similar() carries its own deadline and returns seed-based
-  // results rather than throwing, so there is no failure to propagate here.
+  // In parallel: each similar() carries its own deadline, and #15 documents it
+  // as falling back to the seed catalog rather than throwing.
   //
-  // Offline that fallback is what makes this a no-op without a special case:
-  // #15 answers from the seed catalog, and offline the seed catalog *is* the
-  // deck, so every related title dedupes away below and the deck is left
-  // untouched. On a mid-session drop the deck is live titles instead, and the
-  // seed suggestions that survive are real, pre-validated cards — better than
-  // returning nothing, and still no risk of a duplicate.
-  const lists = await Promise.all(seeds.map((movie) => similar(movie.id)));
+  // That fallback is what makes this a no-op offline without a special case:
+  // offline the seed catalog *is* the deck, so every related title dedupes away
+  // below and the deck is left untouched. On a mid-session drop the deck is
+  // live titles instead, and the seed suggestions that survive are real,
+  // pre-validated cards — better than returning nothing, and still no risk of a
+  // duplicate.
+  //
+  // allSettled rather than all even so: this runs inside the swipe handler on
+  // the demo path, so one future regression in #15 should cost one list, not a
+  // rejected promise mid-gesture.
+  const settled = await Promise.allSettled(seedIds.map((id) => similar(id)));
+  const lists = settled.map((result) => (result.status === 'fulfilled' ? result.value : []));
 
   const seen = new Set<number>([
     ...deck,
-    ...(opts.swiped ?? []),
+    ...swiped,
     ...liked.map((movie) => movie.id),
   ]);
 
@@ -93,8 +111,10 @@ export async function seedCandidates(
     if (seen.has(movie.id)) continue;
     seen.add(movie.id);
     // #15 already drops poster-only titles, but a card with no key is a dead
-    // player mid-demo — cheap to re-check, expensive to get wrong.
-    if (movie.video === null) continue;
+    // player mid-demo — cheap to re-check, expensive to get wrong. Checked
+    // through the key rather than against null so a missing field or an empty
+    // string in a hand-edited seed entry fails closed too.
+    if (!movie.video?.key) continue;
     fresh.push(movie);
   }
 
