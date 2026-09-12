@@ -31,6 +31,7 @@ import { DynamicHueBackdrop } from './DynamicHueBackdrop';
 import type { Movie, TasteVector } from '@/types';
 import { applySwipe, rank } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
+import { exploreRank } from '@/src/lib/explore';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
@@ -213,7 +214,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // behavior stay intact. Only unseen cards may move.
         const nextDeck = [
           ...deck.slice(0, nextIndex),
-          ...rank(taste.current, deck.slice(nextIndex)),
+          ...exploreRank(taste.current, deck.slice(nextIndex)),
         ];
         setDeck(nextDeck);
         maybeSeedMore(nextDeck, nextIndex);
