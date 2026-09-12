@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -27,7 +28,8 @@ import Animated, {
 import { MovieCard } from './MovieCard';
 import { Stamp } from './Stamp';
 import { DynamicHueBackdrop } from './DynamicHueBackdrop';
-import type { Movie } from '@/types';
+import type { Movie, TasteVector } from '@/types';
+import { applySwipe, rank } from '@/src/lib/taste';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
@@ -64,6 +66,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const cardH = height;
 
   const [deck, setDeck] = useState<Movie[]>(movies);
+  const taste = useRef<TasteVector>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [previousMovie, setPreviousMovie] = useState<Movie | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -93,6 +96,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // Sync internal deck when movies prop changes
   useEffect(() => {
     setDeck(movies);
+    taste.current = {};
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -110,6 +114,13 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       const nextIndex = swipedIndex + 1;
 
       if (movie) {
+        taste.current = applySwipe(taste.current, movie, direction);
+        // Retain the consumed prefix so callback indices and end-of-deck
+        // behavior stay intact. Only unseen cards may move.
+        setDeck([
+          ...deck.slice(0, nextIndex),
+          ...rank(taste.current, deck.slice(nextIndex)),
+        ]);
         setPreviousMovie(movie);
         if (direction === 'left') {
           onSwipeLeft?.(swipedIndex, movie);
@@ -173,6 +184,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   );
 
   const handleReset = useCallback(() => {
+    taste.current = {};
     setDeck([...movies]);
     setCurrentIndex(0);
     setPreviousMovie(null);

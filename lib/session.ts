@@ -118,8 +118,10 @@ function toIdArray(value: unknown): number[] {
   return Array.isArray(value) ? value.filter((id): id is number => typeof id === 'number') : [];
 }
 
-function toMember(uid: string, data: DocumentData): Member {
-  const member: Member = {
+// The Firestore adapter always normalizes joinedAt, even though the shared
+// Member contract permits callers without session metadata.
+function toMember(uid: string, data: DocumentData): Member & { joinedAt: number } {
+  const member: Member & { joinedAt: number } = {
     uid,
     likes: toIdArray(data.likes),
     dislikes: toIdArray(data.dislikes),
