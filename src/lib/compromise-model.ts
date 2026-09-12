@@ -8,7 +8,8 @@ export async function generateCompromiseText(prompt: string): Promise<string> {
       responseMimeType: 'application/json',
       responseSchema: Schema.object({
         properties: { pick: Schema.string(), tmdb_id: Schema.integer(), why: Schema.string(), runner_up: Schema.string() },
-        optionalProperties: ['tmdb_id', 'runner_up'],
+        // tmdb_id is what validation matches against the catalog, so it is required.
+        optionalProperties: ['runner_up'],
       }),
     },
   }, { timeout: 12_000 });

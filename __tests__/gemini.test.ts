@@ -1,4 +1,4 @@
-import { createGroupCompromise, COMPROMISE_SCHEMA } from '../src/lib/gemini';
+import { algorithmicWinner, createGroupCompromise, COMPROMISE_SCHEMA } from '../src/lib/gemini';
 import type { Member, Movie } from '../src/types';
 
 const movies: Movie[] = [
@@ -109,5 +109,41 @@ describe('group compromise', () => {
     const service = createGroupCompromise({ generate });
     expect(await service(members, movies)).toBeNull();
     expect(await service(members, movies)).toEqual(valid);
+  });
+
+  it('caps the watch line so a many-provider film still has room to explain', async () => {
+    const crowd: Movie = { id: 4, title: 'Crowd Pleaser', year: 2019, genreIds: [35], genreNames: ['Comedy'],
+      keywords: [], poster: '', providers: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'], video: null };
+    const why = 'Alex trades horror for comedy; Sam gets the lighter night out. Watch on A or B or C or D.';
+    const generate = jest.fn(async () => json({ pick: 'Crowd Pleaser', tmdb_id: 4, why }));
+    expect(await createGroupCompromise({ generate })(members, [...movies, crowd]))
+      .toEqual({ pick: 'Crowd Pleaser', tmdb_id: 4, why });
+    const prompt = generate.mock.calls[0] as unknown as [string];
+    expect(prompt[0]).toContain('Watch on A or B or C or D.');
+  });
+
+  it('still budgets the explanation itself, excluding the watch line', async () => {
+    const crowd: Movie = { id: 4, title: 'Crowd Pleaser', year: 2019, genreIds: [35], genreNames: ['Comedy'],
+      keywords: [], poster: '', providers: ['A', 'B', 'C', 'D'], video: null };
+    const why = `${'x'.repeat(321)} Watch on A or B or C or D.`;
+    expect(await createGroupCompromise({ generate: async () => json({ pick: 'Crowd Pleaser', tmdb_id: 4, why }) })(
+      members, [...movies, crowd])).toBeNull();
+  });
+
+  it('resolves instead of rejecting when a catalog entry has no providers', async () => {
+    const sparse = { ...movies[1], providers: undefined } as unknown as Movie;
+    await expect(createGroupCompromise({ generate: async () => '{}' })(members, [sparse])).resolves.toBeNull();
+  });
+
+  it('resolves null when the injected algorithmic selector throws', async () => {
+    const fallback = () => { throw new Error('selector boom'); };
+    await expect(createGroupCompromise({ generate: async () => '{}', fallback })(members, movies)).resolves.toBeNull();
+  });
+
+  it('picks the most-liked un-vetoed candidate as the algorithmic winner', () => {
+    const fans: Member[] = [{ uid: 'a', name: 'Alex', likes: [2], dislikes: [3] },
+      { uid: 'b', name: 'Sam', likes: [2], dislikes: [] }];
+    expect(algorithmicWinner(fans, movies)).toEqual(movies[1]);
+    expect(algorithmicWinner(members, [movies[2]])).toBeNull();
   });
 });

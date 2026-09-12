@@ -30,7 +30,7 @@ describe('Firebase compromise adapter', () => {
     expect(getGenerativeModel).toHaveBeenCalledWith({}, expect.objectContaining({
       model: 'gemini-3.5-flash',
       generationConfig: expect.objectContaining({ responseMimeType: 'application/json',
-        responseSchema: expect.objectContaining({ optionalProperties: ['tmdb_id', 'runner_up'] }) }),
+        responseSchema: expect.objectContaining({ optionalProperties: ['runner_up'] }) }),
     }), { timeout: 12_000 });
     expect(mockGenerate).toHaveBeenCalledWith('prompt');
   });

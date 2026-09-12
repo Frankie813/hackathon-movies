@@ -20,11 +20,15 @@ export const COMPROMISE_SCHEMA = {
 } as const;
 
 const MAX_WHY_LENGTH = 320;
+const MAX_WHY_WORDS = 45;
 const MAX_CACHE_ENTRIES = 32;
+/** Matches the card's `providers.slice(0, 4)` so the line stays readable on screen. */
+const MAX_WATCH_PROVIDERS = 4;
 
 function watchLine(movie: Movie): string {
-  return movie.providers.length
-    ? `Watch on ${movie.providers.join(' or ')}.`
+  const providers = movie.providers?.slice(0, MAX_WATCH_PROVIDERS) ?? [];
+  return providers.length
+    ? `Watch on ${providers.join(' or ')}.`
     : 'Check local streaming availability.';
 }
 
@@ -47,7 +51,7 @@ function promptFor(members: Member[], catalog: Movie[], eligible: Movie[], fixed
     'Return JSON with pick, tmdb_id, why, and optional runner_up. Copy titles and IDs exactly.',
     'Address the group directly. In why, name who compromises on which preference and what they gain.',
     'Use only evidence in the supplied swipes and genres. If no trade-off is evidenced, say so; never invent preferences.',
-    'No spoilers. At most 45 words and 320 characters, including the mandatory watch_line at the end.',
+    `No spoilers. At most ${MAX_WHY_WORDS} words and ${MAX_WHY_LENGTH} characters, not counting the mandatory watch_line at the end.`,
     'End why with the chosen candidate\'s exact watch_line. Do not claim other streaming availability.',
     JSON.stringify({
       members: members.map((member, index) => ({
@@ -71,8 +75,12 @@ function validate(text: string, eligible: Movie[], fixed?: Movie): Compromise | 
   if (!movie || !Number.isInteger(data.tmdb_id) || data.pick !== movie.title
     || (fixed && movie.id !== fixed.id) || typeof data.why !== 'string') return null;
   const why = data.why.trim();
-  if (!why || why.length > MAX_WHY_LENGTH || why.split(/\s+/).length > 45
-    || !why.endsWith(watchLine(movie))) return null;
+  const line = watchLine(movie);
+  if (!why || !why.endsWith(line)) return null;
+  // The watch line is mandatory and can be long, so it is excluded from the
+  // budget; otherwise a film with many providers leaves no room to explain.
+  const body = why.slice(0, why.length - line.length).trim();
+  if (!body || body.length > MAX_WHY_LENGTH || body.split(/\s+/).length > MAX_WHY_WORDS) return null;
   const runner = eligible.find((candidate) => candidate.title === data.runner_up && candidate.id !== movie.id);
   return { pick: movie.title, tmdb_id: movie.id, why, ...(runner ? { runner_up: runner.title } : {}) };
 }
@@ -92,7 +100,10 @@ export function createGroupCompromise({ generate, fallback }: CompromiseDependen
     if (!members.length) return null;
     const eligible = candidates(members, catalog);
     if (!eligible.length) return null;
-    const prompt = promptFor(members, catalog, eligible);
+    // Building the prompt touches catalog fields that a live TMDB entry may be
+    // missing; the contract is Promise<Compromise | null>, never a rejection.
+    let prompt: string;
+    try { prompt = promptFor(members, catalog, eligible); } catch { return null; }
     const cached = cache.get(prompt);
     if (cached) return { ...cached };
     const existing = pending.get(prompt);
@@ -102,7 +113,8 @@ export function createGroupCompromise({ generate, fallback }: CompromiseDependen
       let result: Compromise | null = null;
       try { result = validate(await generate(prompt), eligible); } catch { /* Offline: try the approved winner. */ }
       if (!result && fallback) {
-        const chosen = fallback(members, catalog);
+        let chosen: Movie | null = null;
+        try { chosen = fallback(members, catalog); } catch { /* Selector failed: stay null. */ }
         const fixed = eligible.find((movie) => movie.id === chosen?.id);
         if (fixed) {
           try { result = validate(await generate(promptFor(members, catalog, eligible, fixed)), eligible, fixed); }
@@ -128,6 +140,25 @@ export async function generateCompromiseText(prompt: string): Promise<string> {
   const model = await import('./compromise-model');
   return model.generateCompromiseText(prompt);
 }
-// #17 will supply its selector via createGroupCompromise; until then invalid
-// output returns null instead of inventing an algorithmic winner.
-export const groupCompromise = createGroupCompromise({ generate: generateCompromiseText });
+/**
+ * Deterministic stand-in for #17's winner: the un-vetoed candidate the most
+ * members liked, ties broken by catalog order. Swap for #17's selector via
+ * `createGroupCompromise({ fallback })` once it lands.
+ */
+export function algorithmicWinner(members: Member[], catalog: Movie[]): Movie | null {
+  const eligible = candidates(members, catalog);
+  if (!eligible.length) return null;
+  const likes = new Map<number, number>();
+  for (const member of members) {
+    for (const id of member.likes) likes.set(id, (likes.get(id) ?? 0) + 1);
+  }
+  return eligible.reduce((best, movie) =>
+    (likes.get(movie.id) ?? 0) > (likes.get(best.id) ?? 0) ? movie : best, eligible[0]);
+}
+
+// Validation failures now fall back to an algorithmic winner and ask Gemini
+// only to explain it, rather than leaving the reveal blank.
+export const groupCompromise = createGroupCompromise({
+  generate: generateCompromiseText,
+  fallback: algorithmicWinner,
+});

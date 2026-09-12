@@ -18,16 +18,18 @@ again when validating the response. Unknown IDs, mismatched titles, malformed
 JSON, missing IDs, overlong explanations, and incorrect watch-line endings are
 rejected. Invalid runner-up titles are omitted.
 
-The explanation is limited to 45 words and 320 characters. Its ending must
-match the catalog's provider line; absent providers produce “Check local
-streaming availability.” Provider data is only as current as the supplied
+The explanation is limited to 45 words and 320 characters, measured on the
+explanation alone — the mandatory watch line is excluded, so a film with many
+providers still has room for the trade-off. Its ending must match the catalog's
+provider line, which lists at most four providers (the same cap the card uses);
+absent providers produce “Check local streaming availability.” Provider data is only as current as the supplied
 catalog. The prompt requires a named, evidence-based trade-off; semantic truth
 and actual screen fit still require review, not just schema validation.
 
 `COMPROMISE_SCHEMA` exports the JSON schema for #29's pitch slide. Firebase uses
-the equivalent Schema helpers: pick and why are required; tmdb_id and runner_up
-are optional at generation time, matching the issue schema. Validation still
-requires an integer tmdb_id before returning anything to the caller.
+the equivalent Schema helpers, with runner_up the only optional property.
+tmdb_id is required at generation time because validation matches it against
+the catalog and rejects a response that omits it.
 
 ## Integration when #17 lands
 
@@ -53,7 +55,9 @@ After an invalid response, an injected fallback winner is checked against the
 catalog and vetoes. Gemini then receives one explanation-only request with
 that exact winner fixed. If that fails, return null; the caller keeps its
 algorithmic result without invented AI text. Until #17 is connected, the default
-groupCompromise function returns null for invalid responses.
+groupCompromise is wired to `algorithmicWinner` — a deterministic stand-in that
+picks the un-vetoed candidate the most members liked — so a rejected response
+still reaches the reveal with explained text. Replace it with #17's selector.
 
 Identical concurrent requests are coalesced. Up to 32 validated results are
 cached in memory by the complete prompt (group preferences and catalog), so
