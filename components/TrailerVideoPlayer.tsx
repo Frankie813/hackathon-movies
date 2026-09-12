@@ -60,6 +60,13 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           play={play}
           mute={muted}
           forceAndroidAutoplay
+          // Loads the player shell from the bundled local HTML instead of
+          // fetching it from https://lonelycpp.github.io on every card: one
+          // fewer network round-trip per swipe (helps both lag and the
+          // offline path — PLAN.md §L), and guarantees the shell's JS
+          // actually matches this installed package version, which the
+          // document/window postMessage bridge below depends on.
+          useLocalHTML
           initialPlayerParams={{
             start,
             end,
