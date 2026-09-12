@@ -5,7 +5,7 @@
 // dependency graph at render time.
 //
 // Usage:
-//   node scripts/build-board.mjs [outfile]      # default: ./board.html
+//   node scripts/build-board.mjs [outfile]      # default: docs/index.html (GitHub Pages)
 //
 // Needs `gh` authenticated for the repo. Falls back to "nothing closed yet" if
 // the gh call fails, so the board still renders offline.
@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 
 const REPO = process.env.REPO ?? 'Frankie813/hackathon-movies';
 const HERE = new URL('.', import.meta.url);
-const out = process.argv[2] ?? 'board.html';
+const out = process.argv[2] ?? new URL('../docs/index.html', HERE).pathname;
 
 const plan = JSON.parse(readFileSync(new URL('../.github/issues.json', HERE), 'utf8'));
 
