@@ -30,6 +30,7 @@ import { Stamp } from './Stamp';
 import { DynamicHueBackdrop } from './DynamicHueBackdrop';
 import type { Movie, TasteVector } from '@/types';
 import { applySwipe, rank } from '@/src/lib/taste';
+import { seedCandidates } from '@/src/lib/candidates';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
@@ -49,6 +50,12 @@ export interface SwipeDeckProps {
   onSwipedAll?: () => void;
   renderCard?: (movie: Movie, index: number, active: boolean) => React.JSX.Element;
   whyFor?: (movie: Movie) => string | undefined;
+  /**
+   * Pull related titles from TMDB (#13) as the deck runs low, so it does not
+   * dead-end on "DECK COMPLETED" mid-demo. Off makes the deck exactly `movies`
+   * and issues no network calls — useful for rehearsing the end-of-deck state.
+   */
+  autoSeed?: boolean;
 }
 
 export interface SwipeDeckRef {
@@ -63,6 +70,15 @@ const EXIT_DURATION = 200;
 /** Module-level so the default prop keeps a stable identity across renders. */
 const COLD_TASTE: TasteVector = {};
 
+/**
+ * Unseen cards left before we ask #13 for more. Low enough that a full deck
+ * never triggers a network call, high enough that the request has several
+ * swipes to land first: seedCandidates() can take up to 8s on venue Wi-Fi, and
+ * if the deck empties before it returns the user sees "DECK COMPLETED" flash
+ * and then get replaced — which would be a bad beat to hit in front of judges.
+ */
+const LOW_WATER = 5;
+
 export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function SwipeDeck(
   {
     movies = SEED_MOVIES,
@@ -73,6 +89,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     onSwipedAll,
     renderCard,
     whyFor,
+    autoSeed = true,
   },
   ref
 ) {
@@ -84,6 +101,19 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // stored vector lands would shuffle under the judge's thumb (#18).
   const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies));
   const taste = useRef<TasteVector>(initialTaste);
+
+  // #13's inputs. Liked movies in swipe order — seedCandidates re-ranks them
+  // by the current taste vector, so the order here is not load-bearing.
+  const likedRef = useRef<Movie[]>([]);
+  const seedingRef = useRef(false);
+  /**
+   * Likes at the last seeding attempt. An attempt that came back empty (every
+   * suggestion already in the deck, or the Wi-Fi is down) would otherwise retry
+   * on every subsequent swipe; without a new like there is nothing new to ask.
+   */
+  const seededAtLikeCount = useRef(-1);
+  const mounted = useRef(true);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [previousMovie, setPreviousMovie] = useState<Movie | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -114,6 +144,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   useEffect(() => {
     setDeck(rank(initialTaste, movies));
     taste.current = initialTaste;
+    likedRef.current = [];
+    seededAtLikeCount.current = -1;
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -122,6 +154,50 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     nextCardOpacity.value = 1;
     isAnimating.value = false;
   }, [movies, initialTaste, translateX, translateY, nextCardOpacity, isAnimating]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /**
+   * Top up the deck from TMDB once it runs low (#13). Fire-and-forget: it runs
+   * alongside the swipe animation rather than blocking it, appends whatever
+   * lands, and does nothing at all offline — seedCandidates() resolves to an
+   * empty array rather than throwing, so there is no failure path to show.
+   */
+  const maybeSeedMore = useCallback(
+    (currentDeck: Movie[], nextIndex: number) => {
+      const liked = likedRef.current;
+      if (!autoSeed || liked.length === 0) return;
+      if (currentDeck.length - nextIndex > LOW_WATER) return;
+      if (seedingRef.current || seededAtLikeCount.current === liked.length) return;
+
+      seedingRef.current = true;
+      seededAtLikeCount.current = liked.length;
+
+      seedCandidates(taste.current, liked, {
+        deck: currentDeck.map((m) => m.id),
+        // The consumed prefix. SwipeDeck keeps swiped cards in `deck` and moves
+        // an index instead of shifting, so #13 has to be told which of those
+        // ids are behind the user or its pool cap counts them as live cards.
+        swiped: currentDeck.slice(0, nextIndex).map((m) => m.id),
+      })
+        .then((fresh) => {
+          if (fresh.length > 0 && mounted.current) setDeck((d) => [...d, ...fresh]);
+        })
+        .catch(() => {
+          // seedCandidates() is documented not to reject. If that ever changes,
+          // a dry deck is the correct outcome, not an unhandled rejection.
+        })
+        .finally(() => {
+          seedingRef.current = false;
+        });
+    },
+    [autoSeed]
+  );
 
   // Sequence: Old Deck Out -> Bright +40% index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
   const handleSwipeComplete = useCallback(
@@ -132,12 +208,15 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       if (movie) {
         taste.current = applySwipe(taste.current, movie, direction);
+        if (direction === 'right') likedRef.current = [...likedRef.current, movie];
         // Retain the consumed prefix so callback indices and end-of-deck
         // behavior stay intact. Only unseen cards may move.
-        setDeck([
+        const nextDeck = [
           ...deck.slice(0, nextIndex),
           ...rank(taste.current, deck.slice(nextIndex)),
-        ]);
+        ];
+        setDeck(nextDeck);
+        maybeSeedMore(nextDeck, nextIndex);
         onTasteChange?.(taste.current);
         setPreviousMovie(movie);
         if (direction === 'left') {
@@ -174,7 +253,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         });
       }, 100);
     },
-    [currentIndex, deck, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
+    [currentIndex, deck, maybeSeedMore, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
   );
 
   // Programmatic swipe (Like / Pass buttons)
@@ -206,6 +285,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // also rewind the *stored* vector: the next swipe writes taste.current, so
   // a replay after a long session would overwrite what that session learned.
   const handleReset = useCallback(() => {
+    // #13's seeding bookkeeping does reset: the topped-up cards are gone with
+    // the deck, so the next like should be free to ask for more.
+    likedRef.current = [];
+    seededAtLikeCount.current = -1;
     setDeck(rank(taste.current, movies));
     setCurrentIndex(0);
     setPreviousMovie(null);
