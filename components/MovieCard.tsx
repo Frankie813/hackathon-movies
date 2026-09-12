@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -9,10 +8,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import YoutubePlayer, {
-  PLAYER_STATES,
-  type YoutubeIframeRef,
-} from 'react-native-youtube-iframe';
+import {
+  TrailerVideoPlayer,
+  type TrailerVideoPlayerRef,
+} from './TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
 interface MovieCardProps {
@@ -41,14 +40,9 @@ export function MovieCard({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  // react-native-youtube-iframe's web player can't message back to RN on web
-  // (react-native-web-webview loads it as a plain cross-origin <iframe> with
-  // no window.ReactNativeWebView bridge), so onReady/onChangeState never fire
-  // there. Skip the player and show the poster immediately on web.
-  const isWeb = Platform.OS === 'web';
-  const hasVideo = !!movie.video?.key && !isWeb;
+  const hasVideo = !!movie.video?.key;
 
-  const playerRef = useRef<YoutubeIframeRef>(null);
+  const playerRef = useRef<TrailerVideoPlayerRef>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [videoFailed, setVideoFailed] = useState(!hasVideo);
   const [internalMuted, setInternalMuted] = useState(true);
@@ -64,16 +58,15 @@ export function MovieCard({
   }, [movie.id, hasVideo]);
 
   // Loop the chosen segment instead of showing the YouTube end screen.
-  const onVideoStateChange = useCallback(
-    (state: string) => {
-      if (state === PLAYER_STATES.ENDED || state === 'ended') {
-        playerRef.current?.seekTo(start, true);
-      }
-    },
-    [start]
-  );
+  // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
+  // bridge, so looping there is handled by loop=1&playlist=self in the URL.)
+  const onVideoEnded = useCallback(() => {
+    playerRef.current?.seekTo(start);
+  }, [start]);
 
   // embed_not_allowed / video_not_found / html5_error -> fall back permanently to the poster.
+  // (No-op on web: a raw iframe has no error channel — a dead video key just
+  // shows a blank iframe there rather than falling back to the poster.)
   const onVideoError = useCallback(
     (error: string) => {
       console.warn(`[MovieCard] YouTube error for "${movie.title}":`, error);
@@ -102,38 +95,25 @@ export function MovieCard({
     <View style={[styles.card, { width, height }]}>
       {showVideo && (
         // pointerEvents="none": taps/drags go to the swipe gesture, not the
-        // WebView. The card's own chrome (gradients, title, mute button) is
+        // player. The card's own chrome (gradients, title, mute button) is
         // still drawn on top of this in the full-bleed layout below —
         // a deliberate, known deviation from AGENTS.md §3 ("never draw UI
         // over the player"), accepted to keep the existing full-bleed card
         // look. Needs real-device verification: Android WebView compositing
         // can behave differently than iOS/web here.
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { width, height }]}>
-          <YoutubePlayer
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { width, height, overflow: 'hidden' }]}>
+          <TrailerVideoPlayer
             ref={playerRef}
-            height={height}
-            width={width}
             videoId={movie.video!.key}
+            start={start}
+            end={end}
+            containerWidth={width}
+            containerHeight={height}
             play={active && videoReady}
-            mute={muted}
-            forceAndroidAutoplay
-            initialPlayerParams={{
-              start,
-              end,
-              controls: false,
-              rel: false,
-              modestbranding: true,
-              loop: false,
-              preventFullScreen: true,
-            }}
+            muted={muted}
             onReady={handleVideoReady}
-            onChangeState={onVideoStateChange}
+            onEnded={onVideoEnded}
             onError={onVideoError}
-            webViewProps={{
-              androidLayerType: 'hardware',
-              allowsInlineMediaPlayback: true,
-              mediaPlaybackRequiresUserAction: false,
-            }}
           />
         </View>
       )}
