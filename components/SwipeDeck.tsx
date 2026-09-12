@@ -34,6 +34,16 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
   movies?: Movie[];
+  /**
+   * Seeds the taste vector from a previous run (#18), so the first cards on
+   * screen are already ranked against what this user liked last time.
+   *
+   * Must be referentially stable — it drives the deck-reset effect. Pass a
+   * value held in state, not a fresh object per render.
+   */
+  initialTaste?: TasteVector;
+  /** Fires after every swipe with the new vector. #18 persists it, debounced. */
+  onTasteChange?: (taste: TasteVector) => void;
   onSwipeLeft?: (index: number, movie: Movie) => void;
   onSwipeRight?: (index: number, movie: Movie) => void;
   onSwipedAll?: () => void;
@@ -50,9 +60,14 @@ export interface SwipeDeckRef {
 const VELOCITY_THRESHOLD = 380;
 const EXIT_DURATION = 200;
 
+/** Module-level so the default prop keeps a stable identity across renders. */
+const COLD_TASTE: TasteVector = {};
+
 export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function SwipeDeck(
   {
     movies = SEED_MOVIES,
+    initialTaste = COLD_TASTE,
+    onTasteChange,
     onSwipeLeft,
     onSwipeRight,
     onSwipedAll,
@@ -65,8 +80,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const cardW = width;
   const cardH = height;
 
-  const [deck, setDeck] = useState<Movie[]>(movies);
-  const taste = useRef<TasteVector>({});
+  // Ranked up front, not after mount: a deck that re-sorts itself once the
+  // stored vector lands would shuffle under the judge's thumb (#18).
+  const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies));
+  const taste = useRef<TasteVector>(initialTaste);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [previousMovie, setPreviousMovie] = useState<Movie | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -93,10 +110,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     });
   }, [deck, currentIndex]);
 
-  // Sync internal deck when movies prop changes
+  // Sync internal deck when the movies or the seeded taste vector change
   useEffect(() => {
-    setDeck(movies);
-    taste.current = {};
+    setDeck(rank(initialTaste, movies));
+    taste.current = initialTaste;
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -104,7 +121,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
+  }, [movies, initialTaste, translateX, translateY, nextCardOpacity, isAnimating]);
 
   // Sequence: Old Deck Out -> Bright +40% index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
   const handleSwipeComplete = useCallback(
@@ -121,6 +138,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           ...deck.slice(0, nextIndex),
           ...rank(taste.current, deck.slice(nextIndex)),
         ]);
+        onTasteChange?.(taste.current);
         setPreviousMovie(movie);
         if (direction === 'left') {
           onSwipeLeft?.(swipedIndex, movie);
@@ -156,7 +174,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         });
       }, 100);
     },
-    [currentIndex, deck, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
+    [currentIndex, deck, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
   );
 
   // Programmatic swipe (Like / Pass buttons)
@@ -183,9 +201,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     [isDone, isAnimating, isTransitioning, width, translateX, handleSwipeComplete]
   );
 
+  // "Start over" replays the deck, not the user. The persisted vector stays —
+  // it is what a rehearsal is trying to keep.
   const handleReset = useCallback(() => {
-    taste.current = {};
-    setDeck([...movies]);
+    taste.current = initialTaste;
+    setDeck(rank(initialTaste, movies));
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -193,7 +213,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
+  }, [movies, initialTaste, translateX, translateY, nextCardOpacity, isAnimating]);
 
   useImperativeHandle(
     ref,

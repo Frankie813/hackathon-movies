@@ -8,6 +8,8 @@ rules_version = '2';
 //   sessions/{code}/members/{uid}  { likes[], dislikes[], joinedAt, name? }
 //   sessions/{code}/match/current  { tmdbId, sessionCode, matchedAt, why? } (#17)
 //   users/{uid}/matches/{code}-{tmdbId}  the same verdict, for #41's Saved tab
+//   users/{uid}/taste/current      { vector, updatedAt } (#18)
+//   users/{uid}/likes/{movieId}    { movieId, likedAt } (#18)
 //
 // Join codes are guessable by design — four letters is the point — so the
 // protection that matters is that nobody can rewrite somebody else's swipes or
@@ -73,7 +75,17 @@ service cloud.firestore {
     // writer and the owner of the document have to be members of it. A
     // stranger who guesses a uid still cannot put anything here.
     //
-    // #18's users/{uid} taste-vector rules land with that issue.
+    // A user's own taste vector and like list (#18). Strictly private: unlike
+    // matches, nothing about the group flow needs another device to read or
+    // write these, so the owner is the only one who touches them.
+    match /users/{uid}/taste/{docId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/likes/{movieId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
     match /users/{uid}/matches/{matchId} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn()
