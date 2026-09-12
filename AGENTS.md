@@ -50,7 +50,7 @@ can't verify it, say so rather than assuming.
 | **Pin explicit model version strings.** `gemini-3.5-flash`. Never a floating alias. | `gemini-2.0-flash` is shut down and 1.x returns 404. Re-verify at build time with `/verify-apis`. |
 | **TMDB attribution must be on the About screen** (#27). "This product uses the TMDB API but is not endorsed or certified by TMDB." | Contractual. TMDB requires the notice plus the approved logo. |
 | **Feature freeze at hour 20.** After that: no new features, only demo prep and bug fixes on the path above. | `PLAN.md` §J, phase 5. Over-scoping is the listed #1 risk. |
-| **Never `git push` or close a GitHub issue without being asked.** | Three people share this repo. Land work through a PR that references the issue. |
+| **Never `git push` or close a GitHub issue without being asked.** Assigning an issue to yourself is the one exception — see §5. | Three people share this repo. Land work through a PR that references the issue. |
 | **Stay on the Firebase Spark (free) plan.** No Cloud Functions, no proxy server, no Blaze. Keep Firebase AI Logic on the **Gemini Developer API** backend. | The v2.2 scope cut removed the only server-side component. The Vertex AI backend would force Blaze back on. |
 
 ---
@@ -100,6 +100,19 @@ matching `PLAN.md` §K and `.github/issues.json` exactly.
 /standup              → where the team is against the 24h phase plan
 ```
 
+- **Claim the issue before you start.** The moment you begin work on an issue —
+  via `/issue N` or because someone asked you to — assign it on GitHub to the
+  person you're working for:
+
+  ```bash
+  gh issue edit <N> --add-assignee @me
+  ```
+
+  `@me` is the authenticated `gh` user, i.e. whoever's machine you're running
+  on, which is the human who asked. Do this without asking first; it's cheap and
+  reversible, and it's what tells the other two that the issue is taken. Mention
+  that you did it. If the issue already has a *different* assignee, stop and ask
+  before taking it — someone else may already be mid-flight.
 - **Branch:** `<owner>/<issue-number>-<slug>`, e.g. `a/7-youtube-trailer-card`.
 - **Never commit to `main` directly.**
 - **Commit subject:** `#7 short imperative summary`.

@@ -8,17 +8,21 @@ Work issue #$1 end to end. If `$1` is empty, stop and ask for a number.
 
 ## Before writing code
 
-1. `gh issue view $1 --json number,title,body,labels,milestone` — the body holds
-   the acceptance criteria, estimate, owner, phase, and dependencies.
-2. Check its dependencies are closed. If one is open, say which and ask whether
+1. `gh issue view $1 --json number,title,body,labels,milestone,assignees` — the
+   body holds the acceptance criteria, estimate, owner, phase, and dependencies.
+2. Claim it: `gh issue edit $1 --add-assignee @me`. Do this without asking —
+   it's the one GitHub write AGENTS.md §3 lets you make unprompted. Say that
+   you did. If `assignees` in step 1 already shows someone *else*, stop and ask
+   before taking it over.
+3. Check its dependencies are closed. If one is open, say which and ask whether
    to proceed anyway or switch issues. Don't silently build on a missing base.
-3. Read the matching section of `PLAN.md` (§K lists every issue; the linked
+4. Read the matching section of `PLAN.md` (§K lists every issue; the linked
    sections hold the real detail — §D content sourcing, §F Gemini schemas,
    §H the scoring algorithm). §G is vacant — the ElevenLabs plan was dropped.
-4. If `examples/` has a starting point for this issue — `TrailerCard.tsx` for #7,
+5. If `examples/` has a starting point for this issue — `TrailerCard.tsx` for #7,
    `SwipeDeck.tsx` for #6, `types.ts` for #5, `seed.sample.json` for #4 — read it
    and build on it rather than starting from scratch.
-5. For anything calling an external SDK, look the API up with **context7** first.
+6. For anything calling an external SDK, look the API up with **context7** first.
    `PLAN.md` warns explicitly that Gemini model strings, `@google/genai`,
    and `expo-audio` all move fast. Don't write from memory.
 
