@@ -60,13 +60,13 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           play={play}
           mute={muted}
           forceAndroidAutoplay
-          // Loads the player shell from the bundled local HTML instead of
-          // fetching it from https://lonelycpp.github.io on every card: one
-          // fewer network round-trip per swipe (helps both lag and the
-          // offline path — PLAN.md §L), and guarantees the shell's JS
-          // actually matches this installed package version, which the
-          // document/window postMessage bridge below depends on.
-          useLocalHTML
+          // NOTE: tried useLocalHTML here to skip the per-card fetch of
+          // https://lonelycpp.github.io/.../iframe_v2.html, but every video
+          // started erroring out on-device (not just genuinely restricted
+          // ones) — inline HTML with no real HTTP(S) origin most likely
+          // breaks YouTube's IFrame API origin validation. Reverted to the
+          // library's default remote-hosted shell, which is the configuration
+          // actually confirmed working end-to-end on a real device.
           initialPlayerParams={{
             start,
             end,
