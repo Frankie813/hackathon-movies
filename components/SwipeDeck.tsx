@@ -28,7 +28,6 @@ import Animated, {
 import { MovieCard } from './MovieCard';
 import { Stamp } from './Stamp';
 import { DynamicHueBackdrop } from './DynamicHueBackdrop';
-import { TrailerVideoPlayer } from './TrailerVideoPlayer';
 import type { Movie, TasteVector } from '@/types';
 import { applySwipe, rank } from '@/src/lib/taste';
 import { SEED_MOVIES } from '@/data/seedMovies';
@@ -93,15 +92,6 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       }
     });
   }, [deck, currentIndex]);
-
-  // Preload the next card's trailer while the current one is being watched.
-  // A hidden, muted, paused player one card ahead warms up the network
-  // fetch + player init before the swipe happens — the visible card still
-  // mounts a fresh player of its own (SwipeDeck remounts each top card by
-  // key), but it lands on an already-warm connection/cache instead of a
-  // cold one, which is most of where the per-swipe lag comes from.
-  const nextMovie = deck[currentIndex + 1];
-  const preloadNoop = useCallback(() => {}, []);
 
   // Sync internal deck when movies prop changes
   useEffect(() => {
@@ -355,25 +345,6 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         height={cardH}
       />
 
-      {/* Hidden trailer preloader: warms the next card's video, never shown or played */}
-      {nextMovie?.video?.key && (
-        <View style={styles.preloadHidden} pointerEvents="none">
-          <TrailerVideoPlayer
-            key={`preload-${nextMovie.id}`}
-            videoId={nextMovie.video.key}
-            start={nextMovie.video.start}
-            end={nextMovie.video.end}
-            containerWidth={cardW}
-            containerHeight={cardH}
-            play={false}
-            muted
-            onReady={preloadNoop}
-            onEnded={preloadNoop}
-            onError={preloadNoop}
-          />
-        </View>
-      )}
-
       {/* Full-Screen Deck Viewport */}
       <View style={[styles.deckArea, { width: cardW, height: cardH }]}>
         {isDone ? (
@@ -497,15 +468,6 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 });
 
 const styles = StyleSheet.create({
-  preloadHidden: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 1,
-    height: 1,
-    opacity: 0,
-    overflow: 'hidden',
-  },
   container: {
     flex: 1,
     position: 'relative',
