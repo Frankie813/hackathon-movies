@@ -80,17 +80,22 @@ so in one sentence and then use it anyway unless a human overrules you.
   switch silences the trailer audio when a judge taps to unmute.
 - Never draw UI over the YouTube player. Use a `pointerEvents="none"` wrapper
   and put all chrome below it.
-- **`react-native-webview`'s `postMessage()` on Android dispatches to
-  `document`, but `react-native-youtube-iframe`'s injected player page listens
-  on `window`** — two different EventTargets, so `play`/`pause`/`mute`
-  commands are silently dropped on Android with no error. Confirmed by reading
-  both packages' installed source, not a New Architecture issue (predates
-  Fabric; upgrading the webview version doesn't fix it —
-  react-native-webview/react-native-webview#2980). Fix: bridge the two via
-  `webViewProps.injectedJavaScriptBeforeContentLoaded` re-dispatching
-  `document` message events onto `window` (see `TrailerVideoPlayer.tsx`).
-  Symptom if you skip this: the clip loads to YouTube's paused/cued state
-  (poster + play button) and never actually autoplays.
+- **`react-native-youtube-iframe` 2.4.x cannot start or mute playback on
+  either platform**, so the native `TrailerVideoPlayer.tsx` drives the YouTube
+  IFrame API through `react-native-webview` directly. Two independent breaks,
+  both verified from installed source: (1) the library loads a remote shell
+  page (`lonelycpp.github.io/…/iframe_v2.html`, deployed 2024-06-15) that
+  switches on raw-string messages, while the JS wrapper has sent a JSON
+  envelope since 2.4.0 — upstream LonelyCpp/react-native-youtube-iframe#376,
+  #386, #393, all open; (2) `react-native-webview`'s `postMessage()` on
+  Android dispatches to `document` while that page listens on `window`
+  (react-native-webview#2980). Symptom: the clip loads to YouTube's cued
+  state (poster + play button) and never autoplays. The replacement shell
+  uses `autoplay=1&mute=1` player vars (YouTube starts muted playback itself,
+  no RN→page command needed) and `injectJavaScript` for unmute/pause/seek.
+  `source.baseUrl` must stay set: YouTube rejects API embeds with no HTTP
+  Referer (player error 153), which is why `useLocalHTML` without a base URL
+  "broke every video".
 - There is **no server-side component**: no Cloud Functions, no proxy, no Blaze
   plan. Everything runs on Spark. If you find yourself needing a server, stop
   and raise it — that is a scope change, not an implementation detail.

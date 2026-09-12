@@ -3,37 +3,22 @@ import renderer, { act } from 'react-test-renderer';
 import { MovieCard } from '@/components/MovieCard';
 import type { Movie } from '@/types';
 
-// Mock react-native-youtube-iframe
-jest.mock('react-native-youtube-iframe', () => {
+// Mock react-native-webview: the native TrailerVideoPlayer drives the YouTube
+// IFrame API through it directly. The mock exposes the props it was given and
+// records injectJavaScript calls so the RN -> page command path is observable.
+const mockInjectJavaScript = jest.fn();
+jest.mock('react-native-webview', () => {
   const React = require('react');
-  const { View, Text } = require('react-native');
+  const { View } = require('react-native');
 
-  const MockYoutubePlayer = React.forwardRef((props: any, ref: any) => {
+  const MockWebView = React.forwardRef((props: any, ref: any) => {
     React.useImperativeHandle(ref, () => ({
-      seekTo: jest.fn(),
+      injectJavaScript: mockInjectJavaScript,
     }));
-    return (
-      <View testID="youtube-player" {...props}>
-        <Text testID="player-props">{JSON.stringify({
-          play: props.play,
-          mute: props.mute,
-          videoId: props.videoId,
-          initialPlayerParams: props.initialPlayerParams,
-        })}</Text>
-      </View>
-    );
+    return <View {...props} />;
   });
 
-  return {
-    __esModule: true,
-    default: MockYoutubePlayer,
-    PLAYER_STATES: {
-      ENDED: 'ended',
-      PLAYING: 'playing',
-      PAUSED: 'paused',
-      BUFFERING: 'buffering',
-    },
-  };
+  return { __esModule: true, WebView: MockWebView, default: MockWebView };
 });
 
 // Mock expo vector icons
@@ -81,67 +66,104 @@ const mockMovieWithoutVideo: Movie = {
   video: null,
 };
 
+/** Simulate a message posted by the player shell page. */
+function postShellMessage(webview: renderer.ReactTestInstance, eventType: string, data?: unknown) {
+  act(() => {
+    webview.props.onMessage({ nativeEvent: { data: JSON.stringify({ eventType, data }) } });
+  });
+}
+
+let tree: renderer.ReactTestRenderer | null = null;
+
+function render(element: React.ReactElement) {
+  act(() => {
+    tree = renderer.create(element);
+  });
+  return tree!.root;
+}
+
+afterEach(() => {
+  // Unmount so the player's ready-timeout timer is cleared between tests.
+  act(() => {
+    tree?.unmount();
+  });
+  tree = null;
+  mockInjectJavaScript.mockClear();
+});
+
 describe('MovieCard trailer playback (Issue #7)', () => {
   it('renders title, year, genres, and providers', () => {
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard
-          movie={mockMovieWithVideo}
-          width={360}
-          height={720}
-          active
-          whyLine="Mind-bending visual masterpiece for fans of sci-fi heists."
-        />
-      );
-    });
+    const root = render(
+      <MovieCard
+        movie={mockMovieWithVideo}
+        width={360}
+        height={720}
+        active
+        whyLine="Mind-bending visual masterpiece for fans of sci-fi heists."
+      />
+    );
 
-    const root = tree!.root;
     expect(root.findByProps({ children: 'Inception' })).toBeTruthy();
     expect(root.findByProps({ children: 2010 })).toBeTruthy();
     expect(root.findByProps({ children: 'Action' })).toBeTruthy();
     expect(root.findByProps({ children: 'Netflix' })).toBeTruthy();
   });
 
-  it('renders the YouTube player when the movie has a video key', () => {
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
-      );
-    });
+  it('loads the YouTube shell with the clip segment, muted autoplay, and a referrer', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
 
-    const root = tree!.root;
-    const player = root.findByProps({ testID: 'youtube-player' });
-    expect(player).toBeTruthy();
-    expect(player.props.videoId).toBe('YoHD9XEInc0');
-    expect(player.props.mute).toBe(true);
-    expect(player.props.initialPlayerParams.start).toBe(5);
-    expect(player.props.initialPlayerParams.end).toBe(25);
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    const { html, baseUrl } = webview.props.source;
+    expect(html).toContain('"YoHD9XEInc0"');
+    expect(html).toContain('"autoplay":1');
+    expect(html).toContain('"mute":1');
+    expect(html).toContain('"start":5');
+    expect(html).toContain('"end":25');
+    expect(html).toContain('"playsinline":1');
+    // YouTube rejects API embeds with no HTTP Referer (error 153).
+    expect(baseUrl).toMatch(/^https:\/\//);
+    expect(webview.props.mediaPlaybackRequiresUserAction).toBe(false);
+    expect(webview.props.allowsInlineMediaPlayback).toBe(true);
   });
 
   it('falls back to the poster without rendering a player when the movie has no video', () => {
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard movie={mockMovieWithoutVideo} width={360} height={720} active />
-      );
-    });
+    const root = render(
+      <MovieCard movie={mockMovieWithoutVideo} width={360} height={720} active />
+    );
 
-    const root = tree!.root;
-    expect(() => root.findByProps({ testID: 'youtube-player' })).toThrow();
+    expect(() => root.findByProps({ testID: 'trailer-webview' })).toThrow();
     expect(root.findByProps({ children: 'Movie Without Video' })).toBeTruthy();
   });
 
-  it('toggles mute/unmute state when the tap-to-unmute button is pressed', () => {
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
-      );
-    });
+  it('re-applies muted playback once the player reports ready', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
 
-    const root = tree!.root;
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    expect(mockInjectJavaScript).not.toHaveBeenCalled();
+
+    postShellMessage(webview, 'ready');
+
+    expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+    const js = mockInjectJavaScript.mock.calls[0][0] as string;
+    expect(js).toContain('player.mute();');
+    expect(js).toContain('player.playVideo();');
+    // Mute is applied before play so a mobile UA never sees an unmuted autoplay.
+    expect(js.indexOf('player.mute();')).toBeLessThan(js.indexOf('player.playVideo();'));
+  });
+
+  it('toggles mute/unmute state when the tap-to-unmute button is pressed', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
+
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    postShellMessage(webview, 'ready');
+    mockInjectJavaScript.mockClear();
+
     const muteBtn = root.findByProps({ accessibilityLabel: 'Unmute trailer' });
     expect(muteBtn).toBeTruthy();
 
@@ -149,50 +171,63 @@ describe('MovieCard trailer playback (Issue #7)', () => {
       muteBtn.props.onPress();
     });
 
-    const unmutedBtn = root.findByProps({ accessibilityLabel: 'Mute trailer' });
-    expect(unmutedBtn).toBeTruthy();
+    expect(root.findByProps({ accessibilityLabel: 'Mute trailer' })).toBeTruthy();
+    expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+    expect(mockInjectJavaScript.mock.calls[0][0]).toContain('player.unMute();');
   });
 
-  it('falls back to the poster when the player triggers onError, and reports the failure', () => {
+  it('falls back to the poster when YouTube reports an error, and reports the failure', () => {
     const onCardFailedMock = jest.fn();
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard
-          movie={mockMovieWithVideo}
-          width={360}
-          height={720}
-          active
-          onCardFailed={onCardFailedMock}
-        />
-      );
-    });
+    const root = render(
+      <MovieCard
+        movie={mockMovieWithVideo}
+        width={360}
+        height={720}
+        active
+        onCardFailed={onCardFailedMock}
+      />
+    );
 
-    const root = tree!.root;
-    const player = root.findByProps({ testID: 'youtube-player' });
-    act(() => {
-      player.props.onError('embed_not_allowed');
-    });
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    // 101 = embed_not_allowed
+    postShellMessage(webview, 'error', 101);
 
     expect(onCardFailedMock).toHaveBeenCalledWith(mockMovieWithVideo);
-    expect(() => root.findByProps({ testID: 'youtube-player' })).toThrow();
+    expect(() => root.findByProps({ testID: 'trailer-webview' })).toThrow();
+  });
+
+  it('falls back to the poster when the IFrame API script cannot load (offline)', () => {
+    const onCardFailedMock = jest.fn();
+    const root = render(
+      <MovieCard
+        movie={mockMovieWithVideo}
+        width={360}
+        height={720}
+        active
+        onCardFailed={onCardFailedMock}
+      />
+    );
+
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    postShellMessage(webview, 'error', 'network');
+
+    expect(onCardFailedMock).toHaveBeenCalledWith(mockMovieWithVideo);
+    expect(() => root.findByProps({ testID: 'trailer-webview' })).toThrow();
   });
 
   it('loops the clip by seeking back to the start when the video ends', () => {
-    let tree: renderer.ReactTestRenderer | null = null;
-    act(() => {
-      tree = renderer.create(
-        <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
-      );
-    });
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
 
-    const root = tree!.root;
-    const player = root.findByProps({ testID: 'youtube-player' });
-    // Should not throw when the underlying player reports "ended".
-    expect(() => {
-      act(() => {
-        player.props.onChangeState('ended');
-      });
-    }).not.toThrow();
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    postShellMessage(webview, 'ready');
+    mockInjectJavaScript.mockClear();
+
+    // 0 = YT.PlayerState.ENDED
+    postShellMessage(webview, 'state', 0);
+
+    expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+    expect(mockInjectJavaScript.mock.calls[0][0]).toContain('player.seekTo(5, true);');
   });
 });

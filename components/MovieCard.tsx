@@ -70,19 +70,13 @@ export function MovieCard({
     playerRef.current?.seekTo(start);
   }, [start]);
 
-  // embed_not_allowed / video_not_found / html5_error -> fall back permanently to the poster.
+  // embed_not_allowed / video_not_found / html5_error / missing_referrer, plus
+  // the player's own network / timeout signals -> fall back permanently to the poster.
   // (No-op on web: a raw iframe has no error channel — a dead video key just
   // shows a blank iframe there rather than falling back to the poster.)
   const onVideoError = useCallback(
     (error: string) => {
-      // react-native-youtube-iframe maps YouTube's numeric error code to a
-      // friendly string via a fixed lookup table (2/5/100/101/150 only) and
-      // only gives us that mapped value — an "undefined" here means YouTube
-      // sent some other, unrecognized code, not that nothing went wrong. It
-      // still falls back to the poster correctly either way.
-      console.warn(
-        `[MovieCard] YouTube error for "${movie.title}": ${error ?? 'unrecognized error code'}`
-      );
+      console.warn(`[MovieCard] Trailer failed for "${movie.title}": ${error}`);
       setVideoFailed(true);
       onCardFailed?.(movie);
     },
@@ -180,7 +174,6 @@ export function MovieCard({
             onReady={handleVideoReady}
             onEnded={onVideoEnded}
             onError={onVideoError}
-            onDebug={(msg) => console.warn(`[TrailerDebug] "${movie.title}":`, msg)}
           />
         </Animated.View>
       )}
