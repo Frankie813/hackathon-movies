@@ -1,30 +1,74 @@
 rules_version = '2';
 
-// Baseline rules for issue #2. Everything is closed except what the demo path
-// needs, and every rule requires an anonymous-auth user.
+// Everything is closed except what the demo path needs, and every rule requires
+// an anonymous-auth user (#2). Issue #16 settled the sessions/{code} shape and
+// replaced the blanket session rules below with per-document ownership.
 //
-// Issue #16 replaces the sessions rules with per-session membership checks once
-// the sessions/{code} document shape is settled. Do not widen these without it.
+//   sessions/{code}                { code, hostUid, createdAt }
+//   sessions/{code}/members/{uid}  { likes[], dislikes[], joinedAt, name? }
+//   sessions/{code}/match/{docId}  written by #17
+//
+// Join codes are guessable by design — four letters is the point — so the
+// protection that matters is that nobody can rewrite somebody else's swipes or
+// take over a session, not that the session is secret.
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Codes are guessable by design — four letters is the point — so "is this
+    // caller actually in the session" is the check that carries the weight.
+    // Costs one document read per evaluation; sessions are tiny and rare.
+    function isMember(code) {
+      return signedIn()
+             && exists(/databases/$(database)/documents/sessions/$(code)/members/$(request.auth.uid));
+    }
+
     // Group sessions, keyed by the 4-letter join code.
     match /sessions/{code} {
-      allow read, write: if request.auth != null;
+      allow read: if signedIn();
+      // The creator must name themselves as the host, and the document has to
+      // agree with the path it lives at.
+      allow create: if signedIn()
+                    && request.resource.data.hostUid == request.auth.uid
+                    && request.resource.data.code == code;
+      // Fields can be added (#17 may record the group's verdict here), but only
+      // by someone in the session, and the host and code are frozen once it
+      // exists. createSession() is unaffected — it creates, then joins.
+      allow update: if isMember(code)
+                    && request.resource.data.hostUid == resource.data.hostUid
+                    && request.resource.data.code == resource.data.code;
+      allow delete: if false;
 
-      match /{document=**} {
-        allow read, write: if request.auth != null;
+      // One document per anonymous uid. Anyone in the session can read the
+      // member list — #17 needs every member's likes to rank the group — but
+      // only the owner writes their own swipes.
+      match /members/{memberUid} {
+        allow read: if signedIn();
+        allow write: if signedIn() && request.auth.uid == memberUid;
+      }
+
+      // The group's match (#17) — the verdict the reveal screen (#10) puts in
+      // front of judges. Any member may write it; whoever's device detects the
+      // match first wins and the rest react to the document. Nobody outside
+      // the session gets to write what the group is watching.
+      match /match/{docId} {
+        allow read: if signedIn();
+        allow create, update: if isMember(code);
+        allow delete: if false;
       }
     }
 
     // Read-only probe used by checkFirestoreReachable(). The document does not
     // need to exist — the read resolving is the signal.
     match /health/{docId} {
-      allow read: if request.auth != null;
+      allow read: if signedIn();
       allow write: if false;
     }
 
-    // Deny everything else.
+    // Deny everything else. #18's users/{uid} rules land with that issue.
     match /{document=**} {
       allow read, write: if false;
     }
