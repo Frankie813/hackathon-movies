@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// Baseline rules for issue #2. Everything is closed except what the demo path
+// needs, and every rule requires an anonymous-auth user.
+//
+// Issue #16 replaces the sessions rules with per-session membership checks once
+// the sessions/{code} document shape is settled. Do not widen these without it.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Group sessions, keyed by the 4-letter join code.
+    match /sessions/{code} {
+      allow read, write: if request.auth != null;
+
+      match /{document=**} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // Read-only probe used by checkFirestoreReachable(). The document does not
+    // need to exist — the read resolving is the signal.
+    match /health/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Deny everything else.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
