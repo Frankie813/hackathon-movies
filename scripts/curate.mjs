@@ -27,6 +27,8 @@
  *   node scripts/curate.mjs --limit 5          # smoke test on 5 titles
  *   node scripts/curate.mjs --dry-run          # print the report, write nothing
  *   node scripts/curate.mjs --no-yt-search     # skip the Movieclips fallback
+ *   node scripts/curate.mjs --force-fallback   # ignore TMDB videos, exercise
+ *                                              # the Movieclips path end to end
  *   node scripts/curate.mjs --max-yt-search 10 # cap search.list quota spend
  *
  * Env (from .env, never committed):
@@ -191,6 +193,7 @@ function parseArgs(argv) {
     out: DEFAULT_OUT,
     dryRun: false,
     ytSearch: true,
+    forceFallback: false,
     maxYtSearch: DEFAULT_MAX_YT_SEARCH,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -206,6 +209,7 @@ function parseArgs(argv) {
     else if (flag === '--max-yt-search') args.maxYtSearch = Number(next());
     else if (flag === '--dry-run') args.dryRun = true;
     else if (flag === '--no-yt-search') args.ytSearch = false;
+    else if (flag === '--force-fallback') args.forceFallback = true;
     else if (flag === '--help' || flag === '-h') {
       console.log('See the header comment in scripts/curate.mjs for usage.');
       process.exit(0);
@@ -608,7 +612,13 @@ async function main() {
 
   // 3. Validate TMDB video candidates in one batched videos.list sweep.
   console.log('3/4  Validating YouTube keys...');
-  const candidates = movies.map(({ detail }) => ({ detail, list: rankTmdbVideos(detail) }));
+  // --force-fallback drops every TMDB candidate so the Movieclips path runs for
+  // real. Without it that path stays dead code whenever TMDB covers the catalog,
+  // which is exactly when nobody notices it has rotted.
+  const candidates = movies.map(({ detail }) => ({
+    detail,
+    list: args.forceFallback ? [] : rankTmdbVideos(detail),
+  }));
   const statuses = await fetchVideoStatuses(yt, candidates.flatMap((c) => c.list.map((v) => v.key)));
 
   const picked = new Map(); // detail.id -> { candidate, statusItem }
