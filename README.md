@@ -2,6 +2,10 @@
 
 Three commands get the plan, labels, milestones, and all 42 issues into the repo. About five minutes.
 
+> **Working on this with Claude Code or Codex?** Start at **[docs/AI-SETUP.md](docs/AI-SETUP.md)** —
+> ~10 minutes per machine. The rules both tools follow live in **[AGENTS.md](AGENTS.md)**
+> (`CLAUDE.md` is a symlink to it). Day-to-day the loop is `/next A` → `/issue 7` → `/ship 7`.
+
 ## 1. Commit the plan and examples
 
 ```bash
@@ -61,3 +65,9 @@ Useful saved searches on the Issues tab:
 | `scripts/create-issues.mjs` | Creates labels, milestones, issues. Node 18+, no dependencies. |
 | `scripts/add-to-project.sh` | Optional project board via `gh`. |
 | `examples/` | `TrailerCard.tsx`, `SwipeDeck.tsx`, `types.ts`, `seed.sample.json` — starting point for issues 4, 6, 7, 8. |
+| `AGENTS.md` | Rules for AI agents — stack decisions, hard rules, workflow. `CLAUDE.md` symlinks here. |
+| `docs/AI-SETUP.md` | One-time per-machine setup for Claude Code and Codex; what each command, agent, MCP server and hook does. |
+| `.mcp.json` | MCP servers: context7 (docs), firebase, github, playwright. |
+| `.claude/` | Slash commands, subagents, permissions, hooks. Claude Code only. |
+| `scripts/setup-codex.sh` | Mirrors the MCP servers into `~/.codex/config.toml`. |
+| `.env.example` | Key layout. Copy to `.env` (gitignored, and agents can't read it). |
