@@ -5,7 +5,7 @@
 // mount over this screen later; for now it proves the realtime plumbing.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -16,10 +16,11 @@ import {
   View,
 } from 'react-native';
 
+import { JoinQR } from '@/components/JoinQR';
 import { useAnonymousAuth } from '@/lib/auth';
+import { onJoinRequested, parseJoinLink, takeParkedJoin } from '@/lib/join-link';
 import { seedMoviesWithVideo } from '@/lib/seed';
 import {
-  CODE_LENGTH,
   createSession,
   isValidCode,
   joinSession,
@@ -43,6 +44,13 @@ export default function GroupScreen() {
   const [members, setMembers] = useState<Member[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // enterSession() needs the code as it is *now*, not as it was when the work
+  // it is awaiting started — see the setMembers guard below.
+  const codeRef = useRef<string | null>(null);
+  useEffect(() => {
+    codeRef.current = code;
+  }, [code]);
 
   // Restore the last session before anything else renders a "start a group"
   // button the user would have to press again.
@@ -86,7 +94,11 @@ export default function GroupScreen() {
     setError(null);
     try {
       const joined = await work();
-      setMembers([]);
+      // Only blank the list when the session actually changes. Landing on the
+      // session you are already in — a deep link for the code you restored
+      // into (#19) — leaves the listener attached, and a rejoin writes
+      // nothing, so there is no next snapshot to refill a list cleared here.
+      if (codeRef.current !== joined) setMembers([]);
       setCode(joined);
       setInput('');
       // Persisting the code is a convenience, not part of joining. A storage
@@ -104,6 +116,22 @@ export default function GroupScreen() {
       setBusy(false);
     }
   }, []);
+
+  // A code that arrived over a deep link (#19). It wins over the restored
+  // code: someone who just scanned a QR means to be in *that* group, and
+  // enterSession() overwrites the persisted code either way. The parked read
+  // covers a cold start, where app/join/[code].tsx ran before this mounted.
+  useEffect(() => {
+    const handle = (incoming: string) => {
+      void enterSession(async () => {
+        await joinSession(incoming);
+        return incoming;
+      });
+    };
+    const parked = takeParkedJoin();
+    if (parked) handle(parked);
+    return onJoinRequested(handle);
+  }, [enterSession]);
 
   const onCreate = useCallback(() => void enterSession(() => createSession()), [enterSession]);
 
@@ -170,8 +198,13 @@ export default function GroupScreen() {
           autoCapitalize="characters"
           autoCorrect={false}
           editable={!busy}
-          maxLength={CODE_LENGTH}
-          onChangeText={(text) => setInput(normalizeCode(text))}
+          // No maxLength: it would truncate a pasted link to four characters
+          // before onChangeText ever saw it. Every path below already caps the
+          // value at CODE_LENGTH.
+          // A guest who got the link over text rather than across a table
+          // pastes the whole URL in here. Take the code out of it rather than
+          // letting normalizeCode() shred it into four arbitrary consonants.
+          onChangeText={(text) => setInput(parseJoinLink(text) ?? normalizeCode(text))}
           onSubmitEditing={onJoin}
           placeholder="CODE"
           placeholderTextColor="#4a4a52"
@@ -205,6 +238,10 @@ export default function GroupScreen() {
       <Text accessibilityLabel={`Join code ${code.split('').join(' ')}`} style={styles.code}>
         {code}
       </Text>
+
+      {/* The zero-friction join: a guest points a camera at this instead of
+          typing. The code above still works if the scan doesn't (#19). */}
+      <JoinQR code={code} />
 
       <Text style={styles.memberHeading}>
         {members.length} {members.length === 1 ? 'person' : 'people'} in this group
