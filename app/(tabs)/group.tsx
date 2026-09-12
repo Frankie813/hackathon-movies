@@ -1,10 +1,443 @@
-import { ScreenStub } from '@/components/ScreenStub';
+// app/(tabs)/group.tsx — create or join a group session (issue #16).
+//
+// Step 3 of the demo path: a second phone joins by code and both devices see
+// the member list update live. The reveal (#10) and match detection (#17)
+// mount over this screen later; for now it proves the realtime plumbing.
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import { useAnonymousAuth } from '@/lib/auth';
+import { seedMoviesWithVideo } from '@/lib/seed';
+import {
+  CODE_LENGTH,
+  createSession,
+  isValidCode,
+  joinSession,
+  memberLabel,
+  normalizeCode,
+  recordSwipe,
+  SessionNotFoundError,
+  subscribe,
+} from '@/lib/session';
+import type { Member } from '@/types';
+
+// Survives a reload so the app comes back into the same session — which is
+// also the cheapest way to see that rejoin keeps your swipes (#16 step 5).
+const ACTIVE_CODE_KEY = 'moviematch.activeSessionCode';
 
 export default function GroupScreen() {
+  const { uid, isSigningIn, error: authError } = useAnonymousAuth();
+
+  const [code, setCode] = useState<string | null>(null);
+  const [input, setInput] = useState('');
+  const [members, setMembers] = useState<Member[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Restore the last session before anything else renders a "start a group"
+  // button the user would have to press again.
+  useEffect(() => {
+    let cancelled = false;
+    void AsyncStorage.getItem(ACTIVE_CODE_KEY).then((stored) => {
+      // Functional update on purpose: if the user started or joined a group
+      // while this read was still in flight, the restore must not drag them
+      // back into the previous code.
+      if (!cancelled && stored) setCode((current) => current ?? stored);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Rejoin on restore: the member doc already exists, so this only refreshes
+  // presence — likes and dislikes are left alone (see joinSession).
+  useEffect(() => {
+    if (!code || !uid) return;
+    joinSession(code).catch((cause: unknown) => {
+      if (cause instanceof SessionNotFoundError) {
+        void AsyncStorage.removeItem(ACTIVE_CODE_KEY);
+        setCode(null);
+        setError('That session is gone. Start a new one.');
+        return;
+      }
+      console.warn('[group] rejoin failed:', cause);
+    });
+  }, [code, uid]);
+
+  useEffect(() => {
+    if (!code || !uid) return;
+    // Unsubscribing here is what stops listeners piling up across rehearsal
+    // runs — every Fast Refresh would otherwise leave one behind.
+    return subscribe(code, setMembers);
+  }, [code, uid]);
+
+  const enterSession = useCallback(async (work: () => Promise<string>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const joined = await work();
+      setMembers([]);
+      setCode(joined);
+      setInput('');
+      // Persisting the code is a convenience, not part of joining. A storage
+      // failure must not discard a session that already exists in Firestore.
+      AsyncStorage.setItem(ACTIVE_CODE_KEY, joined).catch((cause: unknown) => {
+        console.warn('[group] could not persist the active code:', cause);
+      });
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof SessionNotFoundError
+          ? cause.message
+          : `Could not reach the session. ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const onCreate = useCallback(() => void enterSession(() => createSession()), [enterSession]);
+
+  const onJoin = useCallback(() => {
+    // The keyboard's "go" key reaches this too, where the Join button's
+    // disabled state does not — without the guard a half-typed code would go
+    // to the network, and a second submit could race the first join.
+    if (busy || !isValidCode(input)) return;
+    const normalized = normalizeCode(input);
+    void enterSession(async () => {
+      await joinSession(normalized);
+      return normalized;
+    });
+  }, [busy, enterSession, input]);
+
+  const onLeave = useCallback(() => {
+    // Local only — the member doc stays, so coming back is a rejoin and the
+    // swipes are still there. #17 needs the history even if a phone drops.
+    void AsyncStorage.removeItem(ACTIVE_CODE_KEY);
+    setCode(null);
+    setMembers([]);
+    setError(null);
+  }, []);
+
+  if (authError) {
+    return (
+      <Centered>
+        <Text style={styles.title}>Group</Text>
+        <Text style={styles.error}>Sign-in failed: {authError.message}</Text>
+      </Centered>
+    );
+  }
+
+  if (isSigningIn || !uid) {
+    return (
+      <Centered>
+        <ActivityIndicator color="#e50914" />
+        <Text style={styles.subtitle}>Signing in…</Text>
+      </Centered>
+    );
+  }
+
+  if (!code) {
+    return (
+      <Centered>
+        <Text style={styles.title}>Watch together</Text>
+        <Text style={styles.subtitle}>
+          Start a group and read the code out, or type the one your friend has.
+        </Text>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={onCreate}
+          style={({ pressed }) => [styles.primary, (pressed || busy) && styles.pressed]}
+        >
+          <Text style={styles.primaryLabel}>{busy ? 'Starting…' : 'Start a group'}</Text>
+        </Pressable>
+
+        <Text style={styles.divider}>or join one</Text>
+
+        <TextInput
+          accessibilityLabel="Join code"
+          autoCapitalize="characters"
+          autoCorrect={false}
+          editable={!busy}
+          maxLength={CODE_LENGTH}
+          onChangeText={(text) => setInput(normalizeCode(text))}
+          onSubmitEditing={onJoin}
+          placeholder="CODE"
+          placeholderTextColor="#4a4a52"
+          returnKeyType="go"
+          style={styles.codeInput}
+          value={input}
+        />
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy || !isValidCode(input)}
+          onPress={onJoin}
+          style={({ pressed }) => [
+            styles.secondary,
+            !isValidCode(input) && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.secondaryLabel}>Join</Text>
+        </Pressable>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+      </Centered>
+    );
+  }
+
   return (
-    <ScreenStub
-      title="Group"
-      subtitle="Join code / QR and match reveal go here (#16, #17, #10)."
-    />
+    <ScrollView contentContainerStyle={styles.sessionContainer}>
+      <Text style={styles.subtitle}>Join code</Text>
+      {/* Big enough to read across a table from a judge's second phone. */}
+      <Text accessibilityLabel={`Join code ${code.split('').join(' ')}`} style={styles.code}>
+        {code}
+      </Text>
+
+      <Text style={styles.memberHeading}>
+        {members.length} {members.length === 1 ? 'person' : 'people'} in this group
+      </Text>
+
+      <View style={styles.memberList}>
+        {members.length === 0 ? (
+          <Text style={styles.subtitle}>Waiting for the list to sync…</Text>
+        ) : (
+          members.map((member) => (
+            <View key={member.uid} style={styles.memberRow}>
+              <Text style={styles.memberName}>
+                {memberLabel(member)}
+                {member.uid === uid ? ' (you)' : ''}
+              </Text>
+              <Text style={styles.memberCounts}>
+                ♥ {member.likes.length} · ✕ {member.dislikes.length}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      <SwipeProbe code={code} />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={onLeave}
+        style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+      >
+        <Text style={styles.secondaryLabel}>Leave</Text>
+      </Pressable>
+    </ScrollView>
   );
 }
+
+/**
+ * Temporary: the swipe deck (#6/#7/#8) is what will call recordSwipe() for
+ * real. Until it lands there is no other way to check the "swipes appear in
+ * Firestore within ~1s" criterion on a device, so these two buttons stand in.
+ * Delete them when #8 wires the deck to the session.
+ */
+function SwipeProbe({ code }: { code: string }) {
+  const [pending, setPending] = useState(false);
+  const [movieIndex, setMovieIndex] = useState(0);
+  const movie = seedMoviesWithVideo[movieIndex % seedMoviesWithVideo.length];
+
+  const swipe = useCallback(
+    (dir: 'left' | 'right') => {
+      if (!movie) return;
+      // A Firestore write promise does not settle while the device is offline,
+      // so waiting for the ack before advancing would leave the probe stuck on
+      // one title with both buttons dead for the rest of the demo. Advance
+      // optimistically — arrayUnion makes a write that lands late harmless.
+      setMovieIndex((index) => index + 1);
+      setPending(true);
+      recordSwipe(code, movie.id, dir)
+        .catch((cause: unknown) => console.warn('[group] swipe failed:', cause))
+        .finally(() => setPending(false));
+    },
+    [code, movie],
+  );
+
+  if (!movie) return null;
+
+  return (
+    <View style={styles.probe}>
+      <Text style={styles.probeLabel}>
+        Test swipe · {movie.title}
+        {pending ? ' · writing…' : ''}
+      </Text>
+      <View style={styles.probeRow}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => swipe('left')}
+          style={({ pressed }) => [styles.probeButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.secondaryLabel}>✕ Nope</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => swipe('right')}
+          style={({ pressed }) => [styles.probeButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.secondaryLabel}>♥ Like</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return <View style={styles.container}>{children}</View>;
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#101014',
+    padding: 24,
+    gap: 12,
+  },
+  sessionContainer: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#101014',
+    padding: 24,
+    gap: 12,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  subtitle: {
+    fontSize: 15,
+    color: '#9a9aa2',
+    textAlign: 'center',
+  },
+  code: {
+    fontSize: 72,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 12,
+    // letterSpacing adds trailing space after the last glyph; nudge it back.
+    marginLeft: 12,
+  },
+  codeInput: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 10,
+    textAlign: 'center',
+    backgroundColor: '#1b1b22',
+    borderRadius: 12,
+    paddingVertical: 12,
+    minWidth: 200,
+  },
+  primary: {
+    backgroundColor: '#e50914',
+    borderRadius: 999,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    marginTop: 8,
+  },
+  primaryLabel: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  secondary: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#3a3a44',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+  },
+  secondaryLabel: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  disabled: {
+    opacity: 0.4,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  divider: {
+    color: '#6a6a74',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 8,
+  },
+  error: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  memberHeading: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  memberList: {
+    alignSelf: 'stretch',
+    gap: 8,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1b1b22',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  memberName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  memberCounts: {
+    color: '#9a9aa2',
+    fontSize: 14,
+  },
+  probe: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  probeLabel: {
+    color: '#6a6a74',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  probeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  probeButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#3a3a44',
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+  },
+});

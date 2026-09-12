@@ -107,10 +107,10 @@ TMDB /discover/movie  (filter by genre, year, region, watch_provider, vote_count
 
 ### Client: Expo / React Native (SDK 52+)
 - Fastest for a JS team; EAS Build needs no Mac; Expo Go demos via QR.
-- **Swipe:** `rn-swiper-list` or `react-native-swipeable-card-stack` (reanimated + gesture-handler, Expo-Go compatible).
+- **Swipe:** Reanimated gesture-driven card deck with 2% gaussian blurred `index.gif` backdrop boosted by +40% brightness, high-luminance pixel bloom glow, and smooth dynamic hue shifting from deck to deck. Clean transition without center circle loaders or stardust particles.
 - **Video:** `react-native-youtube-iframe` + `react-native-webview`.
 - **(v2.2) Audio session:** trailers carry their own audio through the YouTube player, but the iPhone mute switch will silence it once a judge taps to unmute. Use `expo-audio` (the replacement for the deprecated `expo-av`) purely for `setAudioModeAsync({ playsInSilentMode: true })` at app start — a classic demo-day failure. No other audio playback remains in the app.
-- **Navigation:** `expo-router`.
+- **Navigation:** `expo-router` with iPhone-style floating transparent bubble tab bar.
 
 Choose Flutter only if all three already write Dart.
 
@@ -122,7 +122,7 @@ Choose Flutter only if all three already write Dart.
 ### Architecture (text diagram)
 
 ```
-┌────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────┐
 │  Expo React Native app                                     │
 │  • Onboarding deck (cold-start seeding)                     │
 │  • Swipe deck: YouTube trailer cards + "why" line           │
@@ -268,14 +268,14 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 
 
 ### Setup / infra
-1. **[P0] Scaffold Expo app + navigation** — Create the Expo app (SDK 52+) with expo-router and three route stubs: Onboarding, Swipe, Group. Wrap the root layout in GestureHandlerRootView. *AC:* Runs in Expo Go on a physical device. Tabs/routes navigate between the three stubs. *Est:* 1h. *Dep:* none. *Owner:* A. *Phase:* 0.
+1. **[P0] Scaffold Expo app + navigation** — Create the Expo app (SDK 52+) with expo-router and route stubs. Implement an iPhone-style floating transparent bubble navigation bar (frosted glass / blurred pill floating above the content with smooth rounded bubble styling, active icon glows, and backdrop blur) supporting the core app routes. Wrap the root layout in GestureHandlerRootView. Fine-tuning to be completed as part of UI polish. *AC:* Runs in Expo Go on a physical device. Floating transparent bubble nav bar navigates between routes. *Est:* 1h. *Dep:* none. *Owner:* A. *Phase:* 0.
 2. **[P0] Create Firebase project + Anonymous Auth + Hosting** — Create the Firebase project. Enable Firestore, Anonymous Auth, and Hosting (Hosting will serve the .tech landing/join page). Add the client config to the app. *AC:* App signs in anonymously on launch and logs a uid. Firestore is reachable from the app. Hosting is enabled (default URL loads a placeholder). *Est:* 1h. *Dep:* none. *Owner:* B. *Phase:* 0.
 3. **[P0] TMDB and Gemini keys** — Obtain a TMDB API key. Set up Gemini via Firebase AI Logic on the **Gemini Developer API backend**, which works on the free Spark plan — do not switch it to the Vertex AI backend, which would require Blaze. No Cloud Function and no proxy are needed: there is no server-side component in this project. *AC:* A test TMDB call succeeds from the app. A test Gemini call succeeds via Firebase AI Logic. No raw API key appears in the client bundle. *Est:* 0.5h. *Dep:* #2. *Owner:* C. *Phase:* 0.
 4. **[P0] Shared data model + seed.json with curated clip keys** — Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == "Clip"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema. *AC:* seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`). App loads seed.json with Wi-Fi off. Schema reviewed by C. *Est:* 3h. *Dep:* none. *Owner:* B. *Phase:* 0.
 5. **[P1] Shared TypeScript types** — One `types.ts` exporting Movie, MovieVideo, TasteVector, Session, Member. *AC:* Imported by all screens and the fetch layer with no `any`. *Est:* 0.5h. *Dep:* #4. *Owner:* C. *Phase:* 0.
 
 ### Mobile UI / swipe / video (A)
-6. **[P0] Swipe card stack** — Integrate `rn-swiper-list` (reanimated + gesture-handler). Like/Nope stamps positioned in the card chrome (bottom of card), never over the video. Programmatic swipeLeft/swipeRight via ref for the buttons. *AC:* Smooth 60fps swipe on a physical device. onSwipeLeft/Right fire with the card index. Stamps render in the chrome region only. Buttons trigger the same swipe as a gesture. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
+6. **[P0] Swipe card stack with +40% bright index.gif & luminance bloom glow** — Build gesture-driven card stack (reanimated + gesture-handler) with full-screen window coverage: outgoing deck translates completely off-screen, revealing a 40% brighter screen-filling `index.gif` with 2% gaussian blur, high-luminance pixel bloom glow emission, and smooth dynamic hue shifting from deck to deck. Zero center circle loaders or stardust particle artifacts. Next deck smoothly fades in without bounce-back. Dynamic Match/Pass stamps. Scaled 48x48 floating action buttons. *AC:* Smooth 60fps gesture response on physical device. Multi-stage handoff with +40% brightness index.gif backdrop, high-luminance specular bloom glow, and dynamic theme hue shift. No middle circle or stardust particles. Scaled 48x48 buttons trigger matching directional animation. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
 7. **[P0] YouTube trailer/clip card** — `react-native-youtube-iframe` inside a `pointerEvents="none"` wrapper. Muted autoplay, `initialPlayerParams: { start, end, controls: false, rel: false }`, `forceAndroidAutoplay`. Poster shows until onReady and on any error (embed_not_allowed / video_not_found). On `ended`, seekTo(start) to loop the segment. Tap-to-unmute button in the chrome. See TrailerCard.tsx in the examples folder. *AC:* Clip autoplays muted from `start` on iOS and Android devices. Embed-disabled/removed videos fall back to poster without crashing. Unmute works after a tap. No UI is drawn over the player. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
 8. **[P0] Card content overlay (chrome)** — Below the player: title + year, genres, where-to-watch badge(s), Gemini "why" slot, and a mute toggle. *AC:* Renders entirely from a Movie object. Layout holds for long titles and 3+ providers. *Est:* 2h. *Dep:* #6, #7. *Owner:* A. *Phase:* 1.
 9. **[P1] Onboarding polarizing deck (cold start)** — 6–8 fixed titles spanning blockbuster/arthouse, horror/feel-good, old/new. Swipes seed the taste vector, then route to the main deck. *AC:* After onboarding the main deck is visibly personalized. Skippable. *Est:* 1.5h. *Dep:* #6, #12. *Owner:* A. *Phase:* 4.
@@ -314,10 +314,10 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 
 ### Prize track — .Tech domain (B)
 32. **[P0] Register the .tech domain (hour 0)** — 10-minute name brainstorm (candidates in PLAN.md §B — a pun beats a description; judged on creativity). Redeem the MLH coupon at get.tech/mlh (code is in the day-of MLH hacker email). Point DNS at Firebase Hosting. Register under a team member's MLH-registered email. *AC:* Domain resolves to Firebase Hosting (allow up to a few hours for DNS). *Est:* 0.5h. *Dep:* #2. *Owner:* B. *Phase:* 0.
-33. **[P1] Landing + join page on the .tech domain** — Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an "Open in app" scheme link, and the Expo Go QR. *AC:* `https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session. *Est:* 1.5h. *Dep:* #32, #16. *Owner:* B. *Phase:* 2.
+33. **[P1] Landing + join page on the .tech domain** — Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an \"Open in app\" scheme link, and the Expo Go QR. *AC:* `https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session. *Est:* 1.5h. *Dep:* #32, #16. *Owner:* B. *Phase:* 2.
 
 ### Prize track — Gemini hardening + submission (C)
-39. **[P2] Gemini multimodal poster "vibe tags"** — Send the poster (inline base64) + title to `gemini-3.5-flash`; JSON `{tags: string[3]}`; render as chips on the card. Gemini-prize insurance — only if #20, #21 are done by hour 16. *AC:* Three sensible tags on ≥ 5 seed movies. Cached per movie. *Est:* 1.5h. *Dep:* #20. *Owner:* C. *Phase:* 4.
+39. **[P2] Gemini multimodal poster \"vibe tags\"** — Send the poster (inline base64) + title to `gemini-3.5-flash`; JSON `{tags: string[3]}`; render as chips on the card. Gemini-prize insurance — only if #20, #21 are done by hour 16. *AC:* Three sensible tags on ≥ 5 seed movies. Cached per movie. *Est:* 1.5h. *Dep:* #20. *Owner:* C. *Phase:* 4.
 40. **[P0] Prize submission checklist** — Devpost: select Best Use of Gemini API and Best .Tech Domain Name. Writeup names each sponsor tech with one sentence on what it did. Demo video shows the domain and the JSON schema. Attributions present (#27). Submit early, not at the deadline. *AC:* Checklist complete ≥ 30 min before the submission deadline. *Est:* 1h. *Dep:* #28, #29. *Owner:* C. *Phase:* 5.
 
 **Load check (P0 + P1 only, after the v2.2 ElevenLabs cut):** A ≈ 14.5h · B ≈ 18h · C ≈ 13.5h · shared ≈ 5.5h. All P2 issues are stretch and can be dropped without touching the demo path. C has the most slack now — if B is behind at hour 14, C should take work off B's plate, starting with #33.

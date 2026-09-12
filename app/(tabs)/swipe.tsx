@@ -1,17 +1,25 @@
-import { ScreenStub } from '@/components/ScreenStub';
-import { seedMovies, seedMoviesWithVideo } from '@/lib/seed';
+import React, { useCallback } from 'react';
+import { SwipeDeck } from '@/components/SwipeDeck';
+import type { Movie } from '@/types';
 
 export default function SwipeScreen() {
-  // Reading the bundled catalog here is the offline proof for #4: with Wi-Fi
-  // off these counts still render. The real deck lands in #6/#7/#8.
+  const handleSwipeLeft = useCallback((index: number, movie: Movie) => {
+    console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
+  }, []);
+
+  const handleSwipeRight = useCallback((index: number, movie: Movie) => {
+    console.log(`[Swipe] Swiped RIGHT (Like) on #${index}: ${movie.title}`);
+  }, []);
+
+  const handleSwipedAll = useCallback(() => {
+    console.log('[Swipe] Swiped all cards in deck');
+  }, []);
+
   return (
-    <ScreenStub
-      title="Swipe"
-      subtitle={
-        `Trailer card stack goes here (#6, #7, #8).\n\n` +
-        `${seedMovies.length} movies bundled offline · ` +
-        `${seedMoviesWithVideo.length} with a validated clip.`
-      }
+    <SwipeDeck
+      onSwipeLeft={handleSwipeLeft}
+      onSwipeRight={handleSwipeRight}
+      onSwipedAll={handleSwipedAll}
     />
   );
 }
