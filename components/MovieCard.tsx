@@ -317,8 +317,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingGif: {
-    width: 90,
-    height: 80,
+    width: 135,
+    height: 120,
   },
   placeholderEmoji: {
     fontSize: 54,

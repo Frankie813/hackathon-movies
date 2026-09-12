@@ -89,22 +89,38 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
             // react-native-webview's postMessage() on Android dispatches to
             // `document`, but the injected YouTube player page listens on
             // `window` (see PlayerScripts.js) — two different EventTargets,
-            // so play/pause/mute commands are silently dropped on Android
-            // without this bridge. iOS dispatches to `window` directly and
-            // doesn't need it, but re-dispatching there too is harmless.
+            // so play/pause/mute commands are silently dropped on Android.
             // https://github.com/react-native-webview/react-native-webview/issues/2980
             //
-            // Using injectedJavaScript (runs on onPageFinished), not
-            // injectedJavaScriptBeforeContentLoaded (runs on onPageStarted):
-            // the latter is a known-flaky timing hook on Android — it can
-            // fire before the new document exists, attaching the listener to
-            // the previous page instead. This bridge doesn't need to run
-            // before the page's own script, only before the first real
-            // postMessage command, which can't arrive until well after page
-            // load (gated on the player reaching "ready").
+            // Rather than relay document->window and hope the page's own
+            // window listener (and its `player` closure) picks it up, this
+            // calls player.playVideo()/pauseVideo()/mute()/unMute() directly:
+            // `player` is a top-level `var` in the page's own <script> (see
+            // MAIN_SCRIPT in PlayerScripts.js), which makes it a property of
+            // the shared global object — reachable from here too, since
+            // injectedJavaScript runs in the same document/JS realm. One
+            // fewer hop than a relay, and doesn't depend on the page's own
+            // listener behaving as expected.
+            //
+            // injectedJavaScript (onPageFinished), not
+            // injectedJavaScriptBeforeContentLoaded (onPageStarted): the
+            // latter is a known-flaky timing hook on Android that can fire
+            // before the new document exists. This only needs to be
+            // registered before the first real command, which can't arrive
+            // until well after page load (gated on the player reaching
+            // "ready" first).
             injectedJavaScript: `
               document.addEventListener('message', function (e) {
-                window.dispatchEvent(new MessageEvent('message', { data: e.data }));
+                try {
+                  var msg = JSON.parse(e.data);
+                  if (typeof player === 'undefined' || !player) return;
+                  switch (msg.eventName) {
+                    case 'playVideo': player.playVideo(); break;
+                    case 'pauseVideo': player.pauseVideo(); break;
+                    case 'muteVideo': player.mute(); break;
+                    case 'unMuteVideo': player.unMute(); break;
+                  }
+                } catch (err) {}
               });
               true;
             `,
