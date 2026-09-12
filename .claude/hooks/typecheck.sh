@@ -16,6 +16,11 @@ fi
 
 [ -f package.json ] && [ -f tsconfig.json ] || exit 0
 
+# A freshly created worktree has no node_modules until the CwdChanged
+# bootstrap hook fills it in. Without this guard `npx --no-install tsc`
+# fails to resolve, exits 2, and blocks the agent on every single turn.
+[ -x node_modules/.bin/tsc ] || exit 0
+
 out=$(npx --no-install tsc --noEmit 2>&1) && exit 0
 
 echo "Typecheck failed — fix before finishing:" >&2
