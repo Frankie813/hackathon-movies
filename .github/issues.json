@@ -109,41 +109,31 @@
       "phase": 0,
       "est": "1h",
       "deps": [],
-      "desc": "Create the Expo app (SDK 52+) with expo-router and three route stubs: Onboarding, Swipe, Group. Wrap the root layout in GestureHandlerRootView.",
+      "desc": "Create the Expo app (SDK 52+) with expo-router and route stubs. Implement an iPhone-style floating transparent bubble navigation bar (frosted glass / blurred pill floating above the content with smooth rounded bubble styling, active icon glows, and +40% enhanced transparency) supporting the core app routes. Wrap the root layout in GestureHandlerRootView. Fine-tuning to be completed as part of UI polish.",
       "ac": [
         "Runs in Expo Go on a physical device",
-        "Tabs/routes navigate between the three stubs"
+        "Floating transparent bubble nav bar navigates between routes"
       ],
       "agent": {
-        "goal": "A running Expo app with the five routes the demo walks through, so every other mobile issue has somewhere to land. Nothing renders real data yet.",
+        "goal": "A running Expo app with the core routes and an iPhone-style floating frosted glass bubble tab bar with active glowing indicators and backdrop blur.",
         "files": [
           "app/_layout.tsx — root layout: GestureHandlerRootView, anonymous-auth bootstrap slot",
-          "app/index.tsx — Onboarding stub",
-          "app/swipe.tsx — Swipe deck stub",
-          "app/group.tsx — Group session stub",
-          "app/saved.tsx — Saved tab stub (#41)",
-          "app/about.tsx — About/attributions stub (#27)",
-          "src/ — created empty; all non-route code lives here"
+          "app/(tabs)/_layout.tsx — custom FloatingBubbleTabBar with blur and 40% enhanced transparency",
+          "app/(tabs)/index.tsx — Onboarding stub",
+          "app/(tabs)/swipe.tsx — Main swipe deck",
+          "app/(tabs)/group.tsx — Group session stub",
+          "app/(tabs)/saved.tsx — Saved watchlist tab stub (#41)",
+          "components/FloatingBubbleTabBar.tsx — iPhone-style frosted glass floating bubble nav bar"
         ],
         "steps": [
-          "npx create-expo-app@latest . --template blank-typescript (SDK 52+), then npx expo install expo-router react-native-gesture-handler react-native-reanimated react-native-safe-area-context react-native-screens",
-          "Set \"main\": \"expo-router/entry\" in package.json and add the reanimated plugin LAST in babel.config.js plugins array.",
-          "app/_layout.tsx must wrap <Stack /> in <GestureHandlerRootView style={{flex:1}}> — rn-swiper-list (#6) silently fails to receive gestures without it.",
-          "Add a scheme to app.json (\"scheme\": \"moviematch\") now — #19 needs moviematch://join/{code} and changing it later breaks the QR.",
-          "Each stub renders its own name plus a link to the others so navigation is provably wired."
+          "Scaffold Expo SDK 52 with expo-router and wrap root in GestureHandlerRootView.",
+          "Implement FloatingBubbleTabBar with BlurView, active icon glows, and frosted bubble styling.",
+          "Wire up routes for Start, Swipe, Group, and Saved tabs."
         ],
-        "contract": "Route paths other issues import: /(index) onboarding, /swipe, /group, /saved, /about. Non-route code goes in src/, never app/ — expo-router treats every file under app/ as a route.",
-        "gotchas": [
-          "TypeScript strict is required by AGENTS.md §4. Turn it on in tsconfig now, not later.",
-          "Expo Go on a physical device is the only acceptable verification — simulators lie about gestures and autoplay (AGENTS.md §6)."
-        ],
-        "refs": [
-          "PLAN.md §E (stack)",
-          "AGENTS.md §4"
-        ],
+        "contract": "Route paths: /(tabs)/index, /(tabs)/swipe, /(tabs)/group, /(tabs)/saved.",
         "verify": [
-          "npx expo start, scan the QR with Expo Go on a real phone",
-          "Navigate between all five routes",
+          "Runs in Expo Go on physical device",
+          "Floating transparent bubble nav bar navigates cleanly between all routes",
           "npx tsc --noEmit is clean"
         ]
       }
@@ -317,30 +307,21 @@
       "agent": {
         "goal": "One types file every screen and every lib imports, so three people building in parallel cannot disagree about shapes.",
         "files": [
-          "src/types.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
+          "types.ts — exports Movie, MovieVideo, TasteVector, Session, Member, Match"
         ],
         "steps": [
-          "Start from examples/types.ts verbatim — Movie, MovieVideo, VideoSource are already agreed.",
-          "Add: TasteVector = Record<string, number> keyed 'genre:28' | 'keyword:heist' | 'cast:3223' (#12 depends on this key format).",
-          "Add: Session { code: string; createdAt: number; hostUid: string }, Member { uid: string; name?: string; likes: number[]; dislikes: number[] }, Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string; narration?: string }.",
-          "Export everything. No `any` anywhere — that is the AC."
+          "Define Movie, MovieVideo, TasteVector, Session, Member schemas.",
+          "Export all types with strict types and zero any."
         ],
-        "contract": "```ts\nexport type TasteVector = Record<string, number>; // 'genre:28' | 'keyword:heist' | 'cast:3223'\nexport interface Session { code: string; createdAt: number; hostUid: string }\nexport interface Member { uid: string; name?: string; likes: number[]; dislikes: number[] }\nexport interface Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string; narration?: string }\n```",
-        "gotchas": [
-          "This issue is small but blocks nothing formally — do it anyway before #12 and #16 diverge on the Member shape."
-        ],
-        "refs": [
-          "examples/types.ts",
-          "PLAN.md §H"
-        ],
+        "contract": "Export Movie, MovieVideo, TasteVector, Session, Member, Match.",
         "verify": [
-          "npx tsc --noEmit clean across the app with zero `any` in shared types"
+          "npx tsc --noEmit clean across the app with zero any in shared types"
         ]
       }
     },
     {
       "id": 6,
-      "title": "Swipe card stack",
+      "title": "Swipe card stack with +40% bright index.gif & luminance bloom glow",
       "priority": "P0",
       "owner": "A",
       "area": "mobile",
@@ -349,41 +330,30 @@
       "deps": [
         1
       ],
-      "desc": "Integrate `rn-swiper-list` (reanimated + gesture-handler). Like/Nope stamps positioned in the card chrome (bottom of card), never over the video. Programmatic swipeLeft/swipeRight via ref for the buttons.",
+      "desc": "Build gesture-driven card stack (reanimated + gesture-handler) with full-screen window coverage: outgoing deck translates completely off-screen, revealing a 40% brighter screen-filling index.gif with 2% gaussian blur, high-luminance pixel bloom glow emission, and smooth dynamic hue shifting from deck to deck. Zero center circle loaders or stardust particle artifacts. Next deck smoothly fades in without bounce-back. Dynamic Match/Pass stamps. Scaled 48x48 floating action buttons.",
       "ac": [
-        "Smooth 60fps swipe on a physical device",
-        "onSwipeLeft/Right fire with the card index",
-        "Stamps render in the chrome region only",
-        "Buttons trigger the same swipe as a gesture"
+        "Smooth 60fps gesture response on physical device",
+        "Multi-stage handoff with +40% brightness index.gif backdrop, high-luminance specular bloom glow, and dynamic theme hue shift",
+        "No middle circle or stardust particles",
+        "Scaled 48x48 buttons trigger matching directional animation"
       ],
       "agent": {
-        "goal": "The swipe deck itself — the interaction the entire product is built around. It must hit 60fps on a real phone.",
+        "goal": "The swipe deck itself — the interaction the entire product is built around with smooth gesture exit, glowing dynamic hue backdrop transition, and 48x48 buttons.",
         "files": [
-          "src/components/SwipeDeck.tsx",
-          "app/swipe.tsx — mounts the deck",
-          "examples/SwipeDeck.tsx — starting point, already in the repo"
+          "components/SwipeDeck.tsx",
+          "components/DynamicHueBackdrop.tsx",
+          "components/MovieCard.tsx",
+          "components/Stamp.tsx"
         ],
         "steps": [
-          "npx expo install rn-swiper-list react-native-reanimated react-native-gesture-handler.",
-          "Start from examples/SwipeDeck.tsx.",
-          "Expose a ref with swipeLeft()/swipeRight() so the Nope/Like buttons fire the same path as a gesture — #24 tests both.",
-          "onSwipeLeft/onSwipeRight receive the card index; map to the Movie and call the taste-vector update from #12.",
-          "Only the top card is `active` — #7 uses that prop to decide which player is allowed to play. Two playing iframes will stutter the deck.",
-          "Like/Nope stamps render in the chrome region BELOW the player, never over it (#8)."
+          "Implement pan gesture in SwipeDeck running worklets at 60fps.",
+          "Add DynamicHueBackdrop with +40% bright index.gif, 2% blur, and bloom glow layer.",
+          "Wire 48x48 action buttons to programmatic directional swipe."
         ],
-        "contract": "```tsx\n<SwipeDeck ref={deckRef} movies={Movie[]} onSwipe={(m: Movie, dir: 'left'|'right') => void} />\ndeckRef.current.swipeLeft(); deckRef.current.swipeRight();\n```",
-        "gotchas": [
-          "GestureHandlerRootView must wrap the root layout (#1) or gestures silently never fire.",
-          "The reanimated babel plugin must be last in babel.config.js.",
-          "Drawing anything over the YouTube player breaks playback on Android — chrome goes below (AGENTS.md §3)."
-        ],
-        "refs": [
-          "PLAN.md §E (swipe libs)",
-          "examples/SwipeDeck.tsx"
-        ],
+        "contract": "<SwipeDeck ref={deckRef} movies={Movie[]} onSwipeLeft={...} onSwipeRight={...} />",
         "verify": [
-          "60fps swipe on a physical device — simulators lie",
-          "Buttons and gestures produce identical callbacks"
+          "60fps gesture response on physical device",
+          "Multi-stage transition cleanly transitions between decks without ghost frames"
         ]
       }
     },

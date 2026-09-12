@@ -107,10 +107,10 @@ TMDB /discover/movie  (filter by genre, year, region, watch_provider, vote_count
 
 ### Client: Expo / React Native (SDK 52+)
 - Fastest for a JS team; EAS Build needs no Mac; Expo Go demos via QR.
-- **Swipe:** `rn-swiper-list` or `react-native-swipeable-card-stack` (reanimated + gesture-handler, Expo-Go compatible).
+- **Swipe:** Reanimated gesture-driven card deck with 2% gaussian blurred `index.gif` backdrop boosted by +40% brightness, high-luminance pixel bloom glow, and smooth dynamic hue shifting from deck to deck. Clean transition without center circle loaders or stardust particles.
 - **Video:** `react-native-youtube-iframe` + `react-native-webview`.
 - **(v2) Audio playback:** `expo-audio` (the replacement for the deprecated `expo-av`). Call `setAudioModeAsync({ playsInSilentMode: true })` so narration plays even with the iPhone mute switch on — a classic demo-day failure.
-- **Navigation:** `expo-router`.
+- **Navigation:** `expo-router` with iPhone floating transparent bubble tab bar.
 
 Choose Flutter only if all three already write Dart.
 
@@ -122,25 +122,25 @@ Choose Flutter only if all three already write Dart.
 ### Architecture (text diagram)
 
 ```
-┌────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────┐
 │  Expo React Native app                                     │
 │  • Onboarding deck (cold-start seeding)                     │
 │  • Swipe deck: YouTube trailer cards + "why" line           │
 │  • Group session: join code / QR → "It's a Match!" reveal   │
-│      └─ (v2) concierge voice plays the verdict (expo-audio) │
-└──────┬──────────────┬──────────────────┬───────────────────┘
-       │              │                  │
-  (catalog)     (realtime state)     (AI calls)
-       │              │                  │
-┌──────▼──────┐ ┌─────▼──────────┐ ┌─────▼──────────────────────┐
-│  TMDB API   │ │  Firebase      │ │  Firebase AI Logic ──► Gemini 3.5 Flash
-│  discover/  │ │  • Anon Auth   │ │     (why / mood / compromise, JSON)
-│  videos/    │ │  • Firestore   │ │                            │
-│  providers  │ │  • Hosting ◄───┼─┼── (v2) yourname.tech        │
-└─────────────┘ │  • Functions   │ │     landing + /j/{code}    │
- (fallback:     │    `tts` ──────┼─┼──► (v2) ElevenLabs TTS      │
-  seed.json +   └────────────────┘ │     eleven_flash_v2_5 → mp3 │
-  cached mp3)                      └────────────────────────────┘
+│      └── (v2) concierge voice plays the verdict (expo-audio) │
+└──────────────────┬──────────────┬──────────────────┬────────┘
+                   │              │                  │
+              (catalog)     (realtime state)     (AI calls)
+                   │              │                  │
+┌──────────────────▼─┐ ┌──────────▼──────────┐ ┌─────▼────────────────────────┐
+│  TMDB API   │ │  Firebase      │ │  Firebase AI Logic ──► Gemini 3.5 Flash  │
+│  discover/  │ │  • Anon Auth   │ │     (why / mood / compromise, JSON)      │
+│  videos/    │ │  • Firestore   │ │                            │             │
+│  providers  │ │  • Hosting ◄───┼─┼── (v2) yourname.tech        │             │
+└────────────────────┘ │  • Functions   │ │     landing + /j/{code}    │             │
+ (fallback:     │    `tts` ──────┼─┼──► (v2) ElevenLabs TTS      │             │
+  seed.json +   └────────────────┘ │     eleven_flash_v2_5 → mp3 │             │
+  cached mp3)                      └─────────────────────────────┘             │
 ```
 
 ---
@@ -224,7 +224,7 @@ Gemini JSON (narration) → Cloud Function `tts` (holds ELEVENLABS_API_KEY)
 ```
 
 ### Credit math
-~150 chars per "why," ~250 per verdict. 10,000 credits ≈ 40–60 narrations — comfortably enough, **but only with caching.** Issue #38 pre-generates audio for every seed movie's "why" line plus three canned group verdicts during the polish phase, so the live demo and all five rehearsals hit cache. Keep a second team member's free ElevenLabs account as a spare key.
+~150 chars per "why," ~250 per verdict. 10,000 credits ≈ 40–60 narrations — comfortably enough, **but only with caching.** Issue #38 pre-generates audio for every seed movie's "why" line plus three canned group verdicts during the polish phase, so the live demo and all rehearsals never hit cache. Keep a second team member's free ElevenLabs account as a spare key.
 
 ### Demo moment (what judges hear)
 Phone 2 scans the QR at `whatdowewatch.tech`. Both swipe. Poster slams in with "IT'S A MATCH!" and Reel says: *"You two finally agree on something. Alex gets the heist, Jordan gets the laughs. It's on Netflix — go."* Ten seconds; Gemini, ElevenLabs, and the .tech domain all on screen at once.
@@ -296,20 +296,20 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 
 
 ### Setup / infra
-1. **[P0] Scaffold Expo app + navigation** — Create the Expo app (SDK 52+) with expo-router and three route stubs: Onboarding, Swipe, Group. Wrap the root layout in GestureHandlerRootView. *AC:* Runs in Expo Go on a physical device. Tabs/routes navigate between the three stubs. *Est:* 1h. *Dep:* none. *Owner:* A. *Phase:* 0.
+1. **[P0] Scaffold Expo app + navigation** — Create the Expo app (SDK 52+) with expo-router and route stubs. Implement an iPhone-style floating transparent bubble navigation bar (frosted glass / blurred pill floating above the content with smooth rounded bubble styling, active icon glows, and backdrop blur) supporting the core app routes. Wrap the root layout in GestureHandlerRootView. Fine-tuning to be completed as part of UI polish. *AC:* Runs in Expo Go on a physical device. Floating transparent bubble nav bar navigates between routes. *Est:* 1h. *Dep:* none. *Owner:* A. *Phase:* 0.
 2. **[P0] Create Firebase project + Anonymous Auth + Hosting** — Create the Firebase project. Enable Firestore, Anonymous Auth, and Hosting (Hosting will serve the .tech landing/join page). Add the client config to the app. *AC:* App signs in anonymously on launch and logs a uid. Firestore is reachable from the app. Hosting is enabled (default URL loads a placeholder). *Est:* 1h. *Dep:* none. *Owner:* B. *Phase:* 0.
 3. **[P0] TMDB, Gemini, and ElevenLabs keys + secrets** — Obtain a TMDB API key. Set up Gemini via Firebase AI Logic (Gemini Developer API backend, works on the free Spark plan). Store the ElevenLabs key as a Cloud Function / proxy secret — never in the app bundle. Decide in this hour whether someone adds a card for the Blaze plan (Cloud Functions) or whether the `tts` proxy runs as a tiny Express server on Vultr free credits. *AC:* A test TMDB call succeeds from the app. A test Gemini call succeeds via Firebase AI Logic. A test ElevenLabs call succeeds from the function/proxy. No raw API key appears in the client bundle. *Est:* 1h. *Dep:* #2. *Owner:* C. *Phase:* 0.
-4. **[P0] Shared data model + seed.json with curated clip keys** — Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == "Clip"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema. *AC:* seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`). App loads seed.json with Wi-Fi off. Schema reviewed by C. *Est:* 3h. *Dep:* none. *Owner:* B. *Phase:* 0.
+4. **[P0] Shared data model + seed.json with curated clip keys** — Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema. *AC:* seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`). App loads seed.json with Wi-Fi off. Schema reviewed by C. *Est:* 3h. *Dep:* none. *Owner:* B. *Phase:* 0.
 5. **[P1] Shared TypeScript types** — One `types.ts` exporting Movie, MovieVideo, TasteVector, Session, Member. *AC:* Imported by all screens and the fetch layer with no `any`. *Est:* 0.5h. *Dep:* #4. *Owner:* C. *Phase:* 0.
 
 ### Mobile UI / swipe / video (A)
-6. **[P0] Swipe card stack** — Integrate `rn-swiper-list` (reanimated + gesture-handler). Like/Nope stamps positioned in the card chrome (bottom of card), never over the video. Programmatic swipeLeft/swipeRight via ref for the buttons. *AC:* Smooth 60fps swipe on a physical device. onSwipeLeft/Right fire with the card index. Stamps render in the chrome region only. Buttons trigger the same swipe as a gesture. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
-7. **[P0] YouTube trailer/clip card** — `react-native-youtube-iframe` inside a `pointerEvents="none"` wrapper. Muted autoplay, `initialPlayerParams: { start, end, controls: false, rel: false }`, `forceAndroidAutoplay`. Poster shows until onReady and on any error (embed_not_allowed / video_not_found). On `ended`, seekTo(start) to loop the segment. Tap-to-unmute button in the chrome. See TrailerCard.tsx in the examples folder. *AC:* Clip autoplays muted from `start` on iOS and Android devices. Embed-disabled/removed videos fall back to poster without crashing. Unmute works after a tap. No UI is drawn over the player. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
-8. **[P0] Card content overlay (chrome)** — Below the player: title + year, genres, where-to-watch badge(s), Gemini "why" slot, mute toggle, and a speaker-icon placeholder for the ElevenLabs read-aloud. *AC:* Renders entirely from a Movie object. Layout holds for long titles and 3+ providers. *Est:* 2h. *Dep:* #6, #7. *Owner:* A. *Phase:* 1.
+6. **[P0] Swipe card stack with +40% bright index.gif & luminance bloom glow** — Build gesture-driven card stack (reanimated + gesture-handler) with full-screen window coverage: outgoing deck translates completely off-screen, revealing a 40% brighter screen-filling `index.gif` with 2% gaussian blur, high-luminance pixel bloom glow emission, and smooth dynamic hue shifting from deck to deck. Zero center circle loaders or stardust particle artifacts. Next deck smoothly fades in without bounce-back. Dynamic Match/Pass stamps. Scaled 48x48 floating action buttons. *AC:* Smooth 60fps gesture response on physical device. Multi-stage handoff with +40% brightness index.gif backdrop, high-luminance specular bloom glow, and dynamic theme hue shift. No middle circle or stardust particles. Scaled 48x48 buttons trigger matching directional animation. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
+7. **[P0] YouTube trailer/clip card** — `react-native-youtube-iframe` inside a `pointerEvents=\"none\"` wrapper. Muted autoplay, `initialPlayerParams: { start, end, controls: false, rel: false }`, `forceAndroidAutoplay`. Poster shows until onReady and on any error (embed_not_allowed / video_not_found). On `ended`, seekTo(start) to loop the segment. Tap-to-unmute button in the chrome. See TrailerCard.tsx in the examples folder. *AC:* Clip autoplays muted from `start` on iOS and Android devices. Embed-disabled/removed videos fall back to poster without crashing. Unmute works after a tap. No UI is drawn over the player. *Est:* 3h. *Dep:* #1. *Owner:* A. *Phase:* 1.
+8. **[P0] Card content overlay (chrome)** — Below the player: title + year, genres, where-to-watch badge(s), Gemini \"why\" slot, mute toggle, and a speaker-icon placeholder for the ElevenLabs read-aloud. *AC:* Renders entirely from a Movie object. Layout holds for long titles and 3+ providers. *Est:* 2h. *Dep:* #6, #7. *Owner:* A. *Phase:* 1.
 9. **[P1] Onboarding polarizing deck (cold start)** — 6–8 fixed titles spanning blockbuster/arthouse, horror/feel-good, old/new. Swipes seed the taste vector, then route to the main deck. *AC:* After onboarding the main deck is visibly personalized. Skippable. *Est:* 1.5h. *Dep:* #6, #12. *Owner:* A. *Phase:* 4.
-10. **[P1] "It's a Match!" reveal screen** — Full-screen celebratory reveal on the group match event: poster, title, where-to-watch, Gemini `why`. Expose an onMounted hook so narration audio can start ~1s in. *AC:* Triggers on match event on every member's device. Shows poster + why + providers. Hook fires for audio. *Est:* 2h. *Dep:* #17, #21. *Owner:* A. *Phase:* 3.
-11. **[P2] Mood filter input UI** — Text box + suggestion chips ("funny but not dumb", "something to cry to"). Calls the mood-filter function and reloads the deck. *AC:* Typed mood produces a visibly different deck. *Est:* 1.5h. *Dep:* #22. *Owner:* A. *Phase:* 3.
-27. **[P1] About screen with attributions** — TMDB notice ("This product uses the TMDB API but is not endorsed or certified by TMDB.") + approved TMDB logo, "Voice by ElevenLabs" (required on the free plan), "Powered by Gemini". *AC:* All three attributions visible in About. *Est:* 0.5h. *Dep:* #1. *Owner:* A. *Phase:* 4.
+10. **[P1] \"It's a Match!\" reveal screen** — Full-screen celebratory reveal on the group match event: poster, title, where-to-watch, Gemini `why`. Expose an onMounted hook so narration audio can start ~1s in. *AC:* Triggers on match event on every member's device. Shows poster + why + providers. Hook fires for audio. *Est:* 2h. *Dep:* #17, #21. *Owner:* A. *Phase:* 3.
+11. **[P2] Mood filter input UI** — Text box + suggestion chips (\"funny but not dumb\", \"something to cry to\"). Calls the mood-filter function and reloads the deck. *AC:* Typed mood produces a visibly different deck. *Est:* 1.5h. *Dep:* #22. *Owner:* A. *Phase:* 3.
+27. **[P1] About screen with attributions** — TMDB notice (\"This product uses the TMDB API but is not endorsed or certified by TMDB.\") + approved TMDB logo, \"Voice by ElevenLabs\" (required on the free plan), \"Powered by Gemini\". *AC:* All three attributions visible in About. *Est:* 0.5h. *Dep:* #1. *Owner:* A. *Phase:* 4.
 31. **[P2] EAS build / TestFlight backup** — Installable build in case Expo Go misbehaves on the demo device. *AC:* Build installs and runs the demo path. *Est:* 1.5h. *Dep:* #24. *Owner:* B. *Phase:* 4.
 41. **[P1] Saved tab (watch later)** — List of liked movies and group matches from Firestore (`users/{uid}/likes`, `users/{uid}/matches`): poster, title, where-to-watch badge. Long-press to remove. A like is a save — no third swipe direction. *AC:* A like appears in the tab within a second. A group match appears for every member after the reveal. *Est:* 1.5h. *Dep:* #18, #17. *Owner:* A. *Phase:* 3.
 
@@ -326,9 +326,9 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 19. **[P1] QR / shareable join link on the .tech domain** — QR encodes `https://<domain>.tech/j/{code}`. App handles a `moviematch://join/{code}` scheme link. Universal https links need an EAS build + AASA file, so in Expo Go fall back to the scheme link or manual code entry. *AC:* Scanning the QR reaches a page that opens the app or shows the code big. *Est:* 1.5h. *Dep:* #16, #32. *Owner:* B. *Phase:* 3.
 
 ### Gemini integration (C)
-20. **[P1] Gemini: "why you'd like this" one-liner** — `gemini-3.5-flash` with responseMimeType application/json + responseSchema `{reason: string, confidence: number}`. Input: the user's recent likes + the candidate. Max 20 words, no spoilers, in "Reel" the concierge's voice. Cache per movie id. Exponential backoff on 429. *AC:* Returns a ≤ 20-word reason. Second request for the same movie hits cache. 429 does not crash the deck. *Est:* 2h. *Dep:* #3, #12. *Owner:* C. *Phase:* 1.
+20. **[P1] Gemini: \"why you'd like this\" one-liner** — `gemini-3.5-flash` with responseMimeType application/json + responseSchema `{reason: string, confidence: number}`. Input: the user's recent likes + the candidate. Max 20 words, no spoilers, in \"Reel\" the concierge's voice. Cache per movie id. Exponential backoff on 429. *AC:* Returns a ≤ 20-word reason. Second request for the same movie hits cache. 429 does not crash the deck. *Est:* 2h. *Dep:* #3, #12. *Owner:* C. *Phase:* 1.
 21. **[P1] Gemini: group compromise pick + narration script** — Send each member's liked/disliked titles. Schema `{pick, tmdb_id, why, narration, runner_up}`. `narration` is a ≤ 35-word spoken script in Reel's voice addressing the group by name and ending with where to watch (this is what ElevenLabs reads). Validate `tmdb_id` against the catalog before display. *AC:* Returns a title that exists in the session's catalog. why is on-screen text; narration is speakable and ≤ 35 words. *Est:* 2h. *Dep:* #16, #3. *Owner:* C. *Phase:* 3.
-22. **[P2] Gemini: natural-language mood → TMDB filters** — Structured output `{genres[], exclude_genres[], keywords[], min_rating, tone}` mapped to TMDB genre ids and fed to `/discover`. *AC:* "funny but not dumb" yields comedy with a rating floor and no slapstick keywords. *Est:* 2h. *Dep:* #15, #3. *Owner:* C. *Phase:* 3.
+22. **[P2] Gemini: natural-language mood → TMDB filters** — Structured output `{genres[], exclude_genres[], keywords[], min_rating, tone}` mapped to TMDB genre ids and fed to `/discover`. *AC:* \"funny but not dumb\" yields comedy with a rating floor and no slapstick keywords. *Est:* 2h. *Dep:* #15, #3. *Owner:* C. *Phase:* 3.
 23. **[P2] Gemini: ranked recommender fallback** — Ask Gemini for a ranked list of next candidates as JSON; validate every title via TMDB search before showing. *AC:* Every returned title resolves to a TMDB id. *Est:* 2h. *Dep:* #20. *Owner:* C. *Phase:* 4.
 
 ### Integration & demo prep (all)
@@ -342,18 +342,22 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 
 ### Prize track — .Tech domain (B)
 32. **[P0] Register the .tech domain (hour 0)** — 10-minute name brainstorm (candidates in PLAN.md §B — a pun beats a description; judged on creativity). Redeem the MLH coupon at get.tech/mlh (code is in the day-of MLH hacker email). Point DNS at Firebase Hosting. Register under a team member's MLH-registered email. *AC:* Domain resolves to Firebase Hosting (allow up to a few hours for DNS). *Est:* 0.5h. *Dep:* #2. *Owner:* B. *Phase:* 0.
-33. **[P1] Landing + join page on the .tech domain** — Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an "Open in app" scheme link, and the Expo Go QR. *AC:* `https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session. *Est:* 1.5h. *Dep:* #32, #16. *Owner:* B. *Phase:* 2.
+33. **[P1] Landing + join page on the .tech domain** — Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an \"Open in app\" scheme link, and the Expo Go QR. *AC:* `https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session. *Est:* 1.5h. *Dep:* #32, #16. *Owner:* B. *Phase:* 2.
 
 ### Prize track — ElevenLabs (C + A)
 34. **[P0] ElevenLabs account, voice pick, and `tts` function** — Free account (no card; 10,000 credits/month). Pick Reel's premade voice and commit to it. Cloud Function (or Express proxy) `tts({text}) → {audioBase64}` using `eleven_flash_v2_5`, output `mp3_44100_128`. Key in a secret. Create a spare free account on a second teammate's email. *AC:* curl the function → playable mp3. Key not in the client bundle. *Est:* 1h. *Dep:* #3. *Owner:* C. *Phase:* 0.
-35. **[P1] Narration field in Gemini prompts** — Add `narration` to the compromise schema/prompt (#21) with the example line from PLAN.md §F. Optionally a `spoken` variant of the "why" reason (#20). *AC:* narration ≤ 35 words, names who compromised on what, ends with where to watch. *Est:* 0.5h. *Dep:* #21. *Owner:* C. *Phase:* 3.
+35. **[P1] Narration field in Gemini prompts** — Add `narration` to the compromise schema/prompt (#21) with the example line from PLAN.md §F. Optionally a `spoken` variant of the \"why\" reason (#20). *AC:* narration ≤ 35 words, names who compromised on what, ends with where to watch. *Est:* 0.5h. *Dep:* #21. *Owner:* C. *Phase:* 3.
 36. **[P1] TTS playback util with cache (expo-audio)** — `speak(text)`: hash(text) → check expo-file-system cache → miss: call `tts`, write mp3 → play with `expo-audio`. `setAudioModeAsync({ playsInSilentMode: true })` so the iPhone mute switch doesn't kill the demo. *AC:* Second call for the same text makes zero network requests. Plays with the mute switch on. *Est:* 2h. *Dep:* #34. *Owner:* C. *Phase:* 1.
-37. **[P1] Wire Reel's voice into the UI** — (a) Match reveal: pre-warm Gemini + TTS the instant the match is detected; play ~1s after the reveal mounts. (b) Speaker icon on the card reads the "why" line. *AC:* Voice plays in both places on a physical device. *Est:* 1.5h. *Dep:* #10, #36. *Owner:* A. *Phase:* 3.
-38. **[P1] Pre-generate cached narration audio (offline safety)** — Script that runs `speak()` for every seed movie's "why" line plus three canned group verdicts; bundle the mp3s (or warm the cache dir) so the live demo and all rehearsals never hit ElevenLabs live. B takes this if C is behind. *AC:* Wi-Fi off → reveal still talks. Credit balance unchanged across 5 rehearsals. *Est:* 1h. *Dep:* #36, #4. *Owner:* C. *Phase:* 4.
+37. **[P1] Wire Reel's voice into the UI** — (a) Match reveal: pre-warm Gemini + TTS the instant the match is detected; play ~1s after the reveal mounts. (b) Speaker icon on the card reads the \"why\" line. *AC:* Voice plays in both places on a physical device. *Est:* 1.5h. *Dep:* #10, #36. *Owner:* A. *Phase:* 3.
+38. **[P1] Pre-generate cached narration audio (offline safety)** — Script that runs `speak()` for every seed movie's \"why\" line plus three canned group verdicts; bundle the mp3s (or warm the cache dir) so the live demo and all rehearsals never hit ElevenLabs live. B takes this if C is behind. *AC:* Wi-Fi off → reveal still talks. Credit balance unchanged across 5 rehearsals. *Est:* 1h. *Dep:* #36, #4. *Owner:* C. *Phase:* 4.
 
 ### Prize track — Gemini hardening + submission (C)
-39. **[P2] Gemini multimodal poster "vibe tags"** — Send the poster (inline base64) + title to `gemini-3.5-flash`; JSON `{tags: string[3]}`; render as chips on the card. Gemini-prize insurance — only if #20, #21 are done by hour 16. *AC:* Three sensible tags on ≥ 5 seed movies. Cached per movie. *Est:* 1.5h. *Dep:* #20. *Owner:* C. *Phase:* 4.
+39. **[P2] Gemini multimodal poster \"vibe tags\"** — Send the poster (inline base64) + title to `gemini-3.5-flash`; JSON `{tags: string[3]}`; render as chips on the card. Gemini-prize insurance — only if #20, #21 are done by hour 16. *AC:* Three sensible tags on ≥ 5 seed movies. Cached per movie. *Est:* 1.5h. *Dep:* #20. *Owner:* C. *Phase:* 4.
 40. **[P0] Prize submission checklist** — Devpost: select Best Use of Gemini API, Best Use of ElevenLabs, and Best .Tech Domain Name. Writeup names each sponsor tech with one sentence on what it did. Demo video shows the domain, the JSON schema, and the voice. Attributions present (#27). Submit early, not at the deadline. *AC:* Checklist complete ≥ 30 min before the submission deadline. *Est:* 1h. *Dep:* #28, #29. *Owner:* C. *Phase:* 5.
+
+### Group persistence (A)
+41. **[P1] Saved tab (watch later)** — List of liked movies and group matches from Firestore (`users/{uid}/likes`, `users/{uid}/matches`): poster, title, where-to-watch badge. Long-press to remove. A like is a save — no third swipe direction. *AC:* A like appears in the tab within a second. A group match appears for every member after the reveal. *Est:* 1.5h. *Dep:* #18, #17. *Owner:* A. *Phase:* 3.
+42. **[P2] Closing demo beat: Saved tab on both phones** — After Reel's verdict, one tap to the Saved tab on both devices shows the pick sitting there. Add to the pitch script (#29). *AC:* Beat included in the 2-minute script and rehearsed. *Est:* 0.25h. *Dep:* #41, #25. *Owner:* all. *Phase:* 5.
 
 **Load check (P0 + P1 only):** A ≈ 16h · B ≈ 18h · C ≈ 18.5h · shared ≈ 5.5h. All P2 issues are stretch and can be dropped without touching the demo path. If C is behind at hour 14, B takes #38 and A takes #39 (or drop #39).
 
@@ -368,7 +372,7 @@ Labels: `P0/P1/P2`, `owner:*`, `area:*`, `prize-track`. Milestones: one per phas
 | YouTube trailer won't embed | Medium | Medium | Validate keys; poster fallback; skip card; pre-vet seed trailers. |
 | Gemini free-tier 429 | Medium | Medium | Cache per movie; backoff; keep LLM out of the tight swipe loop. |
 | API key leaked in client bundle | Medium | High | Firebase AI Logic + App Check for Gemini; `tts` function/proxy for ElevenLabs; never bundle raw keys. |
-| Gemini hallucinates titles | Medium | Medium | Validate every `tmdb_id`/title against TMDB. |
+| Gemini映画 titles hallucination | Medium | Medium | Validate every `tmdb_id`/title against TMDB. |
 | Realtime group sync flaky | Medium | High | Firestore snapshot listeners; test with 2 devices early (#16). |
 | Model name changes | Low | Medium | Pin explicit strings; re-verify at build time. |
 | **(v2) ElevenLabs credits exhausted** | Medium | High (loses a prize) | Cache by text hash (#36); pre-generate (#38); spare free account on a teammate's email. |
