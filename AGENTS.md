@@ -80,6 +80,17 @@ so in one sentence and then use it anyway unless a human overrules you.
   switch silences the trailer audio when a judge taps to unmute.
 - Never draw UI over the YouTube player. Use a `pointerEvents="none"` wrapper
   and put all chrome below it.
+- **`react-native-webview`'s `postMessage()` on Android dispatches to
+  `document`, but `react-native-youtube-iframe`'s injected player page listens
+  on `window`** — two different EventTargets, so `play`/`pause`/`mute`
+  commands are silently dropped on Android with no error. Confirmed by reading
+  both packages' installed source, not a New Architecture issue (predates
+  Fabric; upgrading the webview version doesn't fix it —
+  react-native-webview/react-native-webview#2980). Fix: bridge the two via
+  `webViewProps.injectedJavaScriptBeforeContentLoaded` re-dispatching
+  `document` message events onto `window` (see `TrailerVideoPlayer.tsx`).
+  Symptom if you skip this: the clip loads to YouTube's paused/cued state
+  (poster + play button) and never actually autoplays.
 - There is **no server-side component**: no Cloud Functions, no proxy, no Blaze
   plan. Everything runs on Spark. If you find yourself needing a server, stop
   and raise it — that is a scope change, not an implementation detail.

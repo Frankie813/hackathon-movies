@@ -79,6 +79,19 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
             androidLayerType: 'hardware',
             allowsInlineMediaPlayback: true,
             mediaPlaybackRequiresUserAction: false,
+            // react-native-webview's postMessage() on Android dispatches to
+            // `document`, but the injected YouTube player page listens on
+            // `window` (see PlayerScripts.js) — two different EventTargets,
+            // so play/pause/mute commands are silently dropped on Android
+            // without this bridge. iOS dispatches to `window` directly and
+            // doesn't need it, but re-dispatching there too is harmless.
+            // https://github.com/react-native-webview/react-native-webview/issues/2980
+            injectedJavaScriptBeforeContentLoaded: `
+              document.addEventListener('message', function (e) {
+                window.dispatchEvent(new MessageEvent('message', { data: e.data }));
+              });
+              true;
+            `,
           }}
         />
       </View>
