@@ -92,7 +92,7 @@ export function DynamicHueBackdrop({
 
   return (
     <View style={[styles.container, { width, height }]} pointerEvents="none">
-      {/* 1. Base Animated Theme Color Floor (High Brightness +40%) */}
+      {/* 1. Base Animated Theme Color Floor (brightness -25%) */}
       <Animated.View style={[StyleSheet.absoluteFill, styles.baseFloor, animatedThemeOverlayStyle]} />
 
       {/* 2. High-Luminance Pixel Glow / Bloom Emission Layer */}
@@ -106,7 +106,7 @@ export function DynamicHueBackdrop({
         />
       </Animated.View>
 
-      {/* 3. Primary Full-Screen index.gif with 2% Gaussian Blur and +40% Brightness */}
+      {/* 3. Primary Full-Screen index.gif with 2% Gaussian Blur (brightness -25%) */}
       <Image
         source={require('@/assets/index.gif')}
         style={[styles.gifBackground, imageDynamicStyle]}
@@ -132,7 +132,7 @@ export function DynamicHueBackdrop({
         ]}
       />
 
-      {/* 6. +40% Brightness Dynamic Ambient Boost */}
+      {/* 6. Dynamic Ambient Brightness Boost (-25%) */}
       <View style={[StyleSheet.absoluteFill, styles.brightnessBoostOverlay]} />
     </View>
   );
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   baseFloor: {
-    opacity: 0.85,
+    opacity: 0.45, // -25%, then -30% more from the original +40% brightness treatment
   },
   bloomGlowImage: {
     position: 'absolute',
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    opacity: 0.95, // Bright, vivid coverage
+    opacity: 0.50, // -25%, then -30% more from the original +40% brightness treatment
     transform: [{ scale: 1.06 }], // Prevents edge bleed under 2% gaussian blur
   },
   hueTintLayer: {
@@ -168,6 +168,6 @@ const styles = StyleSheet.create({
     opacity: 0.22,
   },
   brightnessBoostOverlay: {
-    backgroundColor: 'rgba(255, 255, 255, 0.14)', // +40% brightness boost
+    backgroundColor: 'rgba(255, 255, 255, 0.074)', // +40% brightness boost, -25% then -30% more
   },
 });

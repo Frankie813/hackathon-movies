@@ -106,7 +106,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     isAnimating.value = false;
   }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
 
-  // Sequence: Old Deck Out -> Bright +40% index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
+  // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
   const handleSwipeComplete = useCallback(
     (direction: 'left' | 'right') => {
       const swipedIndex = currentIndex;
@@ -335,7 +335,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   return (
     <View style={styles.container}>
-      {/* Full-Screen 2% Gaussian Blurred index.gif with +40% Brightness, High-Luminance Bloom Glow & Smooth Hue Shift */}
+      {/* Full-Screen 2% Gaussian Blurred index.gif, High-Luminance Bloom Glow & Smooth Hue Shift */}
       <DynamicHueBackdrop
         currentThemeColor={currentTheme}
         previousThemeColor={previousMovie?.themeColor}
