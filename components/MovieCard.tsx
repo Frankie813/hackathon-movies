@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -8,6 +9,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import YoutubePlayer, {
+  PLAYER_STATES,
+  type YoutubeIframeRef,
+} from 'react-native-youtube-iframe';
 import type { Movie } from '@/types';
 
 interface MovieCardProps {
@@ -19,26 +24,121 @@ interface MovieCardProps {
   onPressSpeaker?: (movie: Movie) => void;
   onToggleMute?: () => void;
   isMuted?: boolean;
+  onCardFailed?: (movie: Movie) => void;
 }
 
 export function MovieCard({
   movie,
   width,
   height,
+  active = false,
   whyLine,
   onPressSpeaker,
   onToggleMute,
-  isMuted = true,
+  isMuted,
+  onCardFailed,
 }: MovieCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
 
+  // react-native-youtube-iframe's web player can't message back to RN on web
+  // (react-native-web-webview loads it as a plain cross-origin <iframe> with
+  // no window.ReactNativeWebView bridge), so onReady/onChangeState never fire
+  // there. Skip the player and show the poster immediately on web.
+  const isWeb = Platform.OS === 'web';
+  const hasVideo = !!movie.video?.key && !isWeb;
+
+  const playerRef = useRef<YoutubeIframeRef>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(!hasVideo);
+  const [internalMuted, setInternalMuted] = useState(true);
+  const muted = isMuted ?? internalMuted;
+
+  const start = movie.video?.start ?? 0;
+  const end = movie.video?.end;
+
+  // Reset video state when the card changes to a different movie.
+  useEffect(() => {
+    setVideoReady(false);
+    setVideoFailed(!hasVideo);
+  }, [movie.id, hasVideo]);
+
+  // Loop the chosen segment instead of showing the YouTube end screen.
+  const onVideoStateChange = useCallback(
+    (state: string) => {
+      if (state === PLAYER_STATES.ENDED || state === 'ended') {
+        playerRef.current?.seekTo(start, true);
+      }
+    },
+    [start]
+  );
+
+  // embed_not_allowed / video_not_found / html5_error -> fall back permanently to the poster.
+  const onVideoError = useCallback(
+    (error: string) => {
+      console.warn(`[MovieCard] YouTube error for "${movie.title}":`, error);
+      setVideoFailed(true);
+      onCardFailed?.(movie);
+    },
+    [movie, onCardFailed]
+  );
+
+  const handleVideoReady = useCallback(() => setVideoReady(true), []);
+
+  const handleToggleMute = useCallback(() => {
+    if (onToggleMute) {
+      onToggleMute();
+    } else {
+      setInternalMuted((prev) => !prev);
+    }
+  }, [onToggleMute]);
+
   const accentColor = movie.negativeColor || '#f59e0b';
   const themeBase = movie.themeColor || '#080d1a';
+  const showVideo = hasVideo && !videoFailed;
+  const showPoster = !showVideo || !videoReady;
 
   return (
     <View style={[styles.card, { width, height }]}>
-      {movie.poster && !imageError ? (
+      {showVideo && (
+        // pointerEvents="none": taps/drags go to the swipe gesture, not the
+        // WebView. The card's own chrome (gradients, title, mute button) is
+        // still drawn on top of this in the full-bleed layout below —
+        // a deliberate, known deviation from AGENTS.md §3 ("never draw UI
+        // over the player"), accepted to keep the existing full-bleed card
+        // look. Needs real-device verification: Android WebView compositing
+        // can behave differently than iOS/web here.
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { width, height }]}>
+          <YoutubePlayer
+            ref={playerRef}
+            height={height}
+            width={width}
+            videoId={movie.video!.key}
+            play={active && videoReady}
+            mute={muted}
+            forceAndroidAutoplay
+            initialPlayerParams={{
+              start,
+              end,
+              controls: false,
+              rel: false,
+              modestbranding: true,
+              loop: false,
+              preventFullScreen: true,
+            }}
+            onReady={handleVideoReady}
+            onChangeState={onVideoStateChange}
+            onError={onVideoError}
+            webViewProps={{
+              androidLayerType: 'hardware',
+              allowsInlineMediaPlayback: true,
+              mediaPlaybackRequiresUserAction: false,
+            }}
+          />
+        </View>
+      )}
+
+      {showPoster && (movie.poster && !imageError ? (
         <>
           {/* Duplicate image behind: scaled up & softened with blur filter to fill all space */}
           <Image
@@ -65,7 +165,7 @@ export function MovieCard({
           <Text style={styles.placeholderEmoji}>🎬</Text>
           <Text style={styles.placeholderTitle}>{movie.title}</Text>
         </View>
-      )}
+      ))}
 
       {/* Top subtle vignette for header legibility */}
       <LinearGradient
@@ -100,14 +200,15 @@ export function MovieCard({
             </Text>
           </View>
 
-          {onToggleMute && (
+          {showVideo && (
             <Pressable
-              onPress={onToggleMute}
+              onPress={handleToggleMute}
               style={styles.muteButton}
-              accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
+              accessibilityLabel={muted ? 'Unmute trailer' : 'Mute trailer'}
+              accessibilityRole="button"
             >
               <Ionicons
-                name={isMuted ? 'volume-mute' : 'volume-high'}
+                name={muted ? 'volume-mute' : 'volume-high'}
                 size={18}
                 color="#ffffff"
               />
