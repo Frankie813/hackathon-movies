@@ -68,6 +68,16 @@ const html = readFileSync(new URL('board.template.html', HERE), 'utf8')
   .replace('__DATA__', JSON.stringify(data))
   .replace('__SYNCED__', `Synced from GitHub · ${stamp} · ${data.done.length} of ${data.issues.length} closed`);
 
+// Guard: an unterminated <script> parses into the DOM but never executes, which
+// looks exactly like "the board renders nothing". Fail the build instead.
+const opens = (html.match(/<script\b/g) ?? []).length;
+const closes = (html.match(/<\/script>/g) ?? []).length;
+if (opens !== closes || opens === 0) {
+  console.error(`! refusing to write ${out}: ${opens} <script> vs ${closes} </script>`);
+  process.exit(1);
+}
+if (!html.includes('__DATA__') === false) { console.error('! __DATA__ placeholder was not substituted'); process.exit(1); }
+
 writeFileSync(out, html);
 const inFlight = Object.keys(claimed).length + Object.keys(review).length;
 console.log(`${out} — ${data.done.length} closed, ${inFlight} in flight, ${data.issues.length - data.done.length} open (${stamp})`);
