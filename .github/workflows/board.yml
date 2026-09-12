@@ -1,0 +1,54 @@
+# Rebuilds the dependency board whenever issue state changes, and publishes it
+# to GitHub Pages from docs/. The page also polls the GitHub API client-side,
+# so this job only has to refresh the baked-in fallback state.
+name: Build board
+
+on:
+  issues:
+    types: [opened, closed, reopened, deleted, transferred]
+  push:
+    branches: [main]
+    paths:
+      - '.github/issues.json'
+      - 'scripts/build-board.mjs'
+      - 'scripts/board.template.html'
+      - '.github/workflows/board.yml'
+  schedule:
+    - cron: '23 * * * *'   # hourly safety net, in case an event is missed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-board
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Render the board
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/build-board.mjs docs/index.html
+
+      - name: Commit if the board changed
+        run: |
+          if git diff --quiet -- docs/index.html; then
+            echo "No change — nothing to publish."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html
+          git commit -m "Rebuild board from issue state [skip ci]"
+          git push
