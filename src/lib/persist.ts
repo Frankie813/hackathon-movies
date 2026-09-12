@@ -18,7 +18,16 @@
 // until the server acknowledges it, and this data is read straight back on the
 // next launch.
 
-import { collection, doc, getDoc, getDocs, orderBy, query, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+} from 'firebase/firestore';
 
 import { db } from '../../lib/firebase';
 import type { TasteVector } from '../types';
@@ -51,6 +60,16 @@ export const TASTE_FLUSH_EVERY = 5;
  */
 export const LOAD_TIMEOUT_MS = 1500;
 
+/**
+ * How long a write waits for the server before its promise resolves anyway.
+ *
+ * setDoc() resolves on server acknowledgement, so offline it stays pending for
+ * the length of the outage — the write itself is safe, queued by the SDK and
+ * replayed when the network returns, but a caller awaiting it would hang at
+ * exactly the venue-Wi-Fi moment this file is built around.
+ */
+export const WRITE_ACK_MS = 3000;
+
 /** Resolves to `fallback` rather than rejecting or hanging. */
 function orFallback<T>(work: Promise<T>, fallback: T, what: string): Promise<T> {
   return new Promise<T>((resolve) => {
@@ -68,6 +87,29 @@ function orFallback<T>(work: Promise<T>, fallback: T, what: string): Promise<T> 
         clearTimeout(timer);
         console.warn(`[persist] could not ${what}:`, error);
         resolve(fallback);
+      },
+    );
+  });
+}
+
+/**
+ * Resolves when `work` settles or after `ms`, whichever comes first — the
+ * write is not abandoned, only stopped from holding the caller.
+ *
+ * The deadline path is silent on purpose: a merely slow network is not a
+ * failure, and a warning per swipe would bury the ones that matter.
+ */
+function settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void work.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      () => {
+        clearTimeout(timer);
+        resolve();
       },
     );
   });
@@ -144,9 +186,10 @@ function schedule(uid: string): Pending {
  * Writes whatever is pending for `uid` right now. Call it when the swipe
  * screen unmounts so the last few swipes aren't stranded in the timer.
  *
- * Never throws: a failed sync must not take down a deck that is already on
- * screen, and offline is the expected case at the venue (PLAN.md §L) rather
- * than an error.
+ * Never throws, and never hangs: it resolves when the server acknowledges the
+ * write or, after `WRITE_ACK_MS`, once the write is safely in Firestore's
+ * queue. A failed sync must not take down a deck that is already on screen,
+ * and offline is the expected case at the venue (PLAN.md §L), not an error.
  */
 export async function flushTaste(uid: string): Promise<void> {
   const entry = pending.get(uid);
@@ -155,18 +198,21 @@ export async function flushTaste(uid: string): Promise<void> {
   if (entry.timer) clearTimeout(entry.timer);
   pending.delete(uid);
 
-  try {
-    // merge:true so a session that had to start cold — the boot read timed out
-    // because the venue Wi-Fi was down — rewrites only the features it actually
-    // swiped on instead of flattening a vector built over previous runs.
-    // Identical to a replace in the normal case: applySwipe() only ever adds
-    // keys, so the in-memory vector is a superset of the stored one.
-    await setDoc(tasteRef(uid), { vector: entry.vector, updatedAt: Date.now() }, { merge: true });
-  } catch (error) {
+  // merge:true so a session that had to start cold — the boot read timed out
+  // because the venue Wi-Fi was down — rewrites only the features it actually
+  // swiped on instead of flattening a vector built over previous runs.
+  // Identical to a replace in the normal case: applySwipe() only ever adds
+  // keys, so the in-memory vector is a superset of the stored one.
+  const write = setDoc(
+    tasteRef(uid),
+    { vector: entry.vector, updatedAt: Date.now() },
+    { merge: true },
+  ).catch((error: unknown) => {
     console.warn('[persist] could not save taste:', error);
-  } finally {
-    entry.settle();
-  }
+  });
+
+  await settleWithin(write, WRITE_ACK_MS);
+  entry.settle();
 }
 
 /**
@@ -178,10 +224,9 @@ export async function flushTaste(uid: string): Promise<void> {
  * Only the newest vector is ever written; the ones in between are dropped,
  * which is safe because each vector already contains every swipe before it.
  *
- * Returns a promise that resolves when the write covering this call lands.
- * The swipe handler should `void` it rather than await it: offline, the
- * Firestore SDK queues the write and the promise stays unresolved until the
- * network comes back.
+ * Returns a promise that resolves when the write covering this call has landed
+ * or been queued — see flushTaste(). The swipe handler should still `void` it:
+ * there is nothing to do with the result, and a swipe must never wait on it.
  */
 export async function saveTaste(uid: string, v: TasteVector): Promise<void> {
   if (!uid) return;
@@ -227,16 +272,41 @@ export async function loadTaste(uid: string): Promise<TasteVector> {
 /**
  * Records a liked title. Unbatched on purpose — it is one small write per
  * right swipe, and unlike the vector it is not rewritten on every swipe, so
- * there is nothing to coalesce. Never throws, for the same reason as above.
+ * there is nothing to coalesce. Never throws and never hangs, like the rest.
  */
 export async function saveLike(uid: string, movieId: number): Promise<void> {
   if (!uid) return;
 
-  try {
-    await setDoc(likeRef(uid, movieId), { movieId, likedAt: Date.now() });
-  } catch (error) {
-    console.warn('[persist] could not save like:', error);
-  }
+  const write = setDoc(likeRef(uid, movieId), { movieId, likedAt: Date.now() }).catch(
+    (error: unknown) => {
+      console.warn('[persist] could not save like:', error);
+    },
+  );
+
+  await settleWithin(write, WRITE_ACK_MS);
+}
+
+/**
+ * Drops a title from the like list. Call it on every left swipe.
+ *
+ * Swiping the other way on a title has to move it out, not leave it in — the
+ * same reasoning #16 applies to a member's likes/dislikes arrays. Without this
+ * a title liked in one run and rejected in the next stays in #41's Saved tab
+ * forever, and the user is looking at a film they explicitly passed on.
+ *
+ * Deliberately not coalesced, unlike the taste vector. That debounce exists
+ * because the vector document is rewritten in full on every swipe; this is one
+ * small row operation per swipe, the same cost #16's recordSwipe() already
+ * accepts on the demo path. Deleting a row that was never there is a no-op.
+ */
+export async function removeLike(uid: string, movieId: number): Promise<void> {
+  if (!uid) return;
+
+  const write = deleteDoc(likeRef(uid, movieId)).catch((error: unknown) => {
+    console.warn('[persist] could not remove like:', error);
+  });
+
+  await settleWithin(write, WRITE_ACK_MS);
 }
 
 /**

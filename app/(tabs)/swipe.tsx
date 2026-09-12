@@ -3,7 +3,14 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { SwipeDeck } from '@/components/SwipeDeck';
 import { useAnonymousAuth } from '@/lib/auth';
-import { flushTaste, loadTaste, LOAD_TIMEOUT_MS, saveLike, saveTaste } from '@/src/lib/persist';
+import {
+  flushTaste,
+  loadTaste,
+  LOAD_TIMEOUT_MS,
+  removeLike,
+  saveLike,
+  saveTaste,
+} from '@/src/lib/persist';
 import type { Movie, TasteVector } from '@/types';
 
 export default function SwipeScreen() {
@@ -62,9 +69,15 @@ export default function SwipeScreen() {
     [uid],
   );
 
-  const handleSwipeLeft = useCallback((index: number, movie: Movie) => {
-    console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
-  }, []);
+  const handleSwipeLeft = useCallback(
+    (index: number, movie: Movie) => {
+      console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
+      // A title liked in an earlier run and passed on now must leave the
+      // Saved tab, or #41 shows the user a film they explicitly rejected.
+      if (uid) void removeLike(uid, movie.id);
+    },
+    [uid],
+  );
 
   const handleSwipeRight = useCallback(
     (index: number, movie: Movie) => {
