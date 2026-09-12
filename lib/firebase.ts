@@ -2,8 +2,9 @@
 //
 // The EXPO_PUBLIC_FIREBASE_* values are public by design: the web config ships
 // in every Firebase client bundle and is protected by Firestore rules, not by
-// secrecy. Real secrets (ElevenLabs, TMDB write) must never pass through here —
-// they belong in the `tts` Cloud Function / Express proxy. See AGENTS.md §3.
+// secrecy. The TMDB write key must never pass through here. This project has no
+// server-side component — Gemini goes through Firebase AI Logic and everything
+// runs on the free Spark plan. See AGENTS.md §3.
 //
 // Requires (install once the Expo app from #1 exists):
 //   npx expo install firebase @react-native-async-storage/async-storage
