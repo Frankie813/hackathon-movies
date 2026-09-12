@@ -6,7 +6,7 @@ OWNER="${OWNER:-Frankie813}"
 REPO="${REPO:-Frankie813/hackathon-movies}"
 TITLE="${TITLE:-HackWesTX 26 — MovieMatch}"
 
-echo "Creating project '$TITLE' for $OWNER…"
+echo "Creating project '$TITLE' for ${OWNER}…"
 NUM=$(gh project create --owner "$OWNER" --title "$TITLE" --format json | python3 -c 'import sys,json; print(json.load(sys.stdin)["number"])')
 echo "Project #$NUM created."
 
