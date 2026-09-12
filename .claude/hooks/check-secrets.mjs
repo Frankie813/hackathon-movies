@@ -2,10 +2,12 @@
 // PostToolUse hook: refuses to let a real API key land in the repo.
 //
 // The plan rates "API key leaked in client bundle" as medium-likelihood /
-// high-impact (PLAN.md §L). ElevenLabs and TMDB keys belong in the `tts`
-// function's secrets; Gemini goes through Firebase AI Logic. Nothing secret
-// may sit in app source, and nothing secret may sit behind EXPO_PUBLIC_*,
-// which ships to users' phones in plaintext.
+// high-impact (PLAN.md §L). Gemini goes through Firebase AI Logic and the TMDB
+// write key never ships. Nothing secret may sit in app source, and nothing
+// secret may sit behind EXPO_PUBLIC_*, which ships to users' phones in
+// plaintext. The ElevenLabs patterns below are kept deliberately: the voice
+// track was dropped in v2.2, so a stray `sk_` key here means something is
+// being reintroduced that should have been raised first.
 //
 // Exit 2 => stderr is fed back to the agent so it can undo the write.
 
@@ -57,9 +59,9 @@ process.stdin.on('end', () => {
 
   console.error(
     `BLOCKED — possible secret written to ${file}: ${hits.join('; ')}.\n` +
-      `Remove it now, before this gets committed. Server-side keys belong in the\n` +
-      `Cloud Function / proxy secret store (issue #34); Gemini goes through Firebase\n` +
-      `AI Logic. See AGENTS.md §3. If this is a false positive, say so and move on.`
+      `Remove it now, before this gets committed. This project has no server-side\n` +
+      `component — Gemini goes through Firebase AI Logic and nothing else needs a\n` +
+      `secret. See AGENTS.md §3. If this is a false positive, say so and move on.`
   );
   process.exit(2);
 });

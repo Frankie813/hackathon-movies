@@ -54,7 +54,7 @@ Useful saved searches on the Issues tab:
 
 - `is:open label:P0` — the demo path, nothing else
 - `is:open label:owner:A-mobile milestone:"Phase 1 · Core build (h2–10)"` — one person's next few hours
-- `is:open label:prize-track` — everything tied to Gemini, ElevenLabs, or .tech
+- `is:open label:prize-track` — everything tied to Gemini or .tech
 
 ## Files
 

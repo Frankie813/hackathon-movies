@@ -12,8 +12,8 @@ Deep background lives in `PLAN.md`. Read the section named here, not the whole
 
 A clip-first, group-decision movie picker built for HackWesTX 26 in 24 hours by
 three people. Swipe through autoplaying YouTube trailers to like/dislike, join a
-friend group with a 4-letter code, get a "group match" that Gemini explains and
-an ElevenLabs voice ("Reel," the film concierge) speaks aloud.
+friend group with a 4-letter code, and get a "group match" that Gemini explains
+in one line — naming the trade-off it made between your tastes.
 
 **Current state: planning repo. There is no application code yet.** `PLAN.md`,
 `.github/issues.json`, `scripts/`, and `examples/` are all that exist. The Expo
@@ -32,8 +32,8 @@ were working on:
 2. Like/dislike updates the taste vector and visibly re-ranks the deck (#12).
 3. A second phone joins by code or QR (#16, #19).
 4. Both swipe → **"It's a Match!"** fires on both devices (#17, #10).
-5. Gemini's `why` renders on screen; Reel speaks the `narration` (#21, #37).
-6. All of it survives Wi-Fi being switched off (#15 seed fallback, #38 cached mp3).
+5. Gemini's compromise `why` renders on screen on both devices (#21, #10).
+6. All of it survives Wi-Fi being switched off (#15 seed fallback, cached Gemini text).
 
 Before you claim any task is done, ask whether step 1–6 still runs. If you
 can't verify it, say so rather than assuming.
@@ -45,12 +45,13 @@ can't verify it, say so rather than assuming.
 | Rule | Why |
 |---|---|
 | **Never download, rehost, clip, or proxy actual video files.** Embed the YouTube IFrame player only. | Legal trap. It is the single scoping decision the whole plan rests on (`PLAN.md` §D). |
-| **No raw API keys in the client bundle.** ElevenLabs and TMDB write keys go in the Cloud Function / Express proxy. Gemini goes through Firebase AI Logic. | `EXPO_PUBLIC_*` vars ship to users' phones in plaintext. A `PostToolUse` hook blocks writes that look like leaked keys. |
+| **No raw API keys in the client bundle.** Gemini goes through Firebase AI Logic; the TMDB write key never ships. | `EXPO_PUBLIC_*` vars ship to users' phones in plaintext. A `PostToolUse` hook blocks writes that look like leaked keys. |
 | **Validate every `tmdb_id` and title Gemini returns against the catalog before displaying it.** | Gemini hallucinates film titles. A made-up movie on screen in front of judges is fatal. |
-| **Pin explicit model version strings.** `gemini-3.5-flash`, `eleven_flash_v2_5`. Never a floating alias. | `gemini-2.0-flash` is shut down and 1.x returns 404. Re-verify at build time with `/verify-apis`. |
-| **TMDB and ElevenLabs attribution must be on the About screen** (#27). "This product uses the TMDB API but is not endorsed or certified by TMDB." + "Voice by ElevenLabs". | Contractual. ElevenLabs free tier requires it; TMDB requires it plus the approved logo. |
+| **Pin explicit model version strings.** `gemini-3.5-flash`. Never a floating alias. | `gemini-2.0-flash` is shut down and 1.x returns 404. Re-verify at build time with `/verify-apis`. |
+| **TMDB attribution must be on the About screen** (#27). "This product uses the TMDB API but is not endorsed or certified by TMDB." | Contractual. TMDB requires the notice plus the approved logo. |
 | **Feature freeze at hour 20.** After that: no new features, only demo prep and bug fixes on the path above. | `PLAN.md` §J, phase 5. Over-scoping is the listed #1 risk. |
 | **Never `git push` or close a GitHub issue without being asked.** | Three people share this repo. Land work through a PR that references the issue. |
+| **Stay on the Firebase Spark (free) plan.** No Cloud Functions, no proxy server, no Blaze. Keep Firebase AI Logic on the **Gemini Developer API** backend. | The v2.2 scope cut removed the only server-side component. The Vertex AI backend would force Blaze back on. |
 
 ---
 
@@ -62,27 +63,28 @@ so in one sentence and then use it anyway unless a human overrules you.
 - **Client:** Expo / React Native SDK 52+, `expo-router`, TypeScript strict.
 - **Swipe:** `rn-swiper-list` (reanimated + gesture-handler). Expo-Go compatible.
 - **Video:** `react-native-youtube-iframe` + `react-native-webview`.
-- **Audio:** `expo-audio`. **`expo-av` is deprecated — never import it.**
+- **Audio:** `expo-audio`, used only to set the audio session so unmuted trailer
+  audio isn't killed by the iPhone silent switch. **`expo-av` is deprecated —
+  never import it.**
 - **Backend:** Firebase — Firestore realtime listeners, Anonymous Auth, Hosting.
 - **AI:** Gemini via **Firebase AI Logic** (keeps the key server-side).
   The JS SDK is **`@google/genai`**. `@google/generative-ai` is the dead
   predecessor — never install it.
-- **Voice:** ElevenLabs `eleven_flash_v2_5`, `mp3_44100_128`, behind a `tts`
-  Cloud Function or Express proxy.
+- **Voice:** none. The ElevenLabs track was dropped in v2.2 — the match verdict
+  is on-screen text. Don't reintroduce a TTS dependency.
 - **Catalog:** TMDB. Prefer video `type` **Clip > Teaser > Trailer**.
 
 ### Gotchas that have already been researched — don't rediscover them
 - Autoplay only works **muted** on mobile. Add tap-to-unmute in the card chrome.
 - Call `setAudioModeAsync({ playsInSilentMode: true })` or the iPhone mute
-  switch silences your demo. This is listed as a high-likelihood risk.
+  switch silences the trailer audio when a judge taps to unmute.
 - Never draw UI over the YouTube player. Use a `pointerEvents="none"` wrapper
   and put all chrome below it.
-- Cloud Functions require the **Blaze** plan (a card, still free within quota).
-  The documented fallback is a ~40-line Express proxy on Vultr free credits.
+- There is **no server-side component**: no Cloud Functions, no proxy, no Blaze
+  plan. Everything runs on Spark. If you find yourself needing a server, stop
+  and raise it — that is a scope change, not an implementation detail.
 - Gemini free tier: ~1,500 req/day, 15 RPM. Cache per movie id, exponential
   backoff on 429, and keep LLM calls out of the tight swipe loop.
-- ElevenLabs free tier: 10,000 credits/month ≈ 40–60 narrations. **Cache by
-  text hash** (#36) and pre-generate (#38) or rehearsals will burn the budget.
 
 ---
 
@@ -113,7 +115,7 @@ matching `PLAN.md` §K and `.github/issues.json` exactly.
 |---|---|---|
 | **A** | Mobile UI, swipe, video, audio playback | `owner:A-mobile` |
 | **B** | Backend, TMDB, Firestore sessions, domain | `owner:B-backend` |
-| **C** | Recommendation algorithm, Gemini, ElevenLabs, demo/pitch | `owner:C-ai-demo` |
+| **C** | Recommendation algorithm, Gemini, demo/pitch | `owner:C-ai-demo` |
 
 Priority labels: `P0` = demo path, must work. `P1` = aim to include. `P2` =
 droppable stretch. **When time is short, P2 work stops. No exceptions.**
@@ -143,7 +145,7 @@ Configured in `.mcp.json`. Setup instructions: `docs/AI-SETUP.md`.
 
 - **context7** — Live, version-accurate docs. **Use this instead of recalling
   API shapes from memory.** The plan explicitly warns that Gemini model names,
-  the ElevenLabs SDK, and Expo APIs all move fast. Reach for it before writing
+  and Expo APIs all move fast. Reach for it before writing
   any call against `@google/genai`, `expo-audio`, `expo-router`,
   `rn-swiper-list`, or `react-native-youtube-iframe`.
 - **firebase** — Firestore documents and queries, security rules, Auth users,
@@ -160,7 +162,7 @@ Configured in `.mcp.json`. Setup instructions: `docs/AI-SETUP.md`.
 
 | Path | What |
 |---|---|
-| `PLAN.md` | Research report + 24h battle plan. §D content sourcing, §F Gemini, §G ElevenLabs, §H algorithm, §J timeline, §L risks. |
+| `PLAN.md` | Research report + 24h battle plan. §D content sourcing, §F Gemini, §H algorithm, §J timeline, §L risks. §G is vacant (dropped ElevenLabs plan). |
 | `.github/issues.json` | Source of truth for all 42 issues. |
 | `scripts/create-issues.mjs` | Creates labels, milestones, issues. `DRY_RUN=1` to preview. |
 | `scripts/add-to-project.sh` | Optional kanban board via `gh`. |
