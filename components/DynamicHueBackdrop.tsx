@@ -78,10 +78,22 @@ export function DynamicHueBackdrop({
     };
   });
 
+  // The bloom layer is rendered at half resolution then scaled back up: it's
+  // blurred past the point of showing any detail anyway (blurRadius scaled
+  // down to match), so this is visually equivalent but decodes/animates 4x
+  // fewer GIF pixels than mounting the same asset a second time at full res
+  // — this was the one concrete, continuous cost in this component (an
+  // animated GIF decoding twice, simultaneously, the whole time the deck is
+  // mounted), everything else here is solid-color opacity/transform, which
+  // Reanimated already drives cheaply off the JS thread.
+  const BLOOM_DOWNSCALE = 2;
+  const bloomWidth = width / BLOOM_DOWNSCALE;
+  const bloomHeight = height / BLOOM_DOWNSCALE;
+
   const animatedBloomGlowStyle = useAnimatedStyle(() => {
     return {
       opacity: bloomPulse.value * 0.75,
-      transform: [{ scale: 1.04 * bloomPulse.value }],
+      transform: [{ scale: BLOOM_DOWNSCALE * 1.04 * bloomPulse.value }],
     };
   });
 
@@ -96,13 +108,20 @@ export function DynamicHueBackdrop({
       <Animated.View style={[StyleSheet.absoluteFill, styles.baseFloor, animatedThemeOverlayStyle]} />
 
       {/* 2. High-Luminance Pixel Glow / Bloom Emission Layer */}
-      {/* Re-renders index.gif with high gaussian blur & scale so brightest pixels radiate light */}
-      <Animated.View style={[StyleSheet.absoluteFill, animatedBloomGlowStyle]}>
+      {/* Re-renders index.gif with high gaussian blur & scale so brightest pixels radiate light.
+          Rendered at half res + half blurRadius, then scaled back up (see BLOOM_DOWNSCALE above). */}
+      <Animated.View
+        style={[
+          styles.bloomGlowWrapper,
+          { width: bloomWidth, height: bloomHeight, left: (width - bloomWidth) / 2, top: (height - bloomHeight) / 2 },
+          animatedBloomGlowStyle,
+        ]}
+      >
         <Image
           source={require('@/assets/index.gif')}
-          style={[styles.bloomGlowImage, imageDynamicStyle]}
+          style={[styles.bloomGlowImage, { width: bloomWidth, height: bloomHeight }]}
           resizeMode="cover"
-          blurRadius={22}
+          blurRadius={22 / BLOOM_DOWNSCALE}
         />
       </Animated.View>
 
@@ -144,6 +163,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     overflow: 'hidden',
+  },
+  bloomGlowWrapper: {
+    position: 'absolute',
   },
   baseFloor: {
     opacity: 0.45, // -25%, then -30% more from the original +40% brightness treatment

@@ -75,7 +75,14 @@ export function MovieCard({
   // shows a blank iframe there rather than falling back to the poster.)
   const onVideoError = useCallback(
     (error: string) => {
-      console.warn(`[MovieCard] YouTube error for "${movie.title}":`, error);
+      // react-native-youtube-iframe maps YouTube's numeric error code to a
+      // friendly string via a fixed lookup table (2/5/100/101/150 only) and
+      // only gives us that mapped value — an "undefined" here means YouTube
+      // sent some other, unrecognized code, not that nothing went wrong. It
+      // still falls back to the poster correctly either way.
+      console.warn(
+        `[MovieCard] YouTube error for "${movie.title}": ${error ?? 'unrecognized error code'}`
+      );
       setVideoFailed(true);
       onCardFailed?.(movie);
     },
