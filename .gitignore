@@ -67,9 +67,6 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
-# Generated demo assets (regenerate with scripts, don't commit binaries)
-assets/narration/*.mp3
-
 # Editors / OS
 .DS_Store
 .idea/
