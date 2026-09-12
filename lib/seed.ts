@@ -5,7 +5,7 @@
 // Wi-Fi dies — PLAN.md §L rates that the highest likelihood/impact risk. The
 // TMDB fetch layer (#15) falls back to these exact objects.
 
-import type { Movie, VideoSource } from '@/types';
+import type { Movie, VideoSource } from '@/src/types';
 import rawSeed from './seed.json';
 
 // JSON imports widen `source` to `string`, so narrow it once here rather than
