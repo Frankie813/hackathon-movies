@@ -1,0 +1,46 @@
+# Secrets — never commit. See .env.example for the shape.
+.env
+.env.*
+!.env.example
+*.key
+serviceAccount*.json
+google-services.json
+GoogleService-Info.plist
+.firebaserc.local
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+dist/
+web-build/
+ios/
+android/
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Generated demo assets (regenerate with scripts, don't commit binaries)
+assets/narration/*.mp3
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Claude Code / Codex local state
+.claude/settings.local.json
+.claude/local/
