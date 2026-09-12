@@ -93,7 +93,16 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
             // without this bridge. iOS dispatches to `window` directly and
             // doesn't need it, but re-dispatching there too is harmless.
             // https://github.com/react-native-webview/react-native-webview/issues/2980
-            injectedJavaScriptBeforeContentLoaded: `
+            //
+            // Using injectedJavaScript (runs on onPageFinished), not
+            // injectedJavaScriptBeforeContentLoaded (runs on onPageStarted):
+            // the latter is a known-flaky timing hook on Android — it can
+            // fire before the new document exists, attaching the listener to
+            // the previous page instead. This bridge doesn't need to run
+            // before the page's own script, only before the first real
+            // postMessage command, which can't arrive until well after page
+            // load (gated on the player reaching "ready").
+            injectedJavaScript: `
               document.addEventListener('message', function (e) {
                 window.dispatchEvent(new MessageEvent('message', { data: e.data }));
               });
