@@ -298,7 +298,7 @@
       "agent": {
         "goal": "One types file every screen and every lib imports, so three people building in parallel cannot disagree about shapes.",
         "files": [
-"types/movie.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
+          "types/movie.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
         ],
         "steps": [
           "Start from examples/types.ts verbatim — Movie, MovieVideo, VideoSource are already agreed.",
@@ -1478,32 +1478,35 @@
       "prize": true,
       "desc": "Single static page on Firebase Hosting: app name, one-line pitch, and a `/j/{code}` route that shows the code big, an \"Open in app\" scheme link, and the Expo Go QR.",
       "ac": [
-        "`https://<domain>.tech/j/ABCD` loads on a phone and gets a guest into the session"
+        "`https://movienight.tech/j/{CODE}` loads on a phone and gets a guest into the session"
       ],
       "agent": {
         "goal": "The page a guest lands on after scanning the QR. It is also the first thing judges see in the pitch, so it carries the name.",
         "files": [
-          "web/index.html — landing",
-          "web/j/index.html — the /j/{code} join route",
+          "public/index.html — landing",
+          "public/j/index.html — the /j/{code} join route",
+          "public/qr.js — dependency-free QR encoder shared by both pages",
           "firebase.json — rewrites"
         ],
         "steps": [
-          "Single static page: app name, one-line pitch, and the Expo Go QR for installing the app.",
-          "Add a Hosting rewrite so /j/** serves the join page; read the code from the path client-side.",
-          "The join page shows the code in very large type, an 'Open in app' moviematch://join/{code} link, and the Expo Go QR as a fallback.",
+          "Single static page: app name, one-line pitch, and the QR for installing the app.",
+          "Add a Hosting rewrite for /j/** BEFORE the catch-all ** rewrite, or /j/{code} keeps serving the landing page. Read the code from the path client-side.",
+          "The join page shows the code in very large type, an 'Open in app' moviematch://join/{code} link, and the install QR as a fallback.",
+          "Validate the code against the consonant-only alphabet in lib/session.ts. The catch-all rewrite means a wrong path still returns 200, so the page has to show its own \"that code doesn't look right\" state.",
           "Keep it one file with inline CSS. This is a signpost, not a website — an hour here is an hour not spent on the demo path."
         ],
-        "contract": "Serves https://<domain>.tech/j/{CODE}, the URL #19 encodes in the QR.",
+        "contract": "Serves https://movienight.tech/j/{CODE}, the URL #19 encodes in the QR. Codes are 4 letters from BCDFGHJKLMNPQRSTVWXZ.",
         "gotchas": [
           "The scheme link only opens the app if the app is installed; the big code is what actually gets a guest in.",
-          "Do not put analytics or fonts on it — venue wifi is slow and it must load instantly on a phone."
+          "Do not put analytics or fonts on it — venue wifi is slow and it must load instantly on a phone. That rules out a CDN QR library and an <img> to a QR service, which is why public/qr.js is hand-rolled.",
+          "Hosting serves public/, not web/."
         ],
         "refs": [
           "PLAN.md §I",
           "PLAN.md §B"
         ],
         "verify": [
-          "https://<domain>.tech/j/ABCD loads on a phone and gets a guest into the session"
+          "https://movienight.tech/j/{CODE} loads on a phone and gets a guest into the session"
         ]
       }
     },
