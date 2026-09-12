@@ -79,6 +79,13 @@ const START_BY_SOURCE: Record<VideoSource, number> = {
 /** Target segment length. `end` is advisory — see MovieVideo in types/movie.ts. */
 const SEGMENT_SECONDS = 18;
 
+/**
+ * Billed cast to keep per movie. taste.ts scores the first three; the extra two
+ * cost nothing (credits rides along on append_to_response) and mean a change to
+ * that number does not need every movie refetched. Matches scripts/curate.mjs.
+ */
+const CAST_LIMIT = 5;
+
 /** TMDB returns full names; these read better on a card. Display only. */
 const GENRE_DISPLAY: Record<string, string> = {
   'Science Fiction': 'Sci-Fi',
@@ -109,6 +116,7 @@ interface TmdbMovieDetail {
   genres?: { id?: number; name?: string }[];
   videos?: { results?: TmdbVideo[] };
   keywords?: { keywords?: { name?: string }[] };
+  credits?: { cast?: { id?: number; order?: number }[] };
   'watch/providers'?: {
     results?: Record<string, { flatrate?: { provider_name?: string }[] } | undefined>;
   };
@@ -134,19 +142,53 @@ const movieCache = new Map<number, Movie>();
 
 const seedById = new Map<number, Movie>(seedMovies.map((movie) => [movie.id, movie]));
 
-let fellBackToSeed = false;
+/**
+ * When the network last answered, and when it last failed to. Recorded as each
+ * call settles, so isOffline() below means "was the most recent thing we
+ * learned a failure". Both start at 0, so it is false before the first call.
+ *
+ * This is two stamps rather than one boolean for legibility, not for
+ * correctness: the newest stamp wins, which is the same last-writer rule a flag
+ * had. It buys an explicit markOnline()/markOffline() at each of the six call
+ * sites, and ties (same millisecond) resolve to online rather than to whichever
+ * assignment ran second. See isOffline() for what it does NOT fix.
+ */
+let lastNetworkOkAt = 0;
+let lastNetworkFailedAt = 0;
+
+/** TMDB answered. An empty but valid response counts — see EmptyResultError. */
+function markOnline(): void {
+  lastNetworkOkAt = Date.now();
+}
+
+/** The network did not answer: timeout, abort, no token, or a non-2xx. */
+function markOffline(): void {
+  lastNetworkFailedAt = Date.now();
+}
 
 /**
- * True when the network did not answer the last catalog call, so seed data was
- * served instead. False before the first call, and false when TMDB answered but
- * had nothing usable — an empty /discover page is not an outage, and #26 and
- * the About screen would be lying if it read as one.
+ * True when the network did not answer the most recent catalog call, so seed
+ * data was served instead. False before the first call, and false when TMDB
+ * answered but had nothing usable — an empty /discover page is not an outage,
+ * and #26 and the About screen would be lying if it read as one.
+ *
+ * Self-healing: any later call that succeeds moves lastNetworkOkAt past the
+ * failure, so this goes false again once the Wi-Fi comes back.
+ *
+ * KNOWN GAP, for #26. Since #13 this module has parallel callers — seeding
+ * fires similar() three times at once — and one global "how did the last call
+ * go" cannot describe three calls with different outcomes. Two succeed and one
+ * times out, and the answer is whichever settled last: offline if the timeout
+ * was slowest, online if it failed fast and the successes landed after it.
+ * Both orderings are plausible on venue Wi-Fi. Fixing it means deciding what
+ * the flag is *for* — is a degraded connection "offline"? — which needs the
+ * banner #26 builds, not a guess here.
  *
  * Nothing on the demo path should branch on this: the whole point is that the
- * deck looks the same either way.
+ * deck looks the same either way. It is a status indicator, not control flow.
  */
 export function isOffline(): boolean {
-  return fellBackToSeed;
+  return lastNetworkFailedAt > lastNetworkOkAt;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -280,6 +322,16 @@ function toMovie(detail: TmdbMovieDetail): Movie | null {
           .filter((name): name is string => typeof name === 'string' && name.length > 0),
       ),
     ],
+    // Billing order, which is what `cast:` weights in the taste vector assume —
+    // TMDB returns `order` explicitly rather than relying on array position.
+    castIds: (detail.credits?.cast ?? [])
+      .filter(
+        (member): member is { id: number; order: number } =>
+          typeof member.id === 'number' && typeof member.order === 'number',
+      )
+      .sort((a, b) => a.order - b.order)
+      .slice(0, CAST_LIMIT)
+      .map((member) => member.id),
     poster: POSTER_BASE + detail.poster_path,
     providers: [
       ...new Set(
@@ -307,7 +359,7 @@ async function hydrate(id: number, deadline: number): Promise<Movie | null> {
   try {
     detail = await tmdb<TmdbMovieDetail>(
       `/movie/${id}`,
-      { append_to_response: 'videos,watch/providers,keywords' },
+      { append_to_response: 'videos,watch/providers,keywords,credits' },
       deadline,
     );
   } catch (error) {
@@ -452,11 +504,12 @@ export async function getDeck(filters?: DiscoverFilters): Promise<Movie[]> {
     );
     if (deck.length === 0) throw new EmptyResultError('no playable movies in the discover page');
 
-    fellBackToSeed = false;
+    markOnline();
     return topUpFromSeed(deck);
   } catch (error) {
     logFallback('getDeck()', error);
-    fellBackToSeed = !(error instanceof EmptyResultError);
+    if (error instanceof EmptyResultError) markOnline();
+    else markOffline();
     // A copy: callers own their deck and #6 mutates it as cards are consumed.
     return [...seedMoviesWithVideo];
   }
@@ -475,11 +528,11 @@ export async function getMovie(id: number): Promise<Movie | null> {
     const movie = await hydrate(id, Date.now() + REQUEST_TIMEOUT_MS);
     // TMDB answered either way, so this is not an outage even when it answered
     // "no such movie" and we end up on seed or on null.
-    fellBackToSeed = false;
+    markOnline();
     return movie ?? seedById.get(id) ?? null;
   } catch (error) {
     logFallback(`getMovie(${id})`, error);
-    fellBackToSeed = true;
+    markOffline();
     return seedById.get(id) ?? null;
   }
 }
@@ -525,11 +578,12 @@ export async function similar(id: number): Promise<Movie[]> {
     );
     if (related.length === 0) throw new EmptyResultError('no playable related titles');
 
-    fellBackToSeed = false;
+    markOnline();
     return related;
   } catch (error) {
     logFallback('similar()', error);
-    fellBackToSeed = !(error instanceof EmptyResultError);
+    if (error instanceof EmptyResultError) markOnline();
+    else markOffline();
     return similarFromSeed(id);
   }
 }
