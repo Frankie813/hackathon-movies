@@ -27,11 +27,13 @@ export interface TrailerVideoPlayerProps {
   onReady: () => void;
   onEnded: () => void;
   onError: (error: string) => void;
+  /** TEMPORARY diagnostic channel for the Android autoplay investigation — remove once resolved. */
+  onDebug?: (message: string) => void;
 }
 
 export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideoPlayerProps>(
   function TrailerVideoPlayer(
-    { videoId, start, end, containerWidth, containerHeight, muted, play, onReady, onEnded, onError },
+    { videoId, start, end, containerWidth, containerHeight, muted, play, onReady, onEnded, onError, onDebug },
     ref
   ) {
     const playerRef = useRef<YoutubeIframeRef>(null);
@@ -82,6 +84,14 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
             if (state === PLAYER_STATES.ENDED || state === 'ended') onEnded();
           }}
           onError={onError}
+          // TEMPORARY: playerQualityChange is the one message eventType the
+          // library passes through to us unmapped (playerError/
+          // playerStateChange both filter message.data through fixed lookup
+          // tables first, which would swallow a debug string). Piggybacking
+          // on it to get real visibility into the WebView's JS context,
+          // since three targeted guesses at the postMessage bridge in a row
+          // haven't fixed autoplay — remove this + onDebug once resolved.
+          onPlaybackQualityChange={onDebug}
           webViewProps={{
             androidLayerType: 'hardware',
             allowsInlineMediaPlayback: true,
@@ -110,17 +120,26 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
             // until well after page load (gated on the player reaching
             // "ready" first).
             injectedJavaScript: `
+              function debug(msg) {
+                try {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({eventType: 'playerQualityChange', data: msg}));
+                } catch (err) {}
+              }
+              debug('bridge-injected player=' + (typeof player));
               document.addEventListener('message', function (e) {
                 try {
                   var msg = JSON.parse(e.data);
+                  debug('recv ' + msg.eventName + ' player=' + (typeof player) + ' playVideoFn=' + (typeof (player && player.playVideo)));
                   if (typeof player === 'undefined' || !player) return;
                   switch (msg.eventName) {
-                    case 'playVideo': player.playVideo(); break;
+                    case 'playVideo': player.playVideo(); debug('called playVideo()'); break;
                     case 'pauseVideo': player.pauseVideo(); break;
                     case 'muteVideo': player.mute(); break;
                     case 'unMuteVideo': player.unMute(); break;
                   }
-                } catch (err) {}
+                } catch (err) {
+                  debug('ERR ' + err.message);
+                }
               });
               true;
             `,

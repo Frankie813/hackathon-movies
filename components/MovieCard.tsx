@@ -180,6 +180,7 @@ export function MovieCard({
             onReady={handleVideoReady}
             onEnded={onVideoEnded}
             onError={onVideoError}
+            onDebug={(msg) => console.warn(`[TrailerDebug] "${movie.title}":`, msg)}
           />
         </Animated.View>
       )}
