@@ -201,11 +201,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     [isDone, isAnimating, isTransitioning, width, translateX, handleSwipeComplete]
   );
 
-  // "Start over" replays the deck, not the user. The persisted vector stays —
-  // it is what a rehearsal is trying to keep.
+  // "Start over" replays the deck, not the user, so the vector is kept as it
+  // stands rather than rewound to what was loaded at boot. Rewinding it would
+  // also rewind the *stored* vector: the next swipe writes taste.current, so
+  // a replay after a long session would overwrite what that session learned.
   const handleReset = useCallback(() => {
-    taste.current = initialTaste;
-    setDeck(rank(initialTaste, movies));
+    setDeck(rank(taste.current, movies));
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -213,7 +214,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, initialTaste, translateX, translateY, nextCardOpacity, isAnimating]);
+  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
 
   useImperativeHandle(
     ref,
