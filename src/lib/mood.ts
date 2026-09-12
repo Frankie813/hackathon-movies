@@ -48,7 +48,7 @@ const GENRE_ALIASES: Record<string, string> = {
   documentaries: 'Documentary',
 };
 
-/** JSON schema from PLAN.md §F #2, plus exclude_keywords for "not X" moods. */
+/** PLAN.md §F #2's schema, plus exclude_keywords for "not X" moods. */
 export const MOOD_SCHEMA = {
   type: 'object',
   properties: {
@@ -59,17 +59,19 @@ export const MOOD_SCHEMA = {
     min_rating: { type: 'number' },
     tone: { type: 'string' },
   },
-  required: ['genres'],
+  // Gemini skipped these when optional; empty / 0 means unused.
+  required: ['genres', 'exclude_keywords', 'min_rating'],
 } as const;
 
 export const MOOD_SYSTEM_PROMPT = [
   'You turn a moviegoer\'s mood into TMDB /discover filters. Return only the JSON object.',
   'genres: the TMDB genres the mood asks for (usually 1-2). exclude_genres: genres the mood rules out.',
   'keywords: up to 3 short lowercase TMDB-style keyword tags the films should carry (e.g. "satire", "heist").',
-  'exclude_keywords: up to 4 lowercase keyword tags the mood rules out. For "not dumb" or "smart", exclude lowbrow tags such as "slapstick", "spoof", "parody", "gross-out".',
-  'min_rating: a TMDB vote average floor from 0 to 10. Use about 7 when the mood asks for quality ("good", "smart", "not dumb"); omit it otherwise.',
+  'exclude_keywords: up to 4 lowercase keyword tags the mood rules out ([] if none). For "not dumb", "smart" or "clever", always exclude "slapstick", "spoof", "parody", "gross-out".',
+  'min_rating: a TMDB vote average floor from 0 to 10. Use 7 when the mood asks for quality ("good", "smart", "clever", "not dumb"); use 0 when it does not.',
   'tone: 2-4 words describing the vibe.',
   'Never return a keyword in both keywords and exclude_keywords.',
+  'Example. Mood: "funny but not dumb" -> {"genres":["Comedy"],"exclude_genres":[],"keywords":["satire","dark comedy"],"exclude_keywords":["slapstick","spoof","parody","gross-out"],"min_rating":7,"tone":"clever and funny"}',
 ].join('\n');
 
 const MAX_KEYWORDS = 3;

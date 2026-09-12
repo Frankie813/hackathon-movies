@@ -22,8 +22,8 @@ const funnyNotDumb = {
 beforeEach(() => resolveKeyword.mockClear());
 
 describe('mood → TMDB filters', () => {
-  it('keeps the PLAN.md §F schema, with genres required and constrained to TMDB names', () => {
-    expect(MOOD_SCHEMA.required).toEqual(['genres']);
+  it('extends the PLAN.md §F schema, requiring the fields the AC depends on, and constrained to TMDB names', () => {
+    expect(MOOD_SCHEMA.required).toEqual(['genres', 'exclude_keywords', 'min_rating']);
     expect(MOOD_SCHEMA.properties.genres.items.enum).toEqual(Object.keys(TMDB_GENRES));
     expect(Object.keys(MOOD_SCHEMA.properties)).toEqual(
       expect.arrayContaining(['genres', 'exclude_genres', 'keywords', 'min_rating', 'tone']));
