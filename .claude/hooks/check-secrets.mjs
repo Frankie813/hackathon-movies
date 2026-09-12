@@ -36,6 +36,15 @@ process.stdin.on('end', () => {
 
   const isDoc = /\.(md|mdx|txt)$/.test(file);
 
+  // The one deliberate exception, decided in #15: TMDB's v4 *read-access* token.
+  // It is read-only, non-commercial, free-tier, and rate-limited by IP, and this
+  // project has no server-side component to hide it behind — Spark plan, no
+  // Cloud Functions, no proxy (AGENTS.md §3). So the catalog layer reads it from
+  // the bundle and we accept that. Nothing else inherits the exemption: the v3
+  // TMDB_API_KEY is account-wide and still trips the check below.
+  const EXPO_PUBLIC_ALLOWED = new Set(['EXPO_PUBLIC_TMDB_READ_TOKEN']);
+  const FORBIDDEN_IN_CLIENT = /(ELEVENLABS|TMDB|GEMINI|SECRET|PRIVATE)/;
+
   const checks = [
     { re: /AIza[0-9A-Za-z_-]{35}/, what: 'a Google/Gemini API key' },
     { re: /\bsk_[0-9a-f]{32,}/, what: 'an ElevenLabs API key' },
@@ -49,12 +58,15 @@ process.stdin.on('end', () => {
 
   if (!isDoc) {
     checks.push({
-      re: /EXPO_PUBLIC_[A-Z0-9_]*(ELEVENLABS|TMDB|GEMINI|SECRET|PRIVATE)/,
+      test: (t) =>
+        [...t.matchAll(/EXPO_PUBLIC_[A-Z0-9_]+/g)].some(
+          ([name]) => !EXPO_PUBLIC_ALLOWED.has(name) && FORBIDDEN_IN_CLIENT.test(name),
+        ),
       what: 'a server-side secret exposed through EXPO_PUBLIC_ (it ships to the phone in plaintext)',
     });
   }
 
-  const hits = checks.filter((c) => c.re.test(text)).map((c) => c.what);
+  const hits = checks.filter((c) => (c.test ? c.test(text) : c.re.test(text))).map((c) => c.what);
   if (!hits.length) process.exit(0);
 
   console.error(

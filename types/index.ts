@@ -5,6 +5,7 @@
 // react-native, so the algorithm modules stay pure and testable.
 
 export type { Movie, MovieVideo, VideoSource } from './movie';
+export type { DiscoverFilters } from './tmdb';
 export type { FeatureKey, SwipeDirection, TasteVector } from './taste';
 export { FEATURE_PREFIX } from './taste';
 export type { Match, Member, Session } from './session';
