@@ -11,6 +11,7 @@
 // Safe to re-run: existing labels/milestones are reused; issues with an identical title are skipped.
 
 import { readFileSync } from 'node:fs';
+import { buildBody as body } from './issue-body.mjs';
 
 const REPO = process.env.REPO ?? 'Frankie813/hackathon-movies';
 const TOKEN = process.env.GITHUB_TOKEN;
@@ -43,26 +44,6 @@ async function gh(method, path, body) {
 }
 
 const ownerLabel = { A: 'owner:A-mobile', B: 'owner:B-backend', C: 'owner:C-ai-demo', all: 'owner:all' };
-const ownerName = { A: 'A (mobile)', B: 'B (backend)', C: 'C (AI + demo)', all: 'whole team' };
-
-function body(issue, depMap) {
-  const deps = issue.deps.length
-    ? issue.deps.map((d) => `#${depMap[d] ?? `plan-${d}`}`).join(', ')
-    : 'none';
-  const phase = data.phases.find((p) => p.id === issue.phase).title;
-  return [
-    issue.desc,
-    '',
-    '**Acceptance criteria**',
-    ...issue.ac.map((a) => `- [ ] ${a}`),
-    '',
-    `**Estimate:** ${issue.est} · **Priority:** ${issue.priority} · **Owner:** ${ownerName[issue.owner]}`,
-    `**Depends on:** ${deps}`,
-    `**Phase:** ${phase}`,
-    '',
-    `_Plan reference: PLAN.md issue ${issue.id}. Full context in PLAN.md._`,
-  ].join('\n');
-}
 
 // 1. Labels
 console.log(`\n== Labels (${data.labels.length}) ==`);
@@ -95,7 +76,7 @@ for (const issue of data.issues) {
   if (dup) { depMap[issue.id] = dup.number; console.log(`  exists   #${dup.number}  ${issue.title}`); continue; }
   const payload = {
     title: issue.title,
-    body: body(issue, {}),
+    body: body(issue, data, {}),
     labels,
     milestone: msNumber[issue.phase],
     ...(ASSIGNEES[issue.owner] ? { assignees: [ASSIGNEES[issue.owner]] } : {}),
@@ -112,7 +93,7 @@ console.log(`\n== Linking dependencies ==`);
 let patched = 0;
 for (const issue of created) {
   if (!issue.deps.length) continue;
-  await gh('PATCH', `/issues/${depMap[issue.id]}`, { body: body(issue, depMap) });
+  await gh('PATCH', `/issues/${depMap[issue.id]}`, { body: body(issue, data, depMap) });
   patched++;
   if (!DRY) await new Promise((s) => setTimeout(s, 300));
 }
