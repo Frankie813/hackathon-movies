@@ -6,6 +6,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -78,6 +84,15 @@ export function MovieCard({
 
   const handleVideoReady = useCallback(() => setVideoReady(true), []);
 
+  // Fade the video in over the poster instead of popping in the instant it's ready.
+  const videoOpacity = useSharedValue(0);
+  useEffect(() => {
+    videoOpacity.value = videoReady
+      ? withTiming(1, { duration: 450, easing: Easing.out(Easing.cubic) })
+      : 0;
+  }, [videoReady, videoOpacity]);
+  const videoAnimatedStyle = useAnimatedStyle(() => ({ opacity: videoOpacity.value }));
+
   const handleToggleMute = useCallback(() => {
     if (onToggleMute) {
       onToggleMute();
@@ -89,36 +104,12 @@ export function MovieCard({
   const accentColor = movie.negativeColor || '#f59e0b';
   const themeBase = movie.themeColor || '#080d1a';
   const showVideo = hasVideo && !videoFailed;
-  const showPoster = !showVideo || !videoReady;
 
   return (
     <View style={[styles.card, { width, height }]}>
-      {showVideo && (
-        // pointerEvents="none": taps/drags go to the swipe gesture, not the
-        // player. The card's own chrome (gradients, title, mute button) is
-        // still drawn on top of this in the full-bleed layout below —
-        // a deliberate, known deviation from AGENTS.md §3 ("never draw UI
-        // over the player"), accepted to keep the existing full-bleed card
-        // look. Needs real-device verification: Android WebView compositing
-        // can behave differently than iOS/web here.
-        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { width, height, overflow: 'hidden' }]}>
-          <TrailerVideoPlayer
-            ref={playerRef}
-            videoId={movie.video!.key}
-            start={start}
-            end={end}
-            containerWidth={width}
-            containerHeight={height}
-            play={active}
-            muted={muted}
-            onReady={handleVideoReady}
-            onEnded={onVideoEnded}
-            onError={onVideoError}
-          />
-        </View>
-      )}
-
-      {showPoster && (movie.poster && !imageError ? (
+      {/* Poster stays mounted underneath the whole time — the video fades in
+          on top of it once ready, instead of popping in and swapping it out. */}
+      {(movie.poster && !imageError ? (
         <>
           {/* Duplicate image behind: scaled up & softened with blur filter to fill all space */}
           <Image
@@ -146,6 +137,34 @@ export function MovieCard({
           <Text style={styles.placeholderTitle}>{movie.title}</Text>
         </View>
       ))}
+
+      {showVideo && (
+        // pointerEvents="none": taps/drags go to the swipe gesture, not the
+        // player. The card's own chrome (gradients, title, mute button) is
+        // still drawn on top of this in the full-bleed layout below —
+        // a deliberate, known deviation from AGENTS.md §3 ("never draw UI
+        // over the player"), accepted to keep the existing full-bleed card
+        // look. Needs real-device verification: Android WebView compositing
+        // can behave differently than iOS/web here.
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { width, height, overflow: 'hidden' }, videoAnimatedStyle]}
+        >
+          <TrailerVideoPlayer
+            ref={playerRef}
+            videoId={movie.video!.key}
+            start={start}
+            end={end}
+            containerWidth={width}
+            containerHeight={height}
+            play={active}
+            muted={muted}
+            onReady={handleVideoReady}
+            onEnded={onVideoEnded}
+            onError={onVideoError}
+          />
+        </Animated.View>
+      )}
 
       {/* Top subtle vignette for header legibility */}
       <LinearGradient
