@@ -269,7 +269,7 @@ export function subscribe(code: string, cb: (members: Member[]) => void): Unsubs
     (snapshot) => {
       const members = snapshot.docs
         .map((docSnap) => toMember(docSnap.id, docSnap.data()))
-        .sort((a, b) => a.joinedAt - b.joinedAt || a.uid.localeCompare(b.uid));
+        .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0) || a.uid.localeCompare(b.uid));
       cb(members);
     },
     (error) => {
