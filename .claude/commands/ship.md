@@ -11,7 +11,7 @@ confirm with me before continuing.
    #$1 crept in, say so and ask before including it.
 2. Re-read the acceptance criteria: `gh issue view $1 --json title,body`.
 3. **Scan the diff for secrets yourself** before committing — an `AIza…` key, an
-   `sk_…` ElevenLabs key, a TMDB token, or any server-side key behind an
+   a TMDB token, or any server-side key behind an
    `EXPO_PUBLIC_*` name. The hook catches writes, but a `git add` of a file
    written outside this session isn't covered. This is the one check worth
    being paranoid about.

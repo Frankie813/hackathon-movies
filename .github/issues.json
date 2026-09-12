@@ -44,7 +44,7 @@
     {
       "name": "owner:A-mobile",
       "color": "5319e7",
-      "description": "Person A — mobile UI / swipe / video / audio"
+      "description": "Person A — mobile UI / swipe / video / trailer audio"
     },
     {
       "name": "owner:B-backend",
@@ -54,7 +54,7 @@
     {
       "name": "owner:C-ai-demo",
       "color": "1d76db",
-      "description": "Person C — algorithm / Gemini / ElevenLabs / demo"
+      "description": "Person C — algorithm / Gemini / demo"
     },
     {
       "name": "owner:all",
@@ -79,10 +79,6 @@
     },
     {
       "name": "area:gemini",
-      "color": "c5def5"
-    },
-    {
-      "name": "area:elevenlabs",
       "color": "c5def5"
     },
     {
@@ -170,9 +166,9 @@
         ],
         "contract": "```ts\n// src/lib/firebase.ts\nexport const app: FirebaseApp;\nexport const auth: Auth;\nexport const db: Firestore;\nexport function useUid(): string | null; // null until anon sign-in resolves\n```",
         "gotchas": [
-          "Firebase client config is NOT a secret and belongs in the repo; the ElevenLabs and TMDB write keys are (AGENTS.md §3).",
+          "Firebase client config is NOT a secret and belongs in the repo; the TMDB write key is (AGENTS.md §3).",
           "Firestore test-mode rules expire after 30 days — irrelevant for 24h, but do not ship them anywhere real.",
-          "Cloud Functions need the Blaze plan. That decision belongs to #3, not here — Hosting and Firestore work on free Spark."
+          "Stay on the free Spark plan. Nothing in this project needs Cloud Functions — Firestore, Anonymous Auth and Hosting all work on Spark (PLAN.md §E)."
         ],
         "refs": [
           "PLAN.md §E (Backend)",
@@ -187,54 +183,49 @@
     },
     {
       "id": 3,
-      "title": "TMDB, Gemini, and ElevenLabs keys + secrets",
+      "title": "TMDB and Gemini keys",
       "priority": "P0",
       "owner": "C",
       "area": "setup",
       "phase": 0,
-      "est": "1h",
+      "est": "0.5h",
       "deps": [
         2
       ],
-      "desc": "Obtain a TMDB API key. Set up Gemini via Firebase AI Logic (Gemini Developer API backend, works on the free Spark plan). Store the ElevenLabs key as a Cloud Function / proxy secret — never in the app bundle. Decide in this hour whether someone adds a card for the Blaze plan (Cloud Functions) or whether the `tts` proxy runs as a tiny Express server on Vultr free credits.",
+      "desc": "Obtain a TMDB API key. Set up Gemini via Firebase AI Logic on the Gemini Developer API backend, which works on the free Spark plan. No Cloud Function, no proxy, and no Blaze plan — there is no server-side component in this project.",
       "ac": [
         "A test TMDB call succeeds from the app",
         "A test Gemini call succeeds via Firebase AI Logic",
-        "A test ElevenLabs call succeeds from the function/proxy",
         "No raw API key appears in the client bundle"
       ],
       "agent": {
-        "goal": "All three API credentials working, with none of them in the client bundle. This unblocks C's entire lane — it is the hour-0 issue to finish first.",
+        "goal": "Both API credentials working, with neither in the client bundle. This unblocks C's entire lane — it is the hour-0 issue to finish first.",
         "files": [
           ".env — TMDB + EXPO_PUBLIC_* values (gitignored)",
-          "src/lib/gemini.ts — Firebase AI Logic client init only, no prompts yet",
-          "functions/src/index.ts OR proxy/server.js — whichever the Blaze decision picks"
+          "src/lib/gemini.ts — Firebase AI Logic client init only, no prompts yet"
         ],
         "steps": [
           "TMDB: request a free API key (non-commercial). Read v4 bearer token, not the v3 key, for /discover calls.",
           "Gemini: enable Firebase AI Logic on the project (Gemini Developer API backend, free Spark plan). npx expo install firebase — the AI Logic client ships inside the firebase package; do NOT install @google/genai in the app, that is for server-side code only.",
           "Pin the model string gemini-3.5-flash. Run /verify-apis to confirm it is live before anyone writes prompts against it — gemini-2.0-flash is shut down and 1.x returns 404 (AGENTS.md §3).",
-          "ElevenLabs: free account, no card, 10,000 credits/month. Key goes in a Cloud Function secret or the Express proxy env — never in the app.",
-          "DECIDE IN THIS HOUR and write the answer in the issue: Blaze plan with Cloud Functions (someone adds a card, still free within quota) or a ~40-line Express proxy on Vultr free credits. #34 cannot start until this is settled.",
-          "Create the spare ElevenLabs account on a second teammate's email now, while you are in the flow."
+          "Do NOT switch Firebase AI Logic to the Vertex AI backend. The Gemini Developer API backend is the one that is free on Spark; Vertex would force the Blaze plan back on us, which is exactly what the v2.2 scope change removed."
         ],
-        "contract": "Env var names other issues rely on: TMDB_BEARER (server/scripts), EXPO_PUBLIC_FIREBASE_* (client config), ELEVENLABS_API_KEY (function/proxy secret only). TTS endpoint URL is exported as EXPO_PUBLIC_TTS_URL for #36.",
+        "contract": "Env var names other issues rely on: TMDB_BEARER (server/scripts), EXPO_PUBLIC_FIREBASE_* (client config). There is no TTS endpoint and no EXPO_PUBLIC_TTS_URL.",
         "gotchas": [
-          "EXPO_PUBLIC_* ships to users' phones in plaintext. TMDB read key is tolerable there; ElevenLabs is not (AGENTS.md §3).",
+          "EXPO_PUBLIC_* ships to users' phones in plaintext. The TMDB read key is tolerable there (AGENTS.md §3).",
           "A PostToolUse hook blocks writes that look like leaked keys — if it fires, you are putting a key somewhere it must not go.",
           "Gemini free tier is ~1,500 req/day and 15 RPM. Do not burn it on smoke tests in a loop."
         ],
         "refs": [
           "PLAN.md §F (Gemini API facts)",
-          "PLAN.md §G (ElevenLabs API facts)",
+          "PLAN.md §E (no Cloud Functions / Spark plan)",
           "AGENTS.md §3",
           ".env.example"
         ],
         "verify": [
           "A test TMDB /discover call returns results",
           "A test Gemini call returns JSON via Firebase AI Logic",
-          "curl the tts endpoint returns playable mp3 bytes",
-          "grep the bundle: no raw ElevenLabs key"
+          "grep the bundle: no raw API keys"
         ]
       }
     },
@@ -247,17 +238,17 @@
       "phase": 0,
       "est": "3h",
       "deps": [],
-      "desc": "Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.js`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema.",
+      "desc": "Agree the Movie, tasteVector, and Session schemas (see PLAN.md §H and types.ts). Write `scripts/curate.mjs`: for ~60 movies, pull TMDB `/movie/{id}?append_to_response=videos,watch/providers`, prefer official `type == \"Clip\"` videos, then Teaser, then Trailer; fall back to a YouTube Data API v3 search restricted to the Movieclips channel; validate each key with `videos.list` (embeddable, not region-blocked for US, not age-restricted); write `key`, `start`, `end`, `source` into `seed.json`. Commit the output. Person C reviews the schema.",
       "ac": [
         "seed.json has ~60 movies with poster, genres, keywords, providers, and a validated video key (or `video: null`)",
         "App loads seed.json with Wi-Fi off",
         "Schema reviewed by C"
       ],
       "agent": {
-        "goal": "A committed seed.json of ~60 movies with validated YouTube keys. This is the offline safety net the whole demo rests on, and it gates #12, #15 and #38.",
+        "goal": "A committed seed.json of ~60 movies with validated YouTube keys. This is the offline safety net the whole demo rests on, and it gates #12 and #15.",
         "files": [
-          "scripts/curate.js — the curation script (Node, runs once, output committed)",
-          "src/lib/seed.json — the committed output",
+          "scripts/curate.mjs — the curation script (Node, runs once, output committed)",
+          "lib/seed.json — the committed output",
           "examples/seed.sample.json — the shape to match, already in the repo"
         ],
         "steps": [
@@ -268,9 +259,9 @@
           "Set start to skip studio logos (5–10s is usually right) and end at start+15..20s.",
           "Write { key, start, end, source } or video: null. A null video is fine — the card falls back to the poster (#7).",
           "Map providers from watch/providers.results.US.flatrate[].provider_name.",
-          "Commit src/lib/seed.json. C reviews the schema against src/types.ts (#5) before it is considered done."
+          "Commit lib/seed.json. C reviews the schema against types/movie.ts (#5) before it is considered done."
         ],
-        "contract": "Output must satisfy the Movie[] interface in examples/types.ts exactly — id, title, year, genreIds, genreNames, keywords, poster, providers, video. #12 reads genreIds and keywords; #15 returns this shape; #38 iterates it.",
+        "contract": "Output must satisfy the Movie[] interface in examples/types.ts exactly — id, title, year, genreIds, genreNames, keywords, poster, providers, video. #12 reads genreIds and keywords; #15 returns this shape.",
         "gotchas": [
           "Never download, rehost or clip the video files themselves. Keys only — this is the legal decision the whole project rests on (AGENTS.md §3).",
           "The end field is advisory: the IFrame API cannot reliably hard-stop at a timestamp, so #7 loops via seekTo(start) on ended.",
@@ -283,7 +274,7 @@
           "examples/types.ts"
         ],
         "verify": [
-          "node scripts/curate.js writes ~60 entries",
+          "node scripts/curate.mjs writes ~60 entries",
           "Every non-null video key loads in a browser embed",
           "The app reads seed.json with Wi-Fi off"
         ]
@@ -307,13 +298,22 @@
       "agent": {
         "goal": "One types file every screen and every lib imports, so three people building in parallel cannot disagree about shapes.",
         "files": [
-          "types.ts — exports Movie, MovieVideo, TasteVector, Session, Member, Match"
+"types/movie.ts — copy examples/types.ts, extend with TasteVector, Session, Member, Match"
         ],
         "steps": [
-          "Define Movie, MovieVideo, TasteVector, Session, Member schemas.",
-          "Export all types with strict types and zero any."
+          "Start from examples/types.ts verbatim — Movie, MovieVideo, VideoSource are already agreed.",
+          "Add: TasteVector = Record<string, number> keyed 'genre:28' | 'keyword:heist' | 'cast:3223' (#12 depends on this key format).",
+          "Add: Session { code: string; createdAt: number; hostUid: string }, Member { uid: string; name?: string; likes: number[]; dislikes: number[] }, Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string }.",
+          "Export everything. No `any` anywhere — that is the AC."
         ],
-        "contract": "Export Movie, MovieVideo, TasteVector, Session, Member, Match.",
+        "contract": "```ts\nexport type TasteVector = Record<string, number>; // 'genre:28' | 'keyword:heist' | 'cast:3223'\nexport interface Session { code: string; createdAt: number; hostUid: string }\nexport interface Member { uid: string; name?: string; likes: number[]; dislikes: number[] }\nexport interface Match { tmdbId: number; sessionCode: string; matchedAt: number; why?: string }\n```",
+        "gotchas": [
+          "This issue is small but blocks nothing formally — do it anyway before #12 and #16 diverge on the Member shape."
+        ],
+        "refs": [
+          "examples/types.ts",
+          "PLAN.md §H"
+        ],
         "verify": [
           "npx tsc --noEmit clean across the app with zero any in shared types"
         ]
@@ -420,24 +420,23 @@
         6,
         7
       ],
-      "desc": "Below the player: title + year, genres, where-to-watch badge(s), Gemini \"why\" slot, mute toggle, and a speaker-icon placeholder for the ElevenLabs read-aloud.",
+      "desc": "Below the player: title + year, genres, where-to-watch badge(s), Gemini \"why\" slot, and a mute toggle.",
       "ac": [
         "Renders entirely from a Movie object",
         "Layout holds for long titles and 3+ providers"
       ],
       "agent": {
-        "goal": "Everything the judges read on a card: title, providers, and the slots the Gemini line and Reel's speaker icon drop into later.",
+        "goal": "Everything the judges read on a card: title, providers, and the slot the Gemini line drops into later.",
         "files": [
           "src/components/CardChrome.tsx",
           "src/components/TrailerCard.tsx — renders chrome beneath the player"
         ],
         "steps": [
-          "Render from a Movie object alone: title + year, genreNames (2–3 max), provider badges, the whyLine slot, mute toggle, speaker-icon placeholder.",
+          "Render from a Movie object alone: title + year, genreNames (2–3 max), provider badges, the whyLine slot, mute toggle.",
           "Leave the whyLine slot a fixed height so the card does not jump when Gemini's text arrives asynchronously (#20).",
-          "The speaker icon is a placeholder here; #37 wires it to speak().",
           "Long titles: numberOfLines={2} with ellipsis. 3+ providers: horizontal scroll or +N badge — the AC explicitly tests both."
         ],
-        "contract": "```tsx\n<CardChrome movie={Movie} whyLine?={string} muted={boolean} onToggleMute={() => void} onSpeak?={() => void} />\n```",
+        "contract": "```tsx\n<CardChrome movie={Movie} whyLine?={string} muted={boolean} onToggleMute={() => void} />\n```",
         "gotchas": [
           "Layout must hold before Gemini responds — the why slot renders empty, not absent.",
           "Provider logos come from JustWatch data via TMDB; plain text names are acceptable and faster to build."
@@ -507,14 +506,13 @@
         17,
         21
       ],
-      "desc": "Full-screen celebratory reveal on the group match event: poster, title, where-to-watch, Gemini `why`. Expose an onMounted hook so narration audio can start ~1s in.",
+      "desc": "Full-screen celebratory reveal on the group match event: poster, title, where-to-watch, Gemini `why`. The `why` line is the payoff — give it room and let it land about a second into the animation.",
       "ac": [
         "Triggers on match event on every member's device",
-        "Shows poster + why + providers",
-        "Hook fires for audio"
+        "Shows poster + why + providers"
       ],
       "agent": {
-        "goal": "The money shot. Full-screen 'It's a Match!' on every device at once, with the poster, Gemini's why, and a hook for Reel's voice. This is what the judges remember.",
+        "goal": "The money shot. Full-screen 'It's a Match!' on every device at once, with the poster and Gemini's why. This is what the judges remember.",
         "files": [
           "src/components/MatchReveal.tsx",
           "app/group.tsx — renders the reveal over the session"
@@ -522,22 +520,21 @@
         "steps": [
           "Subscribe to the match event from #17 and mount full-screen on every member's device simultaneously.",
           "Show: poster (large), title + year, where-to-watch, and Gemini's `why` text (#21).",
-          "Expose onMounted so #37 can start narration ~1s in, after the poster lands. Fire it once, not on re-render.",
-          "Pre-warm matters: #37 kicks off Gemini + TTS the instant the match is DETECTED (#17), not when this screen mounts — otherwise judges watch a spinner.",
+          "Pre-warm matters: kick off the Gemini compromise call the instant the match is DETECTED (#17), not when this screen mounts — otherwise judges watch a spinner.",
           "Add a dismiss that routes to /saved — that is the closing beat in #42."
         ],
-        "contract": "```tsx\n<MatchReveal match={Match} movie={Movie} onMounted={() => void} onDismiss={() => void} />\n```",
+        "contract": "```tsx\n<MatchReveal match={Match} movie={Movie} onDismiss={() => void} />\n```",
         "gotchas": [
           "Must trigger on ALL devices — it is driven by the Firestore match doc, never by the local swipe that happened to complete it.",
           "If Gemini's why has not arrived, render the poster and title immediately and let the text fill in. Never block the reveal on a network call."
         ],
         "refs": [
-          "PLAN.md §G (demo moment)",
+          "PLAN.md §J (demo script)",
           "PLAN.md §H (group consensus)"
         ],
         "verify": [
           "Reveal fires on two phones from one swipe",
-          "onMounted fires exactly once"
+          "Poster and title render immediately even if the why text is still in flight"
         ]
       }
     },
@@ -616,7 +613,7 @@
         ],
         "refs": [
           "PLAN.md §H (scoring spec)",
-          "src/types.ts (#5)"
+          "types/movie.ts (#5)"
         ],
         "verify": [
           "Liking two action films moves action titles up the deck",
@@ -725,7 +722,7 @@
         "goal": "One catalog API for the whole app that never fails loudly — online it is TMDB, offline it is seed.json, and callers cannot tell the difference.",
         "files": [
           "src/lib/tmdb.ts",
-          "src/lib/seed.json — the fallback from #4"
+          "lib/seed.json — the fallback from #4"
         ],
         "steps": [
           "getDeck(filters?) → /discover/movie with the v4 bearer; then hydrate each result with /movie/{id}?append_to_response=videos,watch/providers,keywords.",
@@ -830,7 +827,7 @@
         ],
         "contract": "```ts\nexport function rankGroup(members: Member[], movies: Movie[]): Movie[]; // misery-filtered\nexport function detectMatch(members: Member[], movies: Movie[]): Movie | null;\nexport async function persistMatch(code: string, movie: Movie, members: Member[]): Promise<void>;\n```",
         "gotchas": [
-          "Fire the pre-warm for Gemini + TTS (#37) at DETECTION time, not at reveal time.",
+          "Fire the Gemini compromise call (#21) at DETECTION time, not at reveal time, so the why text is ready when the reveal mounts.",
           "Guard against double-firing: once sessions/{code}/match exists, do not overwrite it.",
           "Depends on #12's score() — if that signature moves, this breaks silently."
         ],
@@ -959,7 +956,7 @@
           "Cache by tmdb id in memory AND on disk — the second request for the same movie must make zero network calls (explicit AC).",
           "Exponential backoff on 429. On repeated failure return null and let the card render without a why line. The deck must never block on Gemini."
         ],
-        "contract": "```ts\nexport async function whyLine(candidate: Movie, likes: Movie[]): Promise<string | null>;\n```\n#8 renders it, #37 speaks it, #23 and #39 build on the same client.",
+        "contract": "```ts\nexport async function whyLine(candidate: Movie, likes: Movie[]): Promise<string | null>;\n```\n#8 renders it; #23 and #39 build on the same client.",
         "gotchas": [
           "Free tier: ~1,500 req/day, 15 RPM. Prefetching a why line for all 60 cards will exhaust the minute quota — fetch for the top 2-3 upcoming cards only.",
           "Keep LLM calls out of the swipe gesture path (AGENTS.md §3).",
@@ -978,7 +975,7 @@
     },
     {
       "id": 21,
-      "title": "Gemini: group compromise pick + narration script",
+      "title": "Gemini: group compromise pick",
       "priority": "P1",
       "owner": "C",
       "area": "gemini",
@@ -988,36 +985,36 @@
         16,
         3
       ],
-      "desc": "Send each member's liked/disliked titles. Schema `{pick, tmdb_id, why, narration, runner_up}`. `narration` is a ≤ 35-word spoken script in Reel's voice addressing the group by name and ending with where to watch (this is what ElevenLabs reads). Validate `tmdb_id` against the catalog before display.",
+      "desc": "Send each member's liked/disliked titles. Schema `{pick, tmdb_id, why, runner_up}`. `why` names who compromised on what and ends with where to watch — it is the only thing the reveal renders, so it carries the whole moment. Validate `tmdb_id` against the catalog before display.",
       "ac": [
         "Returns a title that exists in the session's catalog",
-        "why is on-screen text; narration is speakable and ≤ 35 words"
+        "why names the trade-off and reads well on screen"
       ],
       "agent": {
-        "goal": "The pitch's centrepiece: Gemini reads three people's swipes, picks a film nobody vetoed, and writes both the on-screen why and the spoken narration.",
+        "goal": "The pitch's centrepiece: Gemini reads three people's swipes, picks a film nobody vetoed, and writes the on-screen why.",
         "files": [
           "src/lib/gemini.ts"
         ],
         "steps": [
           "Send each member's liked and disliked titles, plus the session's candidate catalog.",
-          "responseSchema: { pick: string, tmdb_id: integer, why: string, narration: string, runner_up: string }, required ['pick','why','narration'].",
-          "narration prompt addition, verbatim from PLAN.md §F: 'narration is read aloud by a voice actor. Max 35 words. Address the group directly, name who compromised on what, end with where to watch.'",
+          "responseSchema: { pick: string, tmdb_id: integer, why: string, runner_up: string }, required ['pick','why'].",
+          "Prompt the why to address the group directly, name who compromised on what, and end with where to watch. It is the payoff line on the reveal screen — keep it tight.",
           "VALIDATE tmdb_id against the session catalog before anything reaches the screen. Gemini hallucinates titles and a made-up film in front of judges is fatal (AGENTS.md §3).",
           "If validation fails, fall back to #17's algorithmic winner and ask Gemini only to explain that title.",
           "Put the schema on a pitch slide — #29 references it directly."
         ],
-        "contract": "```ts\nexport interface Compromise { pick: string; tmdb_id: number; why: string; narration: string; runner_up?: string }\nexport async function groupCompromise(members: Member[], catalog: Movie[]): Promise<Compromise | null>;\n```\n#10 renders why, #36/#37 speak narration, #35 tunes the narration field.",
+        "contract": "```ts\nexport interface Compromise { pick: string; tmdb_id: number; why: string; runner_up?: string }\nexport async function groupCompromise(members: Member[], catalog: Movie[]): Promise<Compromise | null>;\n```\n#10 renders why.",
         "gotchas": [
-          "why is on-screen text and can be denser; narration is speech and must be punchy. Keeping them separate is deliberate — do not collapse them into one field.",
-          "Call this at match DETECTION time (#17) so audio is ready before the reveal mounts."
+          "There is no narration field (v2.2 dropped the voice). Do not reintroduce one — why is the single output that reaches the screen.",
+          "Call this at match DETECTION time (#17) so the text is ready before the reveal mounts."
         ],
         "refs": [
           "PLAN.md §F feature #3",
-          "PLAN.md §G (where the voice appears)"
+          "PLAN.md §J (demo script)"
         ],
         "verify": [
           "Returns a title that exists in the catalog",
-          "narration is ≤35 words and reads naturally aloud",
+          "why names the trade-off and fits the reveal screen",
           "A hallucinated id falls back instead of displaying"
         ]
       }
@@ -1158,33 +1155,31 @@
         16,
         17,
         10,
-        21,
-        37
+        21
       ],
-      "desc": "Two devices: join by code, swipe, match reveal, Gemini why, Reel's voice.",
+      "desc": "Two devices: join by code, swipe, match reveal, Gemini why.",
       "ac": [
         "Runs start-to-finish twice in a row without intervention"
       ],
       "agent": {
         "goal": "The actual demo, end to end on two phones, twice in a row without intervention. If this does not pass, nothing else matters.",
         "files": [
-          "no new files — integration of #16, #17, #10, #21, #37"
+          "no new files — integration of #16, #17, #10, #21"
         ],
         "steps": [
           "Phone 1 creates a session; phone 2 joins by code (and by QR if #19 is in).",
           "Both swipe until a match fires. Confirm the reveal mounts on BOTH devices from the match doc.",
-          "Confirm Gemini's why renders and Reel's narration plays on at least one device.",
+          "Confirm Gemini's why renders on both devices.",
           "Run it twice back to back without restarting either app — the AC is explicitly 'twice in a row'.",
           "Do it on the venue network, with the iPhone silent switch ON."
         ],
-        "contract": "Consumes #16 session, #17 match, #10 reveal, #21 compromise, #37 voice.",
+        "contract": "Consumes #16 session, #17 match, #10 reveal, #21 compromise.",
         "gotchas": [
           "Session state left over from run 1 is the most common failure — make sure a fresh code is generated and old listeners are torn down.",
           "This gates every demo-prep issue (#28, #29, #30, #42). It is the tail of the critical chain; protect its inputs."
         ],
         "refs": [
-          "PLAN.md §J phase 5",
-          "PLAN.md §G (demo moment)"
+          "PLAN.md §J phase 5"
         ],
         "verify": [
           "Two clean consecutive runs on real hardware, silent switch on"
@@ -1200,35 +1195,33 @@
       "phase": 5,
       "est": "1h",
       "deps": [
-        24,
-        38
+        24
       ],
-      "desc": "Kill Wi-Fi. Confirm seed data, cached Gemini text, and cached narration mp3 all render/play.",
+      "desc": "Kill Wi-Fi. Confirm seed data and cached Gemini text still render.",
       "ac": [
         "Demo path works with no network"
       ],
       "agent": {
         "goal": "Proof the demo survives venue wifi collapsing — the top documented risk. Everything must come from cache.",
         "files": [
-          "no new files — verification of #15 seed fallback and #38 cached audio"
+          "no new files — verification of #15 seed fallback"
         ],
         "steps": [
           "Turn Wi-Fi and cellular fully off on both phones.",
-          "Confirm: deck loads from seed.json, cards play (YouTube will NOT play offline — confirm the poster fallback looks intentional, not broken), cached Gemini text renders, cached narration mp3 plays.",
+          "Confirm: deck loads from seed.json, cards fall back to posters (YouTube will NOT play offline — confirm the poster fallback looks intentional, not broken), cached Gemini text renders.",
           "Write down exactly what degrades, and make sure the pitch script (#29) never promises a thing that only works online.",
           "If the trailer cannot play offline, the honest answer is to demo online and keep offline as the fallback story — decide this now, not on stage."
         ],
-        "contract": "Verification issue. Depends on #24 and #38.",
+        "contract": "Verification issue. Depends on #24.",
         "gotchas": [
-          "YouTube embeds require network, full stop. The offline story is seed data + cached why text + cached audio + posters — be precise about that in the pitch."
+          "YouTube embeds require network, full stop. The offline story is seed data + cached why text + posters — be precise about that in the pitch."
         ],
         "refs": [
           "PLAN.md §D (fallback plan)",
           "PLAN.md §L (risks)"
         ],
         "verify": [
-          "Demo path runs with no network",
-          "Narration still plays from cache"
+          "Demo path runs with no network"
         ]
       }
     },
@@ -1243,31 +1236,30 @@
       "deps": [
         1
       ],
-      "desc": "TMDB notice (\"This product uses the TMDB API but is not endorsed or certified by TMDB.\") + approved TMDB logo, \"Voice by ElevenLabs\" (required on the free plan), \"Powered by Gemini\".",
+      "desc": "TMDB notice (\"This product uses the TMDB API but is not endorsed or certified by TMDB.\") + approved TMDB logo, and \"Powered by Gemini\".",
       "ac": [
-        "All three attributions visible in About"
+        "Both attributions visible in About"
       ],
       "agent": {
-        "goal": "Contractual attributions. Missing them can disqualify the ElevenLabs and TMDB prize entries — cheap to build, expensive to forget.",
+        "goal": "Contractual attributions. Missing them can disqualify the TMDB prize entry — cheap to build, expensive to forget.",
         "files": [
           "app/about.tsx"
         ],
         "steps": [
           "TMDB: the exact sentence 'This product uses the TMDB API but is not endorsed or certified by TMDB.' plus the approved TMDB logo.",
-          "ElevenLabs: 'Voice by ElevenLabs' — required on the free plan.",
           "'Powered by Gemini'.",
           "Link it from somewhere reachable in the demo, and repeat the attributions in the Devpost writeup (#40)."
         ],
         "contract": "Route /about, linked from the swipe screen.",
         "gotchas": [
-          "ElevenLabs free tier REQUIRES attribution — this is a licence condition, not a nicety (AGENTS.md §3)."
+          "TMDB requires both the notice and the approved logo — the wording is fixed, do not paraphrase it (AGENTS.md §3)."
         ],
         "refs": [
           "PLAN.md §D (TMDB attribution)",
-          "PLAN.md §G (ElevenLabs free tier)"
+          "AGENTS.md §3"
         ],
         "verify": [
-          "All three attributions visible in About"
+          "Both attributions visible in About"
         ]
       }
     },
@@ -1282,7 +1274,7 @@
       "deps": [
         25
       ],
-      "desc": "Two clean screen recordings of the full flow including the voice line. Save locally and to Drive.",
+      "desc": "Two clean screen recordings of the full flow, with trailer audio audible on at least one unmuted card. Save locally and to Drive.",
       "ac": [
         "Two backups exist and play back with audio"
       ],
@@ -1292,7 +1284,7 @@
           "recordings/ — local, plus a Drive upload"
         ],
         "steps": [
-          "Record the full flow twice on the actual demo devices, including Reel's voice. iOS screen recording captures app audio; confirm the audio is actually in the file before you stop.",
+          "Record the full flow twice on the actual demo devices, unmuting at least one trailer so the recording is not silent. iOS screen recording captures app audio; confirm the audio is actually in the file before you stop.",
           "Save locally AND to Drive, and put the Drive link in the Devpost draft (#40).",
           "Watch both back with sound before calling this done."
         ],
@@ -1320,7 +1312,7 @@
       "deps": [
         25
       ],
-      "desc": "5 slides. One slide shows the compromise JSON schema. Script per PLAN.md §J: hook with the domain → solo swipe with Reel reading the why → QR join, match, voice verdict → close naming Expo + Firebase + Gemini + ElevenLabs.",
+      "desc": "5 slides. One slide shows the compromise JSON schema. Script per PLAN.md §J: hook with the domain → solo swipe with Gemini's why on the card → QR join, match, compromise verdict on both screens → close naming Expo + Firebase + Gemini.",
       "ac": [
         "Deliverable in ≤ 2 minutes when rehearsed"
       ],
@@ -1331,8 +1323,8 @@
         ],
         "steps": [
           "Five slides. One MUST show the compromise JSON schema from #21 — that is the Gemini-prize slide.",
-          "Script beats per PLAN.md §J: hook with the .tech domain → solo swipe with Reel reading the why → QR join, match, voice verdict → close naming Expo + Firebase + Gemini + ElevenLabs.",
-          "Include the line: 'Gemini read three people's swipes, picked a film nobody vetoed, and wrote — then spoke — the reason.'",
+          "Script beats per PLAN.md §J: hook with the .tech domain → solo swipe with Gemini's why on the card → QR join, match, compromise verdict on both screens → close naming Expo + Firebase + Gemini.",
+          "Include the line: 'Gemini read three people's swipes, picked a film nobody vetoed, and wrote the reason.'",
           "Add the #42 closing beat if it is in.",
           "Time it. Two minutes means two minutes."
         ],
@@ -1378,7 +1370,6 @@
         ],
         "contract": "Depends on #25.",
         "gotchas": [
-          "Rehearsals burn ElevenLabs credits unless #38's cache is warm — check the balance before and after.",
           "Silent switch ON is the point: it is the classic demo-day failure (PLAN.md §E)."
         ],
         "refs": [
@@ -1517,225 +1508,6 @@
       }
     },
     {
-      "id": 34,
-      "title": "ElevenLabs account, voice pick, and `tts` function",
-      "priority": "P0",
-      "owner": "C",
-      "area": "elevenlabs",
-      "phase": 0,
-      "est": "1h",
-      "deps": [
-        3
-      ],
-      "prize": true,
-      "desc": "Free account (no card; 10,000 credits/month). Pick Reel's premade voice and commit to it. Cloud Function (or Express proxy) `tts({text}) → {audioBase64}` using `eleven_flash_v2_5`, output `mp3_44100_128`. Key in a secret. Create a spare free account on a second teammate's email.",
-      "ac": [
-        "curl the function → playable mp3",
-        "Key not in the client bundle"
-      ],
-      "agent": {
-        "goal": "Reel's voice exists as a callable endpoint with the key server-side. Gates the whole ElevenLabs prize track.",
-        "files": [
-          "functions/src/tts.ts OR proxy/server.js — whichever #3 decided",
-          "src/lib/tts.ts — client caller comes in #36"
-        ],
-        "steps": [
-          "Free ElevenLabs account (no card, 10,000 credits/month, API access included).",
-          "Pick ONE premade voice and commit to it — consistency across the demo matters more than the exact choice. The docs' warm-narrator id JBFqnCBsd6RMkjVDRZzb is a reasonable default.",
-          "Implement tts({ text }) → { audioBase64 }: client.textToSpeech.convert(voiceId, { text, modelId: 'eleven_flash_v2_5', outputFormat: 'mp3_44100_128' }).",
-          "eleven_flash_v2_5 specifically: ~75ms latency and HALF the credit cost of the alternatives.",
-          "Key lives in a Cloud Function secret or proxy env var. Never in the app bundle.",
-          "Create the spare free account on a second teammate's email — a blown credit budget mid-rehearsal is a documented risk."
-        ],
-        "contract": "```\nPOST <EXPO_PUBLIC_TTS_URL>  { text: string }  →  { audioBase64: string }\n```\n#36 is the only caller.",
-        "gotchas": [
-          "Cloud Functions require the Blaze plan. If nobody adds a card, the Express-proxy-on-Vultr path from #3 applies — and incidentally qualifies for that prize too.",
-          "Free tier is premade voices only; the community voice library is not available via API.",
-          "Per-request cap ~2,500 characters — irrelevant at 35 words, but do not batch the whole seed catalog into one call."
-        ],
-        "refs": [
-          "PLAN.md §G (API facts, pipeline)",
-          "AGENTS.md §3"
-        ],
-        "verify": [
-          "curl the endpoint returns playable mp3 bytes",
-          "No ElevenLabs key anywhere in the client bundle"
-        ]
-      }
-    },
-    {
-      "id": 35,
-      "title": "Narration field in Gemini prompts",
-      "priority": "P1",
-      "owner": "C",
-      "area": "elevenlabs",
-      "phase": 3,
-      "est": "0.5h",
-      "deps": [
-        21
-      ],
-      "prize": true,
-      "desc": "Add `narration` to the compromise schema/prompt (#21) with the example line from PLAN.md §F. Optionally a `spoken` variant of the \"why\" reason (#20).",
-      "ac": [
-        "narration ≤ 35 words, names who compromised on what, ends with where to watch"
-      ],
-      "agent": {
-        "goal": "Tune the spoken script so it sounds like a person, not a caption read aloud. Tiny issue, large effect on the demo.",
-        "files": [
-          "src/lib/gemini.ts — the #21 prompt and schema"
-        ],
-        "steps": [
-          "Add narration to the compromise schema (#21) if it is not already there, with the example line from PLAN.md §F: 'You three finally agree on something. Everyone gets the action, Sam gets the jokes. It's on Netflix — go.'",
-          "Constrain: max 35 words, address the group directly, name who compromised on what, end with where to watch.",
-          "Optionally add a spoken variant of the #20 why line — shorter and punchier than the on-screen text.",
-          "Read the output ALOUD before accepting it. Text that scans fine on screen often stumbles in speech."
-        ],
-        "contract": "Refines the narration field of Compromise from #21. No new API.",
-        "gotchas": [
-          "Longer narration costs credits and delays the reveal. 35 words is the ceiling, not the target."
-        ],
-        "refs": [
-          "PLAN.md §F feature #3",
-          "PLAN.md §G"
-        ],
-        "verify": [
-          "narration is ≤35 words, names who compromised, ends with where to watch"
-        ]
-      }
-    },
-    {
-      "id": 36,
-      "title": "TTS playback util with cache (expo-audio)",
-      "priority": "P1",
-      "owner": "C",
-      "area": "elevenlabs",
-      "phase": 1,
-      "est": "2h",
-      "deps": [
-        34
-      ],
-      "prize": true,
-      "desc": "`speak(text)`: hash(text) → check expo-file-system cache → miss: call `tts`, write mp3 → play with `expo-audio`. `setAudioModeAsync({ playsInSilentMode: true })` so the iPhone mute switch doesn't kill the demo.",
-      "ac": [
-        "Second call for the same text makes zero network requests",
-        "Plays with the mute switch on"
-      ],
-      "agent": {
-        "goal": "speak(text) — the util that makes every voice moment possible, and the cache that keeps five rehearsals inside the free tier.",
-        "files": [
-          "src/lib/tts.ts"
-        ],
-        "steps": [
-          "npx expo install expo-audio expo-file-system. expo-av is deprecated — never import it (AGENTS.md §4).",
-          "Call setAudioModeAsync({ playsInSilentMode: true }) once at app start, or the iPhone mute switch silences the demo. This is a documented high-likelihood failure.",
-          "speak(text): hash the text (a simple djb2 is fine) → look for <cacheDir>/tts/<hash>.mp3 → hit: play it, zero network. Miss: POST to the tts endpoint (#34), write the base64 to that path, then play.",
-          "Expose prewarm(text) that does everything except play, so #37 can fetch during the match animation and #38 can batch-generate.",
-          "Handle overlapping calls: stop any playing sound before starting a new one."
-        ],
-        "contract": "```ts\nexport async function speak(text: string): Promise<void>;\nexport async function prewarm(text: string): Promise<void>;\nexport function cachePath(text: string): string;\n```",
-        "gotchas": [
-          "The second call for the same text must make ZERO network requests — that is the AC and it is what protects the credit budget.",
-          "expo-file-system cacheDir can be cleared by the OS; #38 writes to a bundled or documents path for demo-critical audio."
-        ],
-        "refs": [
-          "PLAN.md §G (pipeline, credit math)",
-          "AGENTS.md §4"
-        ],
-        "verify": [
-          "Second call for the same text makes no network request",
-          "Audio plays with the iPhone mute switch ON"
-        ]
-      }
-    },
-    {
-      "id": 37,
-      "title": "Wire Reel's voice into the UI",
-      "priority": "P1",
-      "owner": "A",
-      "area": "elevenlabs",
-      "phase": 3,
-      "est": "1.5h",
-      "deps": [
-        10,
-        36
-      ],
-      "prize": true,
-      "desc": "(a) Match reveal: pre-warm Gemini + TTS the instant the match is detected; play ~1s after the reveal mounts. (b) Speaker icon on the card reads the \"why\" line.",
-      "ac": [
-        "Voice plays in both places on a physical device"
-      ],
-      "agent": {
-        "goal": "Reel actually speaks during the demo — at the match reveal and on any card. This is the beat judges quote back to you.",
-        "files": [
-          "src/components/MatchReveal.tsx",
-          "src/components/CardChrome.tsx"
-        ],
-        "steps": [
-          "(a) Match reveal: call prewarm(narration) the INSTANT #17 detects the match, before MatchReveal mounts. On the reveal's onMounted, wait ~1s (poster lands) then speak(). Judges must not watch a spinner.",
-          "(b) Speaker icon on the card: tap reads the #20 why line via speak(). One line of code once #36 exists, and it gives judges a second touchpoint.",
-          "Guard double-taps — stop the previous sound before starting another.",
-          "Verify on a physical device with the silent switch ON."
-        ],
-        "contract": "Consumes speak()/prewarm() from #36, narration from #21, the onMounted hook from #10.",
-        "gotchas": [
-          "If the audio arrives late the reveal still works — never block the animation on the fetch.",
-          "Pre-warm at detection, not at mount. This is the difference between instant and awkward."
-        ],
-        "refs": [
-          "PLAN.md §G (where the voice appears)"
-        ],
-        "verify": [
-          "Voice plays at the reveal and from the card icon, on real hardware, silent switch on"
-        ]
-      }
-    },
-    {
-      "id": 38,
-      "title": "Pre-generate cached narration audio (offline safety)",
-      "priority": "P1",
-      "owner": "C",
-      "area": "elevenlabs",
-      "phase": 4,
-      "est": "1h",
-      "deps": [
-        36,
-        4
-      ],
-      "prize": true,
-      "desc": "Script that runs `speak()` for every seed movie's \"why\" line plus three canned group verdicts; bundle the mp3s (or warm the cache dir) so the live demo and all rehearsals never hit ElevenLabs live. B takes this if C is behind.",
-      "ac": [
-        "Wi-Fi off → reveal still talks",
-        "Credit balance unchanged across 5 rehearsals"
-      ],
-      "agent": {
-        "goal": "Every line the demo can possibly speak, already on disk. Protects both the offline story and the credit budget.",
-        "files": [
-          "scripts/pregen-audio.js",
-          "assets/narration/ — gitignored mp3s, regenerate rather than commit"
-        ],
-        "steps": [
-          "Script iterates seed.json (#4): for each movie's why line call prewarm() so the cache fills.",
-          "Add three canned group verdicts covering the likely demo matches.",
-          "Write into the same cache path #36 reads, or bundle and copy into it on first launch.",
-          "Note: assets/narration/*.mp3 is gitignored by project convention — the script is the artifact, not the audio.",
-          "Run it BEFORE rehearsals (#30) so those five runs cost zero credits."
-        ],
-        "contract": "Fills the cache #36's speak() reads. No runtime API.",
-        "gotchas": [
-          "10,000 credits ≈ 40–60 narrations. Generating for all 60 seed movies is most of the monthly budget — generate why lines only for the ~10 movies the demo actually reaches, plus the canned verdicts.",
-          "B takes this issue if C is behind at hour 14 (PLAN.md §K load check)."
-        ],
-        "refs": [
-          "PLAN.md §G (credit math)",
-          "PLAN.md §D (fallback)"
-        ],
-        "verify": [
-          "Wi-Fi off → the reveal still talks",
-          "Credit balance unchanged across 5 rehearsals"
-        ]
-      }
-    },
-    {
       "id": 39,
       "title": "Gemini multimodal poster \"vibe tags\"",
       "priority": "P2",
@@ -1791,25 +1563,25 @@
         29
       ],
       "prize": true,
-      "desc": "Devpost: select Best Use of Gemini API, Best Use of ElevenLabs, and Best .Tech Domain Name. Writeup names each sponsor tech with one sentence on what it did. Demo video shows the domain, the JSON schema, and the voice. Attributions present (#27). Submit early, not at the deadline.",
+      "desc": "Devpost: select Best Use of Gemini API and Best .Tech Domain Name. Writeup names each sponsor tech with one sentence on what it did. Demo video shows the domain and the JSON schema. Attributions present (#27). Submit early, not at the deadline.",
       "ac": [
         "Checklist complete ≥ 30 min before the submission deadline"
       ],
       "agent": {
-        "goal": "The submission itself. Three prize categories, submitted early rather than at the deadline — the plan calls this out specifically.",
+        "goal": "The submission itself. Two prize categories, submitted early rather than at the deadline — the plan calls this out specifically.",
         "files": [
           "submission/devpost.md — the writeup draft"
         ],
         "steps": [
-          "On Devpost select all three: Best Use of Gemini API, Best Use of ElevenLabs, Best .Tech Domain Name.",
+          "On Devpost select both: Best Use of Gemini API and Best .Tech Domain Name.",
           "Writeup names each sponsor tech with ONE sentence on what it actually did — judges skim.",
-          "Demo video (#28) must visibly show: the .tech domain, the JSON schema moment, and the voice playing.",
-          "Confirm attributions are present in-app (#27) and repeated in the writeup: TMDB notice, 'Voice by ElevenLabs', 'Powered by Gemini'.",
+          "Demo video (#28) must visibly show: the .tech domain and the JSON schema moment.",
+          "Confirm attributions are present in-app (#27) and repeated in the writeup: TMDB notice and 'Powered by Gemini'.",
           "Submit at least 30 minutes before the deadline. That is the AC, and it is the single cheapest risk reduction in the plan."
         ],
         "contract": "Depends on #28 (video) and #29 (deck/script).",
         "gotchas": [
-          "Missing ElevenLabs attribution can invalidate that prize entry.",
+          "Gemini is the most crowded category at any MLH event and it is now one of only two we target — the JSON-schema slide and the multi-user negotiation framing are what separate us.",
           "Devpost submissions routinely fail in the last ten minutes when everyone uploads at once."
         ],
         "refs": [
@@ -1876,12 +1648,12 @@
         41,
         25
       ],
-      "desc": "After Reel's verdict, one tap to the Saved tab on both devices shows the pick sitting there. Add to the pitch script (#29).",
+      "desc": "After the match reveal, one tap to the Saved tab on both devices shows the pick sitting there. Add to the pitch script (#29).",
       "ac": [
         "Beat included in the 2-minute script and rehearsed"
       ],
       "agent": {
-        "goal": "The last ten seconds of the pitch: after Reel speaks, one tap on both phones shows the film already saved. Cheap, and it lands the 'it's a real product' note.",
+        "goal": "The last ten seconds of the pitch: after the verdict lands, one tap on both phones shows the film already saved. Cheap, and it lands the 'it's a real product' note.",
         "files": [
           "pitch/ — script update",
           "app/saved.tsx — must already work (#41)"
