@@ -1,0 +1,470 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MovieMatch Build Order</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#eceff4; --surface:#fff; --surface-2:#f5f7fa; --sunk:#e4e8ee;
+  --line:#d5dae3; --line-soft:#e6e9ef;
+  --ink:#161a22; --ink-2:#48505f; --ink-3:#79818f;
+  --accent:#2f63e0;
+  --oA:#6a4ae8; --oB:#0e857b; --oC:#b06a12; --oall:#4b5563;
+  --ok:#12783f; --ok-soft:#e4f3e9;
+  --p0:#c23b31;
+  --claim:#8a5a00; --claim-soft:#fdf0d5;
+  --review:#2f63e0; --review-soft:#e3ebfd;
+  --shadow:0 1px 2px rgba(18,24,38,.06),0 4px 12px rgba(18,24,38,.05);
+  --radius:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1117; --surface:#161b23; --surface-2:#1b212b; --sunk:#11151c;
+    --line:#2b3341; --line-soft:#222936;
+    --ink:#e9edf4; --ink-2:#a8b2c2; --ink-3:#7a8494;
+    --accent:#7aa2ff;
+    --oA:#a58cff; --oB:#3ec1b2; --oC:#e5a24d; --oall:#9aa4b4;
+    --ok:#4cc97e; --ok-soft:#122a1c;
+    --p0:#ff6f62;
+    --claim:#e0a94d; --claim-soft:#2a2113;
+    --review:#7aa2ff; --review-soft:#16213d;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1117; --surface:#161b23; --surface-2:#1b212b; --sunk:#11151c;
+  --line:#2b3341; --line-soft:#222936;
+  --ink:#e9edf4; --ink-2:#a8b2c2; --ink-3:#7a8494;
+  --accent:#7aa2ff;
+  --oA:#a58cff; --oB:#3ec1b2; --oC:#e5a24d; --oall:#9aa4b4;
+  --ok:#4cc97e; --ok-soft:#122a1c;
+  --p0:#ff6f62;
+  --claim:#e0a94d; --claim-soft:#2a2113;
+  --review:#7aa2ff; --review-soft:#16213d;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.28);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding-inline:20px; padding-block:32px 64px}
+h1,h2,h3{font-family:Archivo,"IBM Plex Sans",sans-serif; text-wrap:balance; margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace; font-variant-numeric:tabular-nums}
+
+/* header */
+header{display:flex; flex-direction:column; gap:10px; margin-bottom:26px}
+.eyebrow{font-size:11.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+h1{font-size:clamp(28px,5vw,40px); font-weight:700; letter-spacing:-.02em}
+.lede{color:var(--ink-2); max-width:64ch; margin:0}
+
+/* stats */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:1px;
+  background:var(--line-soft); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; margin:22px 0 28px}
+.stat{background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px}
+.stat b{font-family:Archivo,sans-serif; font-size:25px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.15}
+.stat span{font-size:11.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.stat.go b{color:var(--ok)}
+
+/* controls */
+.controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:26px}
+.chip{font:inherit; font-size:13px; font-weight:500; padding:6px 12px; border-radius:99px; cursor:pointer;
+  border:1px solid var(--line); background:var(--surface); color:var(--ink-2)}
+.chip[aria-pressed="true"]{background:var(--ink); color:var(--bg); border-color:var(--ink)}
+.chip.reset{color:var(--ink-3); border-style:dashed}
+.chip.reset[data-armed]{color:var(--p0); border-color:var(--p0); border-style:solid}
+.chip:focus-visible,.tick:focus-visible,a:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.sync{margin-left:auto; font-size:12.5px; color:var(--ink-3); display:flex; align-items:center; gap:6px}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--ink-3)}
+.dot.live{background:var(--ok)}
+
+/* sections */
+section{margin-bottom:34px}
+.shead{display:flex; align-items:baseline; gap:10px; margin-bottom:4px}
+.shead h2{font-size:19px; font-weight:600; letter-spacing:-.01em}
+.shead .count{font-size:13px; color:var(--ink-3)}
+.snote{color:var(--ink-2); font-size:13.5px; margin:0 0 16px; max-width:70ch}
+
+/* lanes */
+.lanes{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; align-items:start}
+.lane{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+.lane-h{display:flex; align-items:center; gap:8px; padding:11px 14px; border-bottom:1px solid var(--line-soft); background:var(--surface-2)}
+.lane-h .who{font-family:Archivo,sans-serif; font-weight:600; font-size:14px}
+.lane-h .who::before{content:""; display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:7px; background:var(--oall); vertical-align:1px}
+.lane[data-o="A"] .who::before{background:var(--oA)} .lane[data-o="B"] .who::before{background:var(--oB)}
+.lane[data-o="C"] .who::before{background:var(--oC)}
+.lane-h .role{font-size:12px; color:var(--ink-3)}
+.lane-h .left{margin-left:auto; font-size:12px; color:var(--ink-3)}
+.lane ul{list-style:none; margin:0; padding:8px; display:flex; flex-direction:column; gap:7px}
+.lane .empty{padding:16px 14px; color:var(--ink-3); font-size:13px}
+
+/* issue card */
+.card{display:flex; gap:10px; padding:10px 11px; border:1px solid var(--line-soft); border-radius:8px; background:var(--surface)}
+.card.blocked{background:var(--surface-2); border-style:dashed}
+.card.p0{border-left:3px solid var(--p0); padding-left:9px}
+.card.is-done{opacity:.55}
+.card.is-done .title{text-decoration:line-through}
+.tick{flex:none; width:19px; height:19px; margin-top:1px; border-radius:5px; border:1.5px solid var(--line);
+  background:var(--surface); cursor:pointer; padding:0; display:grid; place-items:center; color:transparent}
+.tick:hover{border-color:var(--accent)}
+.tick[aria-pressed="true"]{background:var(--ok); border-color:var(--ok); color:#fff}
+.tick svg{width:11px; height:11px}
+.body{min-width:0; flex:1}
+.row1{display:flex; align-items:baseline; gap:7px; flex-wrap:wrap}
+.num{font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:600; color:var(--accent); text-decoration:none}
+.num:hover{text-decoration:underline}
+.title{font-size:14px; font-weight:500; overflow-wrap:anywhere}
+.meta{display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:5px; font-size:11.5px; color:var(--ink-3)}
+.meta .k{font-weight:600; letter-spacing:.04em; text-transform:uppercase; font-size:10.5px}
+.pri{font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600; padding:1px 5px; border-radius:4px;
+  background:var(--sunk); color:var(--ink-2)}
+.pri.P0{background:var(--p0); color:#fff}
+.dep{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2)}
+.dep.met{color:var(--ok)}
+.dep.unmet{color:var(--ink-2); font-weight:600}
+
+/* working strip: claimed + in-review, above the startable cards */
+.working{border-bottom:1px solid var(--line-soft); background:var(--sunk); padding:7px 9px; display:flex; flex-direction:column; gap:6px}
+.wrow{display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; font-size:12.5px}
+.wrow .num{font-size:12px}
+.wrow .t{color:var(--ink-2); overflow-wrap:anywhere}
+.who-tag{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3)}
+.badge{font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:1px 6px; border-radius:99px; white-space:nowrap}
+.badge.claimed{background:var(--claim-soft); color:var(--claim)}
+.badge.review{background:var(--review-soft); color:var(--review)}
+.chip.refresh{color:var(--ink-3)}
+.chip.refresh[data-busy]{opacity:.6}
+.state.claimed{background:var(--claim-soft); color:var(--claim)}
+.state.review{background:var(--review-soft); color:var(--review)}
+.dep.review{color:var(--review)}
+
+/* blocked list */
+.blocked-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:8px}
+
+/* phase map */
+.phase{border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); margin-bottom:12px; overflow:hidden}
+.phase > summary{list-style:none; cursor:pointer; padding:12px 15px; display:flex; align-items:center; gap:10px; background:var(--surface-2)}
+.phase > summary::-webkit-details-marker{display:none}
+.phase > summary::before{content:"▸"; color:var(--ink-3); font-size:11px; transition:transform .15s}
+.phase[open] > summary::before{transform:rotate(90deg)}
+.phase h3{font-size:14.5px; font-weight:600}
+.phase summary .ct{margin-left:auto; font-size:12px; color:var(--ink-3)}
+.tbl{width:100%; border-collapse:collapse; font-size:13.5px}
+.tbl th{text-align:left; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; padding:9px 12px; border-bottom:1px solid var(--line-soft); white-space:nowrap}
+.tbl td{padding:9px 12px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.stcell{display:flex; align-items:center; gap:8px}
+.tbl tr.is-done td:not(:first-child){opacity:.5}
+.tbl tr.is-done .t{text-decoration:line-through}
+.scroll{overflow-x:auto}
+.ow{font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600}
+.ow[data-o="A"]{color:var(--oA)} .ow[data-o="B"]{color:var(--oB)} .ow[data-o="C"]{color:var(--oC)} .ow[data-o="all"]{color:var(--oall)}
+.state{font-size:11px; font-weight:600; padding:2px 7px; border-radius:99px; white-space:nowrap;
+  background:var(--sunk); color:var(--ink-2)}
+.state.ready{background:var(--ok-soft); color:var(--ok)}
+.state.done{background:var(--ok); color:#fff}
+
+/* capacity */
+.cap{border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); padding:18px 20px}
+.cap table{width:100%; border-collapse:collapse; font-size:13.5px; margin-top:10px}
+.cap th,.cap td{text-align:left; padding:7px 10px; border-bottom:1px solid var(--line-soft)}
+.cap th{font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+.cap td.over{color:var(--p0); font-weight:600}
+.cap p{color:var(--ink-2); font-size:13.5px; margin:12px 0 0; max-width:72ch}
+footer{margin-top:36px; padding-top:18px; border-top:1px solid var(--line); color:var(--ink-3); font-size:12.5px}
+footer a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:520px){ .wrap{padding-block:24px 48px} .stats{grid-template-columns:repeat(2,1fr)} }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">HackWesTX 26 · Frankie813/hackathon-movies · 42 issues · 3 owners</div>
+  <h1>MovieMatch Build Order</h1>
+  <p class="lede">Assign yourself on GitHub to claim an issue, open a PR to put it in review, merge to finish it. The board reads all three from GitHub — it never needs updating by hand.</p>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="controls">
+  <button class="chip" id="f-all" data-f="all" aria-pressed="true">Everyone</button>
+  <button class="chip" id="f-A" data-f="A" aria-pressed="false">A · mobile</button>
+  <button class="chip" id="f-B" data-f="B" aria-pressed="false">B · backend</button>
+  <button class="chip" id="f-C" data-f="C" aria-pressed="false">C · AI + demo</button>
+  <button class="chip refresh" id="refresh" type="button">Refresh now</button>
+  <span class="sync"><span class="dot live"></span><span id="syncmsg">Synced from GitHub · Sep 12, 5:30 PM · 0 of 42 closed</span></span>
+</div>
+
+<section>
+  <div class="shead"><h2>Start now</h2><span class="count" id="ready-ct"></span></div>
+  <p class="snote">Every dependency met. Numbers link straight to the issue, and P0 sits at the top of each lane — that's the demo path.</p>
+  <div class="lanes" id="lanes"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>Waiting</h2><span class="count" id="blocked-ct"></span></div>
+  <p class="snote">Each one names the unfinished issue holding it up, and who owns that issue.</p>
+  <div class="blocked-grid" id="blocked"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>Full dependency map</h2><span class="count">42 issues across 6 phases</span></div>
+  <p class="snote">The plan's own phase windows. <b>Needs</b> must finish first; <b>unlocks</b> is what a finished issue frees up — the higher that count, the more it's worth protecting.</p>
+  <div id="map"></div>
+</section>
+
+<section>
+  <div class="shead"><h2>Does it fit in 24 hours?</h2></div>
+  <div class="cap">
+    <p style="margin-top:0">Three people, 24 hours = 72 person-hours of ceiling, and no team packs a dependency graph perfectly. Scheduled against the dependency graph:</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Scope</th><th>Issues</th><th>Person-hours</th><th>Perfect-packing floor</th><th>With dependencies</th></tr></thead>
+      <tbody>
+        <tr><td>P0 only</td><td class="mono">19</td><td class="mono">44.0</td><td class="mono">14.7 h</td><td class="mono">20.5 h</td></tr>
+        <tr><td>P0 + P1</td><td class="mono">35</td><td class="mono">69.0</td><td class="mono">23.0 h</td><td class="mono over">27.0 h</td></tr>
+        <tr><td>All 42</td><td class="mono">42</td><td class="mono">79.3</td><td class="mono">26.4 h</td><td class="mono over">33.8 h</td></tr>
+      </tbody>
+    </table></div>
+    <p><b>P0 fits with room to spare. P0 + P1 does not.</b> Treat P1 as the trade pile and P2 as decoration — and watch C, who carries 25 h of solo work plus every demo deliverable, against A's 17.5 h and B's 19.5 h.</p>
+  </div>
+</section>
+
+<footer>
+  Generated from <span class="mono">.github/issues.json</span>. Issue numbers match GitHub exactly —
+  <a href="https://github.com/Frankie813/hackathon-movies/issues">open the repo issues</a>.
+</footer>
+</div>
+
+<script>
+const DATA = {"phases":[{"id":0,"title":"Phase 0 · Setup (h0–2)"},{"id":1,"title":"Phase 1 · Core build (h2–10)"},{"id":2,"title":"Phase 2 · Integration (h10–14)"},{"id":3,"title":"Phase 3 · Group + AI (h14–18)"},{"id":4,"title":"Phase 4 · Polish (h18–20)"},{"id":5,"title":"Phase 5 · Demo prep (h20–24)"}],"issues":[{"id":1,"t":"Scaffold Expo app + navigation","o":"A","p":"P0","e":"1h","h":1,"ph":0,"a":"setup","z":false,"d":[],"b":[6,7,27]},{"id":2,"t":"Create Firebase project + Anonymous Auth + Hosting","o":"B","p":"P0","e":"1h","h":1,"ph":0,"a":"setup","z":false,"d":[],"b":[3,16,32]},{"id":3,"t":"TMDB, Gemini, and ElevenLabs keys + secrets","o":"C","p":"P0","e":"1h","h":1,"ph":0,"a":"setup","z":false,"d":[2],"b":[15,20,21,22,34]},{"id":4,"t":"Shared data model + seed.json with curated clip keys","o":"B","p":"P0","e":"3h","h":3,"ph":0,"a":"setup","z":false,"d":[],"b":[5,12,15,38]},{"id":5,"t":"Shared TypeScript types","o":"C","p":"P1","e":"0.5h","h":0.5,"ph":0,"a":"setup","z":false,"d":[4],"b":[]},{"id":6,"t":"Swipe card stack","o":"A","p":"P0","e":"3h","h":3,"ph":1,"a":"mobile","z":false,"d":[1],"b":[8,9,24]},{"id":7,"t":"YouTube trailer/clip card","o":"A","p":"P0","e":"3h","h":3,"ph":1,"a":"mobile","z":false,"d":[1],"b":[8,24]},{"id":8,"t":"Card content overlay (chrome)","o":"A","p":"P0","e":"2h","h":2,"ph":1,"a":"mobile","z":false,"d":[6,7],"b":[]},{"id":9,"t":"Onboarding polarizing deck (cold start)","o":"A","p":"P1","e":"1.5h","h":1.5,"ph":4,"a":"mobile","z":false,"d":[6,12],"b":[]},{"id":10,"t":"\"It's a Match!\" reveal screen","o":"A","p":"P1","e":"2h","h":2,"ph":3,"a":"mobile","z":false,"d":[17,21],"b":[25,37]},{"id":11,"t":"Mood filter input UI","o":"A","p":"P2","e":"1.5h","h":1.5,"ph":3,"a":"mobile","z":false,"d":[22],"b":[]},{"id":12,"t":"Taste vector + scoring model","o":"C","p":"P0","e":"3h","h":3,"ph":1,"a":"algorithm","z":false,"d":[4],"b":[9,13,14,17,18,20,24]},{"id":13,"t":"Similar/recommendations candidate seeding","o":"C","p":"P1","e":"1.5h","h":1.5,"ph":2,"a":"algorithm","z":false,"d":[12,15],"b":[]},{"id":14,"t":"ε-greedy exploration","o":"C","p":"P2","e":"1h","h":1,"ph":3,"a":"algorithm","z":false,"d":[12],"b":[]},{"id":15,"t":"TMDB fetch layer with seed fallback","o":"B","p":"P0","e":"3h","h":3,"ph":1,"a":"backend","z":false,"d":[3,4],"b":[13,22,24]},{"id":16,"t":"Group session + join code (Firestore realtime)","o":"B","p":"P0","e":"3h","h":3,"ph":1,"a":"backend","z":false,"d":[2],"b":[17,19,21,25,33]},{"id":17,"t":"Match detection (Average-without-Misery) + persist match","o":"B","p":"P0","e":"2.5h","h":2.5,"ph":3,"a":"backend","z":false,"d":[16,12],"b":[10,25,41]},{"id":18,"t":"Persist taste vector to Firestore","o":"B","p":"P1","e":"1h","h":1,"ph":2,"a":"backend","z":false,"d":[12],"b":[41]},{"id":19,"t":"QR / shareable join link on the .tech domain","o":"B","p":"P1","e":"1.5h","h":1.5,"ph":3,"a":"backend","z":false,"d":[16,32],"b":[]},{"id":20,"t":"Gemini: \"why you'd like this\" one-liner","o":"C","p":"P1","e":"2h","h":2,"ph":1,"a":"gemini","z":false,"d":[3,12],"b":[23,39]},{"id":21,"t":"Gemini: group compromise pick + narration script","o":"C","p":"P1","e":"2h","h":2,"ph":3,"a":"gemini","z":false,"d":[16,3],"b":[10,25,35]},{"id":22,"t":"Gemini: natural-language mood → TMDB filters","o":"C","p":"P2","e":"2h","h":2,"ph":3,"a":"gemini","z":false,"d":[15,3],"b":[11]},{"id":23,"t":"Gemini: ranked recommender fallback","o":"C","p":"P2","e":"2h","h":2,"ph":4,"a":"gemini","z":false,"d":[20],"b":[]},{"id":24,"t":"End-to-end single-player loop","o":"all","p":"P0","e":"2h","h":2,"ph":2,"a":"demo","z":false,"d":[6,7,12,15],"b":[26,31]},{"id":25,"t":"End-to-end group flow","o":"all","p":"P0","e":"2h","h":2,"ph":5,"a":"demo","z":false,"d":[16,17,10,21,37],"b":[28,29,30,42]},{"id":26,"t":"Offline fallback verification","o":"B","p":"P0","e":"1h","h":1,"ph":5,"a":"demo","z":false,"d":[24,38],"b":[]},{"id":27,"t":"About screen with attributions","o":"A","p":"P1","e":"0.5h","h":0.5,"ph":4,"a":"mobile","z":false,"d":[1],"b":[]},{"id":28,"t":"Record demo video ×2 (with audio)","o":"C","p":"P0","e":"1h","h":1,"ph":5,"a":"demo","z":false,"d":[25],"b":[40]},{"id":29,"t":"Pitch deck + 2-minute script","o":"C","p":"P0","e":"2h","h":2,"ph":5,"a":"demo","z":false,"d":[25],"b":[40]},{"id":30,"t":"Demo rehearsal ×5","o":"all","p":"P1","e":"1.5h","h":1.5,"ph":5,"a":"demo","z":false,"d":[25],"b":[]},{"id":31,"t":"EAS build / TestFlight backup","o":"B","p":"P2","e":"1.5h","h":1.5,"ph":4,"a":"mobile","z":false,"d":[24],"b":[]},{"id":32,"t":"Register the .tech domain (hour 0)","o":"B","p":"P0","e":"0.5h","h":0.5,"ph":0,"a":"domain","z":true,"d":[2],"b":[19,33]},{"id":33,"t":"Landing + join page on the .tech domain","o":"B","p":"P1","e":"1.5h","h":1.5,"ph":2,"a":"domain","z":true,"d":[32,16],"b":[]},{"id":34,"t":"ElevenLabs account, voice pick, and `tts` function","o":"C","p":"P0","e":"1h","h":1,"ph":0,"a":"elevenlabs","z":true,"d":[3],"b":[36]},{"id":35,"t":"Narration field in Gemini prompts","o":"C","p":"P1","e":"0.5h","h":0.5,"ph":3,"a":"elevenlabs","z":true,"d":[21],"b":[]},{"id":36,"t":"TTS playback util with cache (expo-audio)","o":"C","p":"P1","e":"2h","h":2,"ph":1,"a":"elevenlabs","z":true,"d":[34],"b":[37,38]},{"id":37,"t":"Wire Reel's voice into the UI","o":"A","p":"P1","e":"1.5h","h":1.5,"ph":3,"a":"elevenlabs","z":true,"d":[10,36],"b":[25]},{"id":38,"t":"Pre-generate cached narration audio (offline safety)","o":"C","p":"P1","e":"1h","h":1,"ph":4,"a":"elevenlabs","z":true,"d":[36,4],"b":[26]},{"id":39,"t":"Gemini multimodal poster \"vibe tags\"","o":"C","p":"P2","e":"1.5h","h":1.5,"ph":4,"a":"gemini","z":true,"d":[20],"b":[]},{"id":40,"t":"Prize submission checklist","o":"C","p":"P0","e":"1h","h":1,"ph":5,"a":"demo","z":true,"d":[28,29],"b":[]},{"id":41,"t":"Saved tab (watch later)","o":"A","p":"P1","e":"1.5h","h":1.5,"ph":3,"a":"mobile","z":false,"d":[18,17],"b":[42]},{"id":42,"t":"Closing demo beat: Saved tab on both phones","o":"all","p":"P2","e":"0.25h","h":0.25,"ph":5,"a":"demo","z":false,"d":[41,25],"b":[]}],"done":[],"claimed":{},"review":{}};
+const ISSUES = DATA.issues;
+const BY = Object.fromEntries(ISSUES.map(i => [i.id, i]));
+const ROLE = {A:"Mobile UI · swipe · video", B:"Backend · TMDB · sessions", C:"Algorithm · Gemini · demo", all:"Whole team together"};
+const NAME = {A:"A", B:"B", C:"C", all:"Team"};
+const OWNER = "Frankie813", REPO_NAME = "hackathon-movies";
+const REPO = "https://github.com/" + OWNER + "/" + REPO_NAME + "/issues/";
+const PR_URL = "https://github.com/" + OWNER + "/" + REPO_NAME + "/pull/";
+/* One request returns issues AND pull requests — GitHub includes PRs in the
+   issues payload — so claimed / in-review / done all come from a single call. */
+const API = "https://api.github.com/repos/" + OWNER + "/" + REPO_NAME + "/issues?state=all&per_page=100";
+
+/* Four states, all read from GitHub, none of them stored in this page:
+     done      — the issue is closed
+     review    — an open PR references it (work exists, waiting to merge)
+     claimed   — someone assigned themselves
+     ready     — every dependency closed, nobody on it                      */
+let DONE = new Set(DATA.done);
+let CLAIMED = new Map(Object.entries(DATA.claimed || {}).map(([k,v]) => [Number(k), v]));
+let REVIEW = new Map(Object.entries(DATA.review || {}).map(([k,v]) => [Number(k), v]));
+let filter = "all";
+
+const isDone = i => DONE.has(i.id);
+const inReview = i => !isDone(i) && REVIEW.has(i.id);
+const isClaimed = i => !isDone(i) && !inReview(i) && CLAIMED.has(i.id);
+const isWorking = i => inReview(i) || isClaimed(i);
+const depsMet = i => i.d.every(x => DONE.has(x));
+const isReady = i => !isDone(i) && !isWorking(i) && depsMet(i);
+const unmet = i => i.d.filter(x => !DONE.has(x));
+const byPri = (a,b) => a.p.localeCompare(b.p) || a.ph - b.ph || a.id - b.id;
+
+function depSpan(ids){
+  if (!ids.length) return '<span class="dep met">nothing</span>';
+  return ids.map(x => {
+    const cls = DONE.has(x) ? "met" : REVIEW.has(x) ? "review" : "unmet";
+    const tail = REVIEW.has(x) ? " in review" : "";
+    return '<span class="dep ' + cls + '">#' + x + '<span class="ow" data-o="' + BY[x].o + '"> ' + NAME[BY[x].o] + tail + '</span></span>';
+  }).join(" ");
+}
+function card(i, blocked){
+  return '<li><div class="card' + (blocked ? " blocked" : "") + (i.p === "P0" ? " p0" : "") + '">'
+    + '<div class="body"><div class="row1">'
+    + '<a class="num" href="' + REPO + i.id + '" target="_blank" rel="noopener" title="Open issue ' + i.id + ' on GitHub">#' + i.id + '</a>'
+    + '<span class="pri ' + i.p + '">' + i.p + '</span>'
+    + '<span class="title">' + i.t + '</span></div>'
+    + '<div class="meta"><span class="mono">' + i.e + '</span>'
+    + (blocked ? '<span><span class="k">waiting on</span> ' + depSpan(unmet(i)) + '</span>'
+               : (i.b.length ? '<span><span class="k">unlocks</span> <span class="mono">' + i.b.length + '</span></span>' : ''))
+    + (i.z ? '<span class="k">prize track</span>' : '')
+    + '</div></div></div></li>';
+}
+function workRow(i){
+  const pr = REVIEW.get(i.id);
+  const who = CLAIMED.get(i.id);
+  return '<div class="wrow">'
+    + '<a class="num" href="' + REPO + i.id + '" target="_blank" rel="noopener">#' + i.id + '</a>'
+    + (pr ? '<span class="badge review">in review</span>' : '<span class="badge claimed">claimed</span>')
+    + '<span class="t">' + i.t + '</span>'
+    + (pr ? '<a class="who-tag" href="' + PR_URL + pr.number + '" target="_blank" rel="noopener">PR #' + pr.number + (pr.draft ? " · draft" : "") + '</a>'
+          : '<span class="who-tag">' + (who || []).join(", ") + '</span>')
+    + '</div>';
+}
+const stat = (v, label, cls) => '<div class="stat ' + (cls || "") + '"><b>' + v + '</b><span>' + label + '</span></div>';
+
+function render(){
+  const live = ISSUES.filter(i => filter === "all" || i.o === filter || i.o === "all");
+  const ready = live.filter(isReady).sort(byPri);
+  const working = live.filter(isWorking).sort(byPri);
+  const blocked = live.filter(i => !isDone(i) && !isWorking(i) && !depsMet(i))
+                      .sort((a,b) => unmet(a).length - unmet(b).length || byPri(a,b));
+  const doneCt = ISSUES.filter(isDone).length;
+  const hoursLeft = ISSUES.filter(i => !isDone(i)).reduce((s,i) => s + i.h, 0);
+  const p0Left = ISSUES.filter(i => !isDone(i) && i.p === "P0").length;
+
+  document.getElementById("stats").innerHTML =
+      stat(ready.length, "unclaimed & ready", "go")
+    + stat(ISSUES.filter(isWorking).length, "being worked on")
+    + stat(blocked.length, "waiting")
+    + stat(doneCt + " / 42", "closed on GitHub")
+    + stat(p0Left, "P0 left")
+    + stat(hoursLeft.toFixed(1) + " h", "work remaining");
+
+  const lanes = ["A","B","C","all"].filter(o => filter === "all" || o === filter || o === "all");
+  document.getElementById("lanes").innerHTML = lanes.map(o => {
+    const mine = ready.filter(i => i.o === o);
+    const busy = working.filter(i => i.o === o);
+    const left = ISSUES.filter(i => i.o === o && !isDone(i)).reduce((s,i) => s + i.h, 0);
+    return '<div class="lane" data-o="' + o + '"><div class="lane-h"><span class="who">' + NAME[o] + '</span>'
+      + '<span class="role">' + ROLE[o] + '</span><span class="left mono">' + left.toFixed(1) + ' h left</span></div>'
+      + (busy.length ? '<div class="working">' + busy.map(workRow).join("") + '</div>' : '')
+      + (mine.length ? '<ul>' + mine.map(i => card(i, false)).join("") + '</ul>'
+                     : '<div class="empty">' + (busy.length
+                          ? 'Nothing else startable — everything left here is in flight or waiting.'
+                          : 'Nothing startable — every remaining issue here is waiting on someone.') + '</div>')
+      + '</div>';
+  }).join("");
+
+  document.getElementById("ready-ct").textContent = ready.length + (ready.length === 1 ? " issue" : " issues");
+  document.getElementById("blocked-ct").textContent = blocked.length + " blocked";
+  document.getElementById("blocked").innerHTML = blocked.length
+    ? '<ul style="list-style:none;margin:0;padding:0;display:contents">' + blocked.map(i => card(i, true)).join("") + '</ul>'
+    : '<p class="snote" style="margin:0">Nothing is blocked. Everything left is startable or in flight.</p>';
+
+  mapState();
+}
+
+document.getElementById("map").innerHTML = DATA.phases.map(p => {
+  const rows = ISSUES.filter(i => i.ph === p.id).sort(byPri);
+  const hrs = rows.reduce((s,i) => s + i.h, 0);
+  return '<details class="phase"' + (p.id < 2 ? " open" : "") + '><summary><h3>' + p.title + '</h3>'
+    + '<span class="ct mono" data-phase="' + p.id + '">' + rows.length + ' issues · ' + hrs.toFixed(1) + ' h</span></summary>'
+    + '<div class="scroll"><table class="tbl"><thead><tr><th>State</th><th>Issue</th><th>Owner</th><th>Est</th><th>Needs</th><th>Unlocks</th></tr></thead><tbody>'
+    + rows.map(i => '<tr data-id="' + i.id + '"><td><span class="st state"></span></td>'
+        + '<td><a class="num" href="' + REPO + i.id + '" target="_blank" rel="noopener">#' + i.id + '</a> '
+        + '<span class="pri ' + i.p + '">' + i.p + '</span> <span class="t">' + i.t + '</span></td>'
+        + '<td><span class="ow" data-o="' + i.o + '">' + NAME[i.o] + '</span></td>'
+        + '<td class="mono">' + i.e + '</td>'
+        + '<td class="needs"></td>'
+        + '<td class="dep">' + (i.b.length ? i.b.map(x => "#" + x).join(" ") : "—") + '</td></tr>').join("")
+    + '</tbody></table></div></details>';
+}).join("");
+
+function stateOf(i){
+  return isDone(i) ? "done" : inReview(i) ? "review" : isClaimed(i) ? "claimed" : isReady(i) ? "ready" : "waiting";
+}
+function mapState(){
+  document.querySelectorAll("#map tr[data-id]").forEach(tr => {
+    const i = BY[tr.dataset.id];
+    const st = stateOf(i);
+    tr.classList.toggle("is-done", isDone(i));
+    const cell = tr.querySelector(".st");
+    cell.className = "st state " + (st === "waiting" ? "" : st);
+    cell.textContent = st === "review" ? "in review" : st;
+    tr.querySelector(".needs").innerHTML = depSpan(i.d);
+  });
+  document.querySelectorAll("#map .ct[data-phase]").forEach(el => {
+    const rows = ISSUES.filter(i => i.ph === Number(el.dataset.phase));
+    const open = rows.filter(i => !isDone(i)).length;
+    el.textContent = open + " of " + rows.length + " open · " + rows.reduce((s,i) => s + i.h, 0).toFixed(1) + " h";
+  });
+}
+
+/* ---- refresh -------------------------------------------------------------
+   The unauthenticated API allows 60 requests/hour PER IP, and a team on one
+   venue network shares that budget, so: one request per refresh, four minutes
+   apart, never while the tab is hidden, and a visible back-off if we are
+   rate-limited rather than a silent stall.                                  */
+const BASE_MS = 240000;
+let pollMs = BASE_MS, timer = null, lastFetch = 0;
+const CLOSES = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
+
+const clock = d => d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+function say(msg, live){
+  document.getElementById("syncmsg").textContent = msg;
+  document.querySelector(".sync .dot").classList.toggle("live", live !== false);
+}
+function schedule(){
+  clearTimeout(timer);
+  timer = setTimeout(() => { if (!document.hidden) refresh(); else schedule(); }, pollMs);
+}
+
+async function refresh(manual){
+  const btn = document.getElementById("refresh");
+  if (manual) btn.dataset.busy = "1";
+  lastFetch = Date.now();
+  try {
+    const res = await fetch(API, {headers: {Accept: "application/vnd.github+json"}});
+    if (res.status === 403 || res.status === 429) {
+      const reset = Number(res.headers.get("x-ratelimit-reset") || 0) * 1000;
+      pollMs = Math.min(pollMs * 2, 1800000);
+      say("GitHub rate limit reached" + (reset ? " — resets " + clock(new Date(reset)) : "") + " · showing " + DONE.size + " of 42 closed", false);
+      schedule();
+      return;
+    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const items = await res.json();
+
+    const done = new Set(), claimed = new Map(), review = new Map();
+    for (const it of items) {
+      if (it.pull_request) {
+        if (it.state !== "open") continue;
+        const text = (it.title || "") + " " + (it.body || "");
+        const refs = new Set();
+        let m;
+        CLOSES.lastIndex = 0;
+        while ((m = CLOSES.exec(text))) refs.add(Number(m[1]));
+        if (!refs.size) {                       // no closing keyword — fall back to a bare #N in the title
+          const t = (it.title || "").match(/#(\d+)/);
+          if (t) refs.add(Number(t[1]));
+        }
+        for (const n of refs) if (BY[n]) review.set(n, {number: it.number, draft: !!it.draft});
+      } else if (BY[it.number]) {
+        if (it.state === "closed") done.add(it.number);
+        else if (it.assignees?.length) claimed.set(it.number, it.assignees.map(a => a.login));
+      }
+    }
+
+    DONE = done; CLAIMED = claimed; REVIEW = review;
+    pollMs = BASE_MS;
+    render();
+    const remaining = res.headers.get("x-ratelimit-remaining");
+    const low = remaining !== null && Number(remaining) < 10 ? " · " + remaining + " API calls left this hour" : "";
+    say("Live from GitHub · " + clock(new Date()) + " · " + DONE.size + " closed · " + (CLAIMED.size + REVIEW.size) + " in flight" + low);
+  } catch (e) {
+    say("Showing the last build (" + e.message + ") · " + DATA.done.length + " of 42 closed", false);
+  } finally {
+    if (manual) delete btn.dataset.busy;
+    schedule();
+  }
+}
+
+document.addEventListener("click", e => {
+  if (e.target.closest("#refresh")) { refresh(true); return; }
+  const f = e.target.closest(".chip[data-f]");
+  if (f) {
+    filter = f.dataset.f;
+    document.querySelectorAll(".chip[data-f]").forEach(c => c.setAttribute("aria-pressed", String(c === f)));
+    render();
+  }
+});
+/* Coming back to the tab refreshes, but not more than once a minute. */
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() - lastFetch > 60000) refresh();
+});
+
+render();
+refresh();
+</script>
