@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "MovieMatch",
+    "slug": "hackathon-movies",
+    "scheme": "moviematch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hackathonmovies.app"
+    },
+    "android": {
+      "package": "com.hackathonmovies.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#101014"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
