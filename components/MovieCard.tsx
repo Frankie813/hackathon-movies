@@ -109,7 +109,7 @@ export function MovieCard({
             end={end}
             containerWidth={width}
             containerHeight={height}
-            play={active && videoReady}
+            play={active}
             muted={muted}
             onReady={handleVideoReady}
             onEnded={onVideoEnded}
