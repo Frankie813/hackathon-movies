@@ -11,6 +11,8 @@
   --oA:#6a4ae8; --oB:#0e857b; --oC:#b06a12; --oall:#4b5563;
   --ok:#12783f; --ok-soft:#e4f3e9;
   --p0:#c23b31;
+  --claim:#8a5a00; --claim-soft:#fdf0d5;
+  --review:#2f63e0; --review-soft:#e3ebfd;
   --shadow:0 1px 2px rgba(18,24,38,.06),0 4px 12px rgba(18,24,38,.05);
   --radius:10px;
 }
@@ -23,6 +25,8 @@
     --oA:#a58cff; --oB:#3ec1b2; --oC:#e5a24d; --oall:#9aa4b4;
     --ok:#4cc97e; --ok-soft:#122a1c;
     --p0:#ff6f62;
+    --claim:#e0a94d; --claim-soft:#2a2113;
+    --review:#7aa2ff; --review-soft:#16213d;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.28);
   }
 }
@@ -34,6 +38,8 @@
   --oA:#a58cff; --oB:#3ec1b2; --oC:#e5a24d; --oall:#9aa4b4;
   --ok:#4cc97e; --ok-soft:#122a1c;
   --p0:#ff6f62;
+  --claim:#e0a94d; --claim-soft:#2a2113;
+  --review:#7aa2ff; --review-soft:#16213d;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.28);
 }
 *{box-sizing:border-box}
@@ -117,6 +123,21 @@ section{margin-bottom:34px}
 .dep.met{color:var(--ok)}
 .dep.unmet{color:var(--ink-2); font-weight:600}
 
+/* working strip: claimed + in-review, above the startable cards */
+.working{border-bottom:1px solid var(--line-soft); background:var(--sunk); padding:7px 9px; display:flex; flex-direction:column; gap:6px}
+.wrow{display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; font-size:12.5px}
+.wrow .num{font-size:12px}
+.wrow .t{color:var(--ink-2); overflow-wrap:anywhere}
+.who-tag{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3)}
+.badge{font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:1px 6px; border-radius:99px; white-space:nowrap}
+.badge.claimed{background:var(--claim-soft); color:var(--claim)}
+.badge.review{background:var(--review-soft); color:var(--review)}
+.chip.refresh{color:var(--ink-3)}
+.chip.refresh[data-busy]{opacity:.6}
+.state.claimed{background:var(--claim-soft); color:var(--claim)}
+.state.review{background:var(--review-soft); color:var(--review)}
+.dep.review{color:var(--review)}
+
 /* blocked list */
 .blocked-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:8px}
 
@@ -161,7 +182,7 @@ footer a{color:var(--accent)}
 <header>
   <div class="eyebrow">HackWesTX 26 · Frankie813/hackathon-movies · 42 issues · 3 owners</div>
   <h1>MovieMatch Build Order</h1>
-  <p class="lede">Close an issue on GitHub and it lands here as done, with everything it unblocks moving into <b>Start now</b> for the owner who can pick it up. GitHub is the source of truth — this board just reads it.</p>
+  <p class="lede">Assign yourself on GitHub to claim an issue, open a PR to put it in review, merge to finish it. The board reads all three from GitHub — it never needs updating by hand.</p>
 </header>
 
 <div class="stats" id="stats"></div>
@@ -171,6 +192,7 @@ footer a{color:var(--accent)}
   <button class="chip" id="f-A" data-f="A" aria-pressed="false">A · mobile</button>
   <button class="chip" id="f-B" data-f="B" aria-pressed="false">B · backend</button>
   <button class="chip" id="f-C" data-f="C" aria-pressed="false">C · AI + demo</button>
+  <button class="chip refresh" id="refresh" type="button">Refresh now</button>
   <span class="sync"><span class="dot live"></span><span id="syncmsg">__SYNCED__</span></span>
 </div>
 
@@ -222,21 +244,37 @@ const ROLE = {A:"Mobile UI · swipe · video", B:"Backend · TMDB · sessions", 
 const NAME = {A:"A", B:"B", C:"C", all:"Team"};
 const OWNER = "Frankie813", REPO_NAME = "hackathon-movies";
 const REPO = "https://github.com/" + OWNER + "/" + REPO_NAME + "/issues/";
-const API = "https://api.github.com/repos/" + OWNER + "/" + REPO_NAME + "/issues?state=closed&per_page=100";
+const PR_URL = "https://github.com/" + OWNER + "/" + REPO_NAME + "/pull/";
+/* One request returns issues AND pull requests — GitHub includes PRs in the
+   issues payload — so claimed / in-review / done all come from a single call. */
+const API = "https://api.github.com/repos/" + OWNER + "/" + REPO_NAME + "/issues?state=all&per_page=100";
 
-/* A closed issue is a done issue. DATA.done is what was true at build time;
-   the page re-checks GitHub on load so it is never stale for long. */
+/* Four states, all read from GitHub, none of them stored in this page:
+     done      — the issue is closed
+     review    — an open PR references it (work exists, waiting to merge)
+     claimed   — someone assigned themselves
+     ready     — every dependency closed, nobody on it                      */
 let DONE = new Set(DATA.done);
+let CLAIMED = new Map(Object.entries(DATA.claimed || {}).map(([k,v]) => [Number(k), v]));
+let REVIEW = new Map(Object.entries(DATA.review || {}).map(([k,v]) => [Number(k), v]));
 let filter = "all";
 
 const isDone = i => DONE.has(i.id);
-const isReady = i => !isDone(i) && i.d.every(x => DONE.has(x));
+const inReview = i => !isDone(i) && REVIEW.has(i.id);
+const isClaimed = i => !isDone(i) && !inReview(i) && CLAIMED.has(i.id);
+const isWorking = i => inReview(i) || isClaimed(i);
+const depsMet = i => i.d.every(x => DONE.has(x));
+const isReady = i => !isDone(i) && !isWorking(i) && depsMet(i);
 const unmet = i => i.d.filter(x => !DONE.has(x));
 const byPri = (a,b) => a.p.localeCompare(b.p) || a.ph - b.ph || a.id - b.id;
 
 function depSpan(ids){
   if (!ids.length) return '<span class="dep met">nothing</span>';
-  return ids.map(x => '<span class="dep ' + (DONE.has(x) ? "met" : "unmet") + '">#' + x + '<span class="ow" data-o="' + BY[x].o + '"> ' + NAME[BY[x].o] + '</span></span>').join(" ");
+  return ids.map(x => {
+    const cls = DONE.has(x) ? "met" : REVIEW.has(x) ? "review" : "unmet";
+    const tail = REVIEW.has(x) ? " in review" : "";
+    return '<span class="dep ' + cls + '">#' + x + '<span class="ow" data-o="' + BY[x].o + '"> ' + NAME[BY[x].o] + tail + '</span></span>';
+  }).join(" ");
 }
 function card(i, blocked){
   return '<li><div class="card' + (blocked ? " blocked" : "") + (i.p === "P0" ? " p0" : "") + '">'
@@ -250,18 +288,32 @@ function card(i, blocked){
     + (i.z ? '<span class="k">prize track</span>' : '')
     + '</div></div></div></li>';
 }
+function workRow(i){
+  const pr = REVIEW.get(i.id);
+  const who = CLAIMED.get(i.id);
+  return '<div class="wrow">'
+    + '<a class="num" href="' + REPO + i.id + '" target="_blank" rel="noopener">#' + i.id + '</a>'
+    + (pr ? '<span class="badge review">in review</span>' : '<span class="badge claimed">claimed</span>')
+    + '<span class="t">' + i.t + '</span>'
+    + (pr ? '<a class="who-tag" href="' + PR_URL + pr.number + '" target="_blank" rel="noopener">PR #' + pr.number + (pr.draft ? " · draft" : "") + '</a>'
+          : '<span class="who-tag">' + (who || []).join(", ") + '</span>')
+    + '</div>';
+}
 const stat = (v, label, cls) => '<div class="stat ' + (cls || "") + '"><b>' + v + '</b><span>' + label + '</span></div>';
 
 function render(){
   const live = ISSUES.filter(i => filter === "all" || i.o === filter || i.o === "all");
   const ready = live.filter(isReady).sort(byPri);
-  const blocked = live.filter(i => !isDone(i) && !isReady(i)).sort((a,b) => unmet(a).length - unmet(b).length || byPri(a,b));
+  const working = live.filter(isWorking).sort(byPri);
+  const blocked = live.filter(i => !isDone(i) && !isWorking(i) && !depsMet(i))
+                      .sort((a,b) => unmet(a).length - unmet(b).length || byPri(a,b));
   const doneCt = ISSUES.filter(isDone).length;
   const hoursLeft = ISSUES.filter(i => !isDone(i)).reduce((s,i) => s + i.h, 0);
   const p0Left = ISSUES.filter(i => !isDone(i) && i.p === "P0").length;
 
   document.getElementById("stats").innerHTML =
-      stat(ready.length, "startable now", "go")
+      stat(ready.length, "unclaimed & ready", "go")
+    + stat(ISSUES.filter(isWorking).length, "being worked on")
     + stat(blocked.length, "waiting")
     + stat(doneCt + " / 42", "closed on GitHub")
     + stat(p0Left, "P0 left")
@@ -270,11 +322,15 @@ function render(){
   const lanes = ["A","B","C","all"].filter(o => filter === "all" || o === filter || o === "all");
   document.getElementById("lanes").innerHTML = lanes.map(o => {
     const mine = ready.filter(i => i.o === o);
+    const busy = working.filter(i => i.o === o);
     const left = ISSUES.filter(i => i.o === o && !isDone(i)).reduce((s,i) => s + i.h, 0);
     return '<div class="lane" data-o="' + o + '"><div class="lane-h"><span class="who">' + NAME[o] + '</span>'
       + '<span class="role">' + ROLE[o] + '</span><span class="left mono">' + left.toFixed(1) + ' h left</span></div>'
+      + (busy.length ? '<div class="working">' + busy.map(workRow).join("") + '</div>' : '')
       + (mine.length ? '<ul>' + mine.map(i => card(i, false)).join("") + '</ul>'
-                     : '<div class="empty">Nothing startable — every remaining issue here is waiting on someone.</div>')
+                     : '<div class="empty">' + (busy.length
+                          ? 'Nothing else startable — everything left here is in flight or waiting.'
+                          : 'Nothing startable — every remaining issue here is waiting on someone.') + '</div>')
       + '</div>';
   }).join("");
 
@@ -282,13 +338,11 @@ function render(){
   document.getElementById("blocked-ct").textContent = blocked.length + " blocked";
   document.getElementById("blocked").innerHTML = blocked.length
     ? '<ul style="list-style:none;margin:0;padding:0;display:contents">' + blocked.map(i => card(i, true)).join("") + '</ul>'
-    : '<p class="snote" style="margin:0">Nothing is blocked. Everything left is startable.</p>';
+    : '<p class="snote" style="margin:0">Nothing is blocked. Everything left is startable or in flight.</p>';
 
   mapState();
 }
 
-/* The phase map is built once so open/closed sections survive a refresh;
-   only its state cells are updated afterwards. */
 document.getElementById("map").innerHTML = DATA.phases.map(p => {
   const rows = ISSUES.filter(i => i.ph === p.id).sort(byPri);
   const hrs = rows.reduce((s,i) => s + i.h, 0);
@@ -305,14 +359,17 @@ document.getElementById("map").innerHTML = DATA.phases.map(p => {
     + '</tbody></table></div></details>';
 }).join("");
 
+function stateOf(i){
+  return isDone(i) ? "done" : inReview(i) ? "review" : isClaimed(i) ? "claimed" : isReady(i) ? "ready" : "waiting";
+}
 function mapState(){
   document.querySelectorAll("#map tr[data-id]").forEach(tr => {
     const i = BY[tr.dataset.id];
-    const st = isDone(i) ? "done" : isReady(i) ? "ready" : "waiting";
+    const st = stateOf(i);
     tr.classList.toggle("is-done", isDone(i));
     const cell = tr.querySelector(".st");
     cell.className = "st state " + (st === "waiting" ? "" : st);
-    cell.textContent = st;
+    cell.textContent = st === "review" ? "in review" : st;
     tr.querySelector(".needs").innerHTML = depSpan(i.d);
   });
   document.querySelectorAll("#map .ct[data-phase]").forEach(el => {
@@ -322,29 +379,77 @@ function mapState(){
   });
 }
 
-/* ---- live refresh straight from the GitHub API ---- */
+/* ---- refresh -------------------------------------------------------------
+   The unauthenticated API allows 60 requests/hour PER IP, and a team on one
+   venue network shares that budget, so: one request per refresh, four minutes
+   apart, never while the tab is hidden, and a visible back-off if we are
+   rate-limited rather than a silent stall.                                  */
+const BASE_MS = 240000;
+let pollMs = BASE_MS, timer = null, lastFetch = 0;
+const CLOSES = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
+
 const clock = d => d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
 function say(msg, live){
   document.getElementById("syncmsg").textContent = msg;
   document.querySelector(".sync .dot").classList.toggle("live", live !== false);
 }
-async function refresh(){
+function schedule(){
+  clearTimeout(timer);
+  timer = setTimeout(() => { if (!document.hidden) refresh(); else schedule(); }, pollMs);
+}
+
+async function refresh(manual){
+  const btn = document.getElementById("refresh");
+  if (manual) btn.dataset.busy = "1";
+  lastFetch = Date.now();
   try {
     const res = await fetch(API, {headers: {Accept: "application/vnd.github+json"}});
-    if (!res.ok) throw new Error(res.status === 403 ? "rate-limited" : "HTTP " + res.status);
-    const closed = (await res.json())
-      .filter(x => !x.pull_request)
-      .map(x => x.number)
-      .filter(n => BY[n]);
-    DONE = new Set(closed);
+    if (res.status === 403 || res.status === 429) {
+      const reset = Number(res.headers.get("x-ratelimit-reset") || 0) * 1000;
+      pollMs = Math.min(pollMs * 2, 1800000);
+      say("GitHub rate limit reached" + (reset ? " — resets " + clock(new Date(reset)) : "") + " · showing " + DONE.size + " of 42 closed", false);
+      schedule();
+      return;
+    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const items = await res.json();
+
+    const done = new Set(), claimed = new Map(), review = new Map();
+    for (const it of items) {
+      if (it.pull_request) {
+        if (it.state !== "open") continue;
+        const text = (it.title || "") + " " + (it.body || "");
+        const refs = new Set();
+        let m;
+        CLOSES.lastIndex = 0;
+        while ((m = CLOSES.exec(text))) refs.add(Number(m[1]));
+        if (!refs.size) {                       // no closing keyword — fall back to a bare #N in the title
+          const t = (it.title || "").match(/#(\d+)/);
+          if (t) refs.add(Number(t[1]));
+        }
+        for (const n of refs) if (BY[n]) review.set(n, {number: it.number, draft: !!it.draft});
+      } else if (BY[it.number]) {
+        if (it.state === "closed") done.add(it.number);
+        else if (it.assignees?.length) claimed.set(it.number, it.assignees.map(a => a.login));
+      }
+    }
+
+    DONE = done; CLAIMED = claimed; REVIEW = review;
+    pollMs = BASE_MS;
     render();
-    say("Live from GitHub · checked " + clock(new Date()) + " · " + DONE.size + " of 42 closed");
+    const remaining = res.headers.get("x-ratelimit-remaining");
+    const low = remaining !== null && Number(remaining) < 10 ? " · " + remaining + " API calls left this hour" : "";
+    say("Live from GitHub · " + clock(new Date()) + " · " + DONE.size + " closed · " + (CLAIMED.size + REVIEW.size) + " in flight" + low);
   } catch (e) {
     say("Showing the last build (" + e.message + ") · " + DATA.done.length + " of 42 closed", false);
+  } finally {
+    if (manual) delete btn.dataset.busy;
+    schedule();
   }
 }
 
 document.addEventListener("click", e => {
+  if (e.target.closest("#refresh")) { refresh(true); return; }
   const f = e.target.closest(".chip[data-f]");
   if (f) {
     filter = f.dataset.f;
@@ -352,9 +457,10 @@ document.addEventListener("click", e => {
     render();
   }
 });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+/* Coming back to the tab refreshes, but not more than once a minute. */
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() - lastFetch > 60000) refresh();
+});
 
 render();
 refresh();
-setInterval(() => { if (!document.hidden) refresh(); }, 90000);
-</script>
