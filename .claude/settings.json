@@ -48,7 +48,9 @@
       "Bash(gh label list:*)",
       "Bash(gh api -X GET:*)",
       "mcp__context7",
-      "mcp__playwright"
+      "mcp__playwright",
+      "Bash(git worktree list:*)",
+      "Bash(git worktree add:*)"
     ],
     "ask": [
       "Bash(git push:*)",
@@ -107,6 +109,31 @@
           }
         ]
       }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-bootstrap.sh\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-bootstrap.sh\"",
+            "timeout": 120
+          }
+        ]
+      }
     ]
+  },
+  "worktree": {
+    "baseRef": "fresh"
   }
 }

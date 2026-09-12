@@ -110,6 +110,69 @@ matching `PLAN.md` §K and `.github/issues.json` exactly.
 - `.github/issues.json` is the source of truth for issue *text*. If an issue's
   scope changes, edit that file too, so a re-run doesn't resurrect stale text.
 
+### Worktrees
+
+Three people and several agents share this repo, so parallel work belongs in
+worktrees rather than in one checkout that everyone fights over.
+
+Two ways in, and they behave differently:
+
+| | Creates | Branch | Bootstrap fires via |
+|---|---|---|---|
+| `claude -w <name>` from the terminal | `.claude/worktrees/<name>` | `worktree-<name>` | `SessionStart` |
+| `EnterWorktree` mid-session | `.claude/worktrees/<name>` | `worktree-<name>` | `CwdChanged` |
+
+Either way the base is `origin/main` — `worktree.baseRef` is pinned to `fresh`
+in `.claude/settings.json`, so a worktree never inherits whatever the parent
+checkout happens to have open. `.claude/worktrees/` is gitignored; the parent
+repo must never see it.
+
+A worktree only gets *tracked* files, so it would otherwise land without `.env`
+or `node_modules` and nothing would run. `.claude/hooks/worktree-bootstrap.sh`
+fills that in, ~11s once:
+
+- `.env` is **symlinked** to the main checkout. One source of truth for live
+  keys — rotate a key once and every worktree follows. Don't replace it with a
+  copy.
+- `node_modules` is cloned with `cp -Rc` (APFS copy-on-write: measured 15MB real
+  for the 606MB tree). Each worktree owns its tree, so `npm install` on a branch
+  can't corrupt the parent's.
+- `expo-env.d.ts`, which `tsconfig.json` lists and `.gitignore` excludes.
+
+It does *not* copy `.claude/settings.local.json`, deliberately. A worktree here
+is nested inside the main repo, so settings resolution already walks up and
+finds the parent's — a copy would be a stale overlay that resurrects revoked
+permission grants. Claude Code skips it natively for the same reason.
+
+The hook is registered on both events because neither covers the other: `-w`
+starts up already inside the worktree, so no cwd transition happens and
+`CwdChanged` never fires. It's idempotent, exits in ~40ms when the cwd isn't a
+worktree, and never blocks — a failed bootstrap leaves a usable worktree and a
+manual fix, not a dead session.
+
+**A worktree reads its own branch's `.claude/settings.json`, not the main
+checkout's.** So the hook config only takes effect in worktrees once it is
+merged to `main`. Until then, new worktrees land unprovisioned and you bootstrap
+by hand:
+
+```bash
+# from inside the worktree — reaches back to the main checkout for the script
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+bash "$MAIN/.claude/hooks/worktree-bootstrap.sh" <<< "{\"cwd\":\"$PWD\"}"
+```
+
+Worth knowing:
+- **The git stash stack is shared across worktrees.** Never bare
+  `git stash` / `git stash pop` — you can pop a teammate's work. Make a WIP
+  commit instead.
+- **A branch can only be checked out in one worktree at a time.**
+- Claude Code **locks** its worktrees. To delete one by hand you need
+  `git worktree unlock <path>` first, and the branch is `worktree-<name>`.
+- Bump a dependency in a worktree and the parent's `node_modules` stays stale
+  until you `npm install` there too.
+- Exiting with `remove` deletes the worktree *and its branch* — push or open the
+  PR first.
+
 ### Owners
 | | Area | Labels |
 |---|---|---|

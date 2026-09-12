@@ -76,3 +76,8 @@ ui-debug.log
 # Claude Code / Codex local state
 .claude/settings.local.json
 .claude/local/
+.claude/scheduled_tasks.lock
+# Claude Code creates git worktrees here. Never let the parent repo see
+# them: an unignored worktree shows up as untracked and `git add -A`
+# would stage a 600MB node_modules clone.
+.claude/worktrees/
