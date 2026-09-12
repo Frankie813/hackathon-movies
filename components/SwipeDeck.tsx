@@ -83,12 +83,15 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
   const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
 
-  // Preload upcoming movie posters
+  // Preload upcoming movie posters and trailer backdrops
   useEffect(() => {
     const preloadPool = deck.slice(currentIndex, currentIndex + 5);
     preloadPool.forEach((m) => {
       if (m.poster) {
         Image.prefetch(m.poster).catch(() => {});
+      }
+      if (m.video?.key) {
+        Image.prefetch(`https://i.ytimg.com/vi/${m.video.key}/maxresdefault.jpg`).catch(() => {});
       }
     });
   }, [deck, currentIndex]);

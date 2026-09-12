@@ -20,6 +20,27 @@ import {
 } from './TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
+/** Card chrome the letterboxed video must never sit under: status bar, deck header, top gradient. */
+const HEADER_INSET = 120;
+/** Where the bottom chrome starts before its layout has been measured (matches bottomGradient). */
+const DEFAULT_CHROME_TOP_FROM_BOTTOM = 420;
+const VIDEO_ASPECT = 16 / 9;
+
+/**
+ * Backdrop candidates for a trailer, tried in order. YouTube serves every
+ * video's poster frame at a fixed URL with no API key: maxresdefault is
+ * 1280x720 but missing for some uploads, mqdefault (320x180, also 16:9)
+ * always exists. The movie poster is the last resort.
+ */
+function trailerBackdropUrls(key: string, poster?: string): string[] {
+  const urls = [
+    `https://i.ytimg.com/vi/${key}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${key}/mqdefault.jpg`,
+  ];
+  if (poster) urls.push(poster);
+  return urls;
+}
+
 interface MovieCardProps {
   movie: Movie;
   width: number;
@@ -57,11 +78,29 @@ export function MovieCard({
   const start = movie.video?.start ?? 0;
   const end = movie.video?.end;
 
+  // Blurred still behind the letterboxed video; walks the candidate list on load errors.
+  const [backdropIndex, setBackdropIndex] = useState(0);
+  const backdropUrls = hasVideo ? trailerBackdropUrls(movie.video!.key, movie.poster) : [];
+  const backdropUrl = backdropUrls[backdropIndex];
+
   // Reset video state when the card changes to a different movie.
   useEffect(() => {
     setVideoReady(false);
     setVideoFailed(!hasVideo);
+    setBackdropIndex(0);
   }, [movie.id, hasVideo]);
+
+  // The full 16:9 frame is shown letterboxed at card width (nothing cropped),
+  // vertically centered in the space between the header and the title block.
+  // The title block's top is measured, so the video never sits under text.
+  const [chromeTop, setChromeTop] = useState<number | null>(null);
+  const playerWidth = width;
+  const playerHeight = Math.round(width / VIDEO_ASPECT);
+  const chromeY = chromeTop ?? height - DEFAULT_CHROME_TOP_FROM_BOTTOM;
+  const playerTop = Math.max(
+    HEADER_INSET,
+    Math.round(HEADER_INSET + (chromeY - HEADER_INSET - playerHeight) / 2)
+  );
 
   // Loop the chosen segment instead of showing the YouTube end screen.
   // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
@@ -152,29 +191,48 @@ export function MovieCard({
 
       {showVideo && (
         // pointerEvents="none": taps/drags go to the swipe gesture, not the
-        // player. The card's own chrome (gradients, title, mute button) is
-        // still drawn on top of this in the full-bleed layout below —
-        // a deliberate, known deviation from AGENTS.md §3 ("never draw UI
-        // over the player"), accepted to keep the existing full-bleed card
-        // look. Needs real-device verification: Android WebView compositing
-        // can behave differently than iOS/web here.
+        // player. Only the blurred backdrop extends under the card chrome;
+        // the player itself is placed above the title block, so no UI is
+        // drawn over the video (AGENTS.md §3).
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, { width, height, overflow: 'hidden' }, videoAnimatedStyle]}
         >
-          <TrailerVideoPlayer
-            ref={playerRef}
-            videoId={movie.video!.key}
-            start={start}
-            end={end}
-            containerWidth={width}
-            containerHeight={height}
-            play={active}
-            muted={muted}
-            onReady={handleVideoReady}
-            onEnded={onVideoEnded}
-            onError={onVideoError}
-          />
+          {backdropUrl && (
+            <Image
+              testID="trailer-backdrop"
+              source={{ uri: backdropUrl }}
+              style={[StyleSheet.absoluteFill, styles.videoBackdrop]}
+              resizeMode="cover"
+              blurRadius={30}
+              onError={() => setBackdropIndex((i) => i + 1)}
+            />
+          )}
+          <View style={[StyleSheet.absoluteFill, styles.videoBackdropDim]} />
+          <View
+            testID="trailer-frame"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: playerTop,
+              width: playerWidth,
+              height: playerHeight,
+            }}
+          >
+            <TrailerVideoPlayer
+              ref={playerRef}
+              videoId={movie.video!.key}
+              start={start}
+              end={end}
+              width={playerWidth}
+              height={playerHeight}
+              play={active}
+              muted={muted}
+              onReady={handleVideoReady}
+              onEnded={onVideoEnded}
+              onError={onVideoError}
+            />
+          </View>
         </Animated.View>
       )}
 
@@ -199,7 +257,10 @@ export function MovieCard({
       />
 
       {/* Floating Info Overlay (Clean with NO background box, spaced for floating buttons & tab bar) */}
-      <View style={styles.floatingContent}>
+      <View
+        style={styles.floatingContent}
+        onLayout={(e) => setChromeTop(e.nativeEvent.layout.y)}
+      >
         {/* Title in bold Graphique-inspired display typography + Mute control */}
         <View style={styles.titleRow}>
           <View style={styles.titleSection}>
@@ -309,6 +370,13 @@ const styles = StyleSheet.create({
   loadingOverlay: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  videoBackdrop: {
+    // Slight overscale hides the blur's soft edges at the card border.
+    transform: [{ scale: 1.1 }],
+  },
+  videoBackdropDim: {
+    backgroundColor: 'rgba(4, 7, 14, 0.45)',
   },
   loadingGif: {
     width: 135,

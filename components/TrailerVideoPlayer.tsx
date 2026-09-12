@@ -15,8 +15,8 @@
 //     is reliable on both platforms;
 //   - receives ready/state/error via window.ReactNativeWebView.postMessage.
 //
-// The 16:9 WebView is oversized and centered so the clip covers a portrait
-// card edge-to-edge; the parent card clips the overflow.
+// The WebView fills exactly the `width` × `height` box the parent gives it;
+// MovieCard sizes that box to a 16:9 letterbox and positions it.
 
 import React, {
   forwardRef,
@@ -26,9 +26,7 @@ import React, {
   useMemo,
   useRef,
 } from 'react';
-import { View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { coverSize } from '@/lib/coverSize';
 
 /**
  * YouTube rejects API-created embeds that arrive without an HTTP Referer
@@ -67,8 +65,9 @@ export interface TrailerVideoPlayerProps {
   videoId: string;
   start: number;
   end?: number;
-  containerWidth: number;
-  containerHeight: number;
+  /** Box the player fills; the parent decides aspect ratio and placement. */
+  width: number;
+  height: number;
   muted: boolean;
   play: boolean;
   onReady: () => void;
@@ -129,7 +128,13 @@ export function buildShellHtml({ videoId, start, end, autoplay, muted }: ShellOp
       videoId: ${jsLiteral(videoId)},
       playerVars: ${jsLiteral(playerVars)},
       events: {
-        onReady: function () { send('ready'); },
+        onReady: function () {
+          // YouTube auto-enables captions on muted playback; there is no
+          // player var to stop that. Unloading the captions module is the
+          // long-standing workaround.
+          try { player.unloadModule('captions'); } catch (e) {}
+          send('ready');
+        },
         onStateChange: function (e) { send('state', e.data); },
         onError: function (e) { send('error', e.data); }
       }
@@ -146,7 +151,7 @@ export function buildShellHtml({ videoId, start, end, autoplay, muted }: ShellOp
 
 export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideoPlayerProps>(
   function TrailerVideoPlayer(
-    { videoId, start, end, containerWidth, containerHeight, muted, play, onReady, onEnded, onError },
+    { videoId, start, end, width, height, muted, play, onReady, onEnded, onError },
     ref
   ) {
     const webViewRef = useRef<WebView>(null);
@@ -252,39 +257,27 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       [inject]
     );
 
-    const cover = coverSize(containerWidth, containerHeight);
-
     return (
-      <View
-        style={{
-          position: 'absolute',
-          left: cover.offsetX,
-          top: cover.offsetY,
-          width: cover.width,
-          height: cover.height,
-        }}
-      >
-        <WebView
-          ref={webViewRef}
-          testID="trailer-webview"
-          source={source}
-          originWhitelist={['*']}
-          style={{ width: cover.width, height: cover.height, backgroundColor: '#000' }}
-          onMessage={handleMessage}
-          onError={() => latest.current.onError('webview_error')}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          allowsFullscreenVideo={false}
-          scrollEnabled={false}
-          bounces={false}
-          overScrollMode="never"
-          setSupportMultipleWindows={false}
-          androidLayerType="hardware"
-          webviewDebuggingEnabled={__DEV__}
-        />
-      </View>
+      <WebView
+        ref={webViewRef}
+        testID="trailer-webview"
+        source={source}
+        originWhitelist={['*']}
+        style={{ width, height, backgroundColor: '#000' }}
+        onMessage={handleMessage}
+        onError={() => latest.current.onError('webview_error')}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        allowsFullscreenVideo={false}
+        scrollEnabled={false}
+        bounces={false}
+        overScrollMode="never"
+        setSupportMultipleWindows={false}
+        androidLayerType="hardware"
+        webviewDebuggingEnabled={__DEV__}
+      />
     );
   }
 );

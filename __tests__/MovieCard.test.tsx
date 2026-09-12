@@ -128,6 +128,47 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     expect(webview.props.allowsInlineMediaPlayback).toBe(true);
   });
 
+  it('letterboxes the full 16:9 frame at card width, clear of the header and title block', () => {
+    // 852pt tall like an iPhone 16: 312pt of room between header and chrome.
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />
+    );
+
+    const frame = root.findByProps({ testID: 'trailer-frame' });
+    expect(frame.props.style.width).toBe(360);
+    expect(frame.props.style.height).toBe(203); // 360 / (16/9), rounded
+    expect(frame.props.style.top).toBeGreaterThanOrEqual(120);
+    expect(frame.props.style.top + 203).toBeLessThanOrEqual(852 - 420);
+    // Centered in that room: 120 + (312 - 203) / 2, rounded.
+    expect(frame.props.style.top).toBe(175);
+
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    expect(webview.props.style.width).toBe(360);
+    expect(webview.props.style.height).toBe(203);
+  });
+
+  it('shows the trailer thumbnail as a blurred backdrop and falls back on load error', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
+
+    let backdrop = root.findByProps({ testID: 'trailer-backdrop' });
+    expect(backdrop.props.source.uri).toBe('https://i.ytimg.com/vi/YoHD9XEInc0/maxresdefault.jpg');
+    expect(backdrop.props.blurRadius).toBeGreaterThan(0);
+
+    act(() => {
+      backdrop.props.onError();
+    });
+    backdrop = root.findByProps({ testID: 'trailer-backdrop' });
+    expect(backdrop.props.source.uri).toBe('https://i.ytimg.com/vi/YoHD9XEInc0/mqdefault.jpg');
+
+    act(() => {
+      backdrop.props.onError();
+    });
+    backdrop = root.findByProps({ testID: 'trailer-backdrop' });
+    expect(backdrop.props.source.uri).toBe(mockMovieWithVideo.poster);
+  });
+
   it('falls back to the poster without rendering a player when the movie has no video', () => {
     const root = render(
       <MovieCard movie={mockMovieWithoutVideo} width={360} height={720} active />
