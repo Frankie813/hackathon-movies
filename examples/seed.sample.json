@@ -1,0 +1,35 @@
+[
+  {
+    "id": 27205,
+    "title": "Inception",
+    "year": 2010,
+    "genreIds": [28, 878, 12],
+    "genreNames": ["Action", "Sci-fi", "Adventure"],
+    "keywords": ["dream", "heist", "subconscious", "mind bending"],
+    "poster": "https://image.tmdb.org/t/p/w780/REPLACE_WITH_TMDB_POSTER_PATH.jpg",
+    "providers": ["Netflix"],
+    "video": { "key": "YoHD9XEInc0", "start": 5, "end": 25, "source": "trailer" }
+  },
+  {
+    "id": 496243,
+    "title": "Parasite",
+    "year": 2019,
+    "genreIds": [35, 53, 18],
+    "genreNames": ["Comedy", "Thriller", "Drama"],
+    "keywords": ["class", "family", "con artist", "dark comedy"],
+    "poster": "https://image.tmdb.org/t/p/w780/REPLACE_WITH_TMDB_POSTER_PATH.jpg",
+    "providers": ["Max"],
+    "video": { "key": "REPLACE_WITH_CLIP_KEY", "start": 4, "end": 22, "source": "tmdb-clip" }
+  },
+  {
+    "id": 8587,
+    "title": "The Lion King",
+    "year": 1994,
+    "genreIds": [10751, 16, 18],
+    "genreNames": ["Family", "Animation", "Drama"],
+    "keywords": ["africa", "musical", "coming of age"],
+    "poster": "https://image.tmdb.org/t/p/w780/REPLACE_WITH_TMDB_POSTER_PATH.jpg",
+    "providers": ["Disney+"],
+    "video": null
+  }
+]
