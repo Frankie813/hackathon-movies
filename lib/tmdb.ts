@@ -137,10 +137,13 @@ const seedById = new Map<number, Movie>(seedMovies.map((movie) => [movie.id, mov
 let fellBackToSeed = false;
 
 /**
- * True when the last catalog call served seed data instead of the network.
- * False before the first call. #26 and the About screen read it; nothing on the
- * demo path should branch on it, because the whole point is that the deck looks
- * the same either way.
+ * True when the network did not answer the last catalog call, so seed data was
+ * served instead. False before the first call, and false when TMDB answered but
+ * had nothing usable — an empty /discover page is not an outage, and #26 and
+ * the About screen would be lying if it read as one.
+ *
+ * Nothing on the demo path should branch on this: the whole point is that the
+ * deck looks the same either way.
  */
 export function isOffline(): boolean {
   return fellBackToSeed;
@@ -289,28 +292,51 @@ function toMovie(detail: TmdbMovieDetail): Movie | null {
   };
 }
 
-/** One movie, fully hydrated. Returns null on any failure — never throws. */
+/**
+ * One movie, fully hydrated. Throws if the network did not answer; returns null
+ * when TMDB answered but the payload is not showable (no poster, no title, or a
+ * 404 for an id nobody has). getDeck() and similar() don't care about the
+ * difference and flatten both to null, but getMovie() does — it is what tells
+ * "this movie doesn't exist" apart from "the Wi-Fi is down".
+ */
 async function hydrate(id: number, deadline: number): Promise<Movie | null> {
   const cached = movieCache.get(id);
   if (cached) return cached;
 
+  let detail: TmdbMovieDetail;
   try {
-    const detail = await tmdb<TmdbMovieDetail>(
+    detail = await tmdb<TmdbMovieDetail>(
       `/movie/${id}`,
       { append_to_response: 'videos,watch/providers,keywords' },
       deadline,
     );
-    const movie = toMovie(detail);
-    if (movie) movieCache.set(id, movie);
-    return movie;
-  } catch {
-    return null;
+  } catch (error) {
+    // A 404 is TMDB answering, not the network failing.
+    if (error instanceof Error && error.message.endsWith('HTTP 404')) return null;
+    throw error;
   }
+
+  const movie = toMovie(detail);
+  if (movie) movieCache.set(id, movie);
+  return movie;
+}
+
+/** hydrate(), flattened for the bulk paths where an unreachable id is just a gap. */
+function tryHydrate(id: number, deadline: number): Promise<Movie | null> {
+  return hydrate(id, deadline).catch(() => null);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fallback
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * TMDB answered, it just had nothing usable — an empty /discover page, or a
+ * page whose every title turned out to be poster-only. We still fall back to
+ * seed, but this is emphatically NOT the network being down, so isOffline()
+ * must stay false or #26 and the About screen lie about it.
+ */
+class EmptyResultError extends Error {}
 
 function logFallback(what: string, error: unknown): void {
   if (__DEV__) console.warn(`[tmdb] ${what} fell back to seed:`, error);
@@ -364,9 +390,15 @@ function discoverParams(filters: DiscoverFilters | undefined, page: number): Que
     include_adult: 'false',
     include_video: 'false',
     sort_by: filters?.sortBy ?? 'popularity.desc',
-    with_genres: filters?.withGenres?.join(','),
+    // `,` means AND to /discover and `|` means OR. Both of these are OR by
+    // design (see DiscoverFilters): #22 turns one mood into several genres and
+    // several near-synonym keywords, and AND-ing them returns an empty page,
+    // which this layer would silently serve as a seed fallback.
+    with_genres: filters?.withGenres?.join('|'),
+    // Exclusion is the one place `,` is right — without_genres drops a title
+    // that carries any of the listed ids.
     without_genres: filters?.withoutGenres?.join(','),
-    with_keywords: filters?.withKeywords?.join(','),
+    with_keywords: filters?.withKeywords?.join('|'),
     with_watch_providers: providers?.join('|'),
     watch_region: providers && providers.length > 0 ? 'US' : undefined,
     'vote_average.gte': filters?.minRating,
@@ -391,32 +423,40 @@ export async function getDeck(filters?: DiscoverFilters): Promise<Movie[]> {
   const deadline = Date.now() + OPERATION_TIMEOUT_MS;
 
   try {
-    const pages = await Promise.all(
+    // allSettled, not all: the pages go out in parallel, so a single 429 on
+    // page 2 would otherwise throw away page 1 and drop the whole live deck.
+    const pages = await Promise.allSettled(
       Array.from({ length: DISCOVER_PAGES }, (_, index) =>
         tmdb<TmdbListResponse>('/discover/movie', discoverParams(filters, index + 1), deadline),
       ),
     );
+    const landed = pages.filter(
+      (page): page is PromiseFulfilledResult<TmdbListResponse> => page.status === 'fulfilled',
+    );
+    if (landed.length === 0) {
+      throw pages.find((page): page is PromiseRejectedResult => page.status === 'rejected')?.reason;
+    }
 
     const ids = [
       ...new Set(
-        pages
-          .flatMap((page) => page.results ?? [])
+        landed
+          .flatMap((page) => page.value.results ?? [])
           .map((result) => result.id)
           .filter((id): id is number => typeof id === 'number'),
       ),
     ];
-    if (ids.length === 0) throw new Error('/discover/movie returned no results');
+    if (ids.length === 0) throw new EmptyResultError('/discover/movie returned no results');
 
-    const deck = (await mapPool(ids, CONCURRENCY, (id) => hydrate(id, deadline))).filter(
-      (movie): movie is Movie => movie !== null && movie.video !== null,
+    const deck = (await mapPool(ids, CONCURRENCY, (id) => tryHydrate(id, deadline))).filter(
+      (movie): movie is Movie => movie != null && movie.video !== null,
     );
-    if (deck.length === 0) throw new Error('no playable movies in the discover page');
+    if (deck.length === 0) throw new EmptyResultError('no playable movies in the discover page');
 
     fellBackToSeed = false;
     return topUpFromSeed(deck);
   } catch (error) {
     logFallback('getDeck()', error);
-    fellBackToSeed = true;
+    fellBackToSeed = !(error instanceof EmptyResultError);
     // A copy: callers own their deck and #6 mutates it as cards are consumed.
     return [...seedMoviesWithVideo];
   }
@@ -431,18 +471,17 @@ export async function getMovie(id: number): Promise<Movie | null> {
   const cached = movieCache.get(id);
   if (cached) return cached;
 
-  const movie = await hydrate(id, Date.now() + REQUEST_TIMEOUT_MS);
-  if (movie) {
+  try {
+    const movie = await hydrate(id, Date.now() + REQUEST_TIMEOUT_MS);
+    // TMDB answered either way, so this is not an outage even when it answered
+    // "no such movie" and we end up on seed or on null.
     fellBackToSeed = false;
-    return movie;
-  }
-
-  const seeded = seedById.get(id);
-  if (seeded) {
+    return movie ?? seedById.get(id) ?? null;
+  } catch (error) {
+    logFallback(`getMovie(${id})`, error);
     fellBackToSeed = true;
-    return seeded;
+    return seedById.get(id) ?? null;
   }
-  return null;
 }
 
 /**
@@ -456,30 +495,41 @@ export async function similar(id: number): Promise<Movie[]> {
   const deadline = Date.now() + OPERATION_TIMEOUT_MS;
 
   try {
-    const [recommendations, similarTo] = await Promise.all([
+    // allSettled, not all: the two endpoints fail independently (/similar 404s
+    // on ids /recommendations is perfectly happy with), and losing the list
+    // that did land would drop #13 straight to the seed heuristic.
+    const lists = await Promise.allSettled([
       tmdb<TmdbListResponse>(`/movie/${id}/recommendations`, { page: 1 }, deadline),
       tmdb<TmdbListResponse>(`/movie/${id}/similar`, { page: 1 }, deadline),
     ]);
+    const landed = lists.filter(
+      (list): list is PromiseFulfilledResult<TmdbListResponse> => list.status === 'fulfilled',
+    );
+    if (landed.length === 0) {
+      throw lists.find((list): list is PromiseRejectedResult => list.status === 'rejected')?.reason;
+    }
 
+    // Recommendations first — it is the better list, and dedupe keeps that order.
     const ids = [
       ...new Set(
-        [...(recommendations.results ?? []), ...(similarTo.results ?? [])]
+        landed
+          .flatMap((list) => list.value.results ?? [])
           .map((result) => result.id)
           .filter((related): related is number => typeof related === 'number' && related !== id),
       ),
     ].slice(0, SIMILAR_LIMIT);
-    if (ids.length === 0) throw new Error('no related titles');
+    if (ids.length === 0) throw new EmptyResultError('no related titles');
 
-    const related = (await mapPool(ids, CONCURRENCY, (relatedId) => hydrate(relatedId, deadline))).filter(
-      (movie): movie is Movie => movie !== null && movie.video !== null,
+    const related = (await mapPool(ids, CONCURRENCY, (relatedId) => tryHydrate(relatedId, deadline))).filter(
+      (movie): movie is Movie => movie != null && movie.video !== null,
     );
-    if (related.length === 0) throw new Error('no playable related titles');
+    if (related.length === 0) throw new EmptyResultError('no playable related titles');
 
     fellBackToSeed = false;
     return related;
   } catch (error) {
     logFallback('similar()', error);
-    fellBackToSeed = true;
+    fellBackToSeed = !(error instanceof EmptyResultError);
     return similarFromSeed(id);
   }
 }

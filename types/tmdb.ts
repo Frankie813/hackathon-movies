@@ -15,7 +15,9 @@ export interface DiscoverFilters {
   withoutGenres?: number[];
   /**
    * TMDB keyword *ids*, not names — /discover only takes ids, so #22 has to
-   * resolve Gemini's words through /search/keyword first.
+   * resolve Gemini's words through /search/keyword first. OR-ed together:
+   * Gemini hands back several near-synonyms for one mood, and requiring a title
+   * to carry all of them returns nothing.
    */
   withKeywords?: number[];
   /** TMDB watch-provider ids. Implies `watch_region=US`. */
