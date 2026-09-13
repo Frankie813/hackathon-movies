@@ -51,11 +51,18 @@ const OPERATION_TIMEOUT_MS = 8_000;
 /** TMDB's IP limit is ~40–50 req/s. 6 in flight is polite and still fast. */
 const CONCURRENCY = 6;
 
-/** /discover pages to pull. 20 results a page; we need ≥ 20 *with* a video. */
+/** /discover pages to pull. 20 results a page: the top 40 the deck samples from (#97). */
 const DISCOVER_PAGES = 2;
 
-/** Below this the deck is padded from seed rather than handed over short. */
-const MIN_DECK = 20;
+/**
+ * Cards dealt at the start of a deck (#97): a random pick from the top 40, so
+ * every run opens differently. A deck with fewer playable titles is padded
+ * from seed up to this size rather than handed over short.
+ */
+export const DECK_START = 20;
+
+/** The most cards one deck may hold once #13/#23 have topped it up (#97). */
+export const DECK_MAX = 30;
 
 /** Related titles to hydrate per similar() call — #13 only needs a handful. */
 const SIMILAR_LIMIT = 12;
@@ -402,10 +409,30 @@ function logFallback(what: string, error: unknown): void {
  * did answer — so isOffline() stays false.
  */
 function topUpFromSeed(deck: Movie[]): Movie[] {
-  if (deck.length >= MIN_DECK) return deck;
+  if (deck.length >= DECK_START) return deck;
   const have = new Set(deck.map((movie) => movie.id));
-  return [...deck, ...seedMoviesWithVideo.filter((movie) => !have.has(movie.id))];
+  return [...deck, ...seedMoviesWithVideo.filter((movie) => !have.has(movie.id))].slice(0, DECK_START);
 }
+
+/**
+ * `count` items picked uniformly at random, kept in their original relative
+ * order (selection sampling). Order is #96's job; keeping it here means a pool
+ * no bigger than `count` comes back exactly as it went in.
+ */
+function sample<T>(items: readonly T[], count: number): T[] {
+  const picked: T[] = [];
+  for (let i = 0; i < items.length && picked.length < count; i += 1) {
+    if (Math.random() * (items.length - i) < count - picked.length) picked.push(items[i]);
+  }
+  return picked;
+}
+
+/**
+ * Decks served from the offline catalog. The screen used to recognise one by
+ * comparing it to the whole catalog in order; a random sample can't be matched
+ * that way, so getDeck() tags what it hands back instead. See isSeedDeck().
+ */
+const seedDecks = new WeakSet<Movie[]>();
 
 /**
  * Offline stand-in for /similar: seed titles that share genres and keywords.
@@ -470,10 +497,12 @@ function discoverParams(filters: DiscoverFilters | undefined, page: number): Que
 }
 
 /**
- * The swipe deck. Online: /discover/movie, then each result hydrated with
- * videos, watch providers and keywords. Offline, on any error, or with no
- * token: the seed catalog. Movies without a playable video are dropped — this
- * is a clip-first app and #7 would show a static poster.
+ * The swipe deck: DECK_START cards. Online: the top 40 from /discover/movie,
+ * each hydrated with videos, watch providers and keywords, then a random
+ * DECK_START of the playable ones (#97). Offline, on any error, or with no
+ * token: a random DECK_START from the seed catalog — check isSeedDeck().
+ * Movies without a playable video are dropped — this is a clip-first app and
+ * #7 would show a static poster.
  */
 export async function getDeck(filters?: DiscoverFilters): Promise<Movie[]> {
   const deadline = Date.now() + OPERATION_TIMEOUT_MS;
@@ -503,20 +532,33 @@ export async function getDeck(filters?: DiscoverFilters): Promise<Movie[]> {
     ];
     if (ids.length === 0) throw new EmptyResultError('/discover/movie returned no results');
 
-    const deck = (await mapPool(ids, CONCURRENCY, (id) => tryHydrate(id, deadline))).filter(
+    const playable = (await mapPool(ids, CONCURRENCY, (id) => tryHydrate(id, deadline))).filter(
       (movie): movie is Movie => movie != null && movie.video !== null,
     );
-    if (deck.length === 0) throw new EmptyResultError('no playable movies in the discover page');
+    if (playable.length === 0) throw new EmptyResultError('no playable movies in the discover page');
 
     markOnline();
-    return topUpFromSeed(deck);
+    // All 40 are still hydrated: the ones left out stay in the movie cache,
+    // where #17's match watcher and #13's top-ups can find them.
+    return topUpFromSeed(sample(playable, DECK_START));
   } catch (error) {
     logFallback('getDeck()', error);
     if (error instanceof EmptyResultError) markOnline();
     else markOffline();
-    // A copy: callers own their deck and #6 mutates it as cards are consumed.
-    return [...seedMoviesWithVideo];
+    // A fresh array either way: callers own their deck and #6 mutates it.
+    const deck = sample(seedMoviesWithVideo, DECK_START);
+    seedDecks.add(deck);
+    return deck;
   }
+}
+
+/**
+ * True when `deck` is getDeck()'s offline-catalog fallback — a dead network, an
+ * unset token, or a filtered page that came back empty — rather than a
+ * /discover result. A padded live deck is not one.
+ */
+export function isSeedDeck(deck: Movie[]): boolean {
+  return seedDecks.has(deck);
 }
 
 /**

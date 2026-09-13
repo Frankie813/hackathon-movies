@@ -7,8 +7,7 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
-import { seedMoviesWithVideo } from '@/lib/seed';
-import { getDeck } from '@/lib/tmdb';
+import { DECK_MAX, getDeck, isSeedDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
 // Bundled tags only (#39): the swipe loop never spends an image request.
 import { cachedVibeTags, type MoodFilters } from '@/src/lib/gemini';
@@ -39,25 +38,6 @@ const withColors = (m: Movie): Movie => {
  * clip. (The taste vector re-ranks all of this anyway; the order here only
  * decides ties, i.e. the cold start.)
  */
-/** The exact deck getDeck() hands back on every fallback path, in its order. */
-const SEED_FALLBACK_KEY = seedMoviesWithVideo.map((m) => m.id).join(',');
-
-/**
- * True when getDeck() answered from the offline catalog rather than /discover
- * — a dead network, an unset token, or a filtered page that came back empty.
- * A fixed catalog cannot honour /discover parameters, so a mood that lands
- * here has not been applied to anything, and #11 must say so rather than
- * relabel the same deck.
- *
- * Checked this way because there is no flag for it: isOffline() stays false on
- * the empty-page path, since TMDB did answer. Compare before orderDeck(),
- * which reorders. Ordered, not set-wise: a filtered deck too small for
- * MIN_DECK is padded from the same catalog, and that ordering differs.
- */
-function isSeedFallback(movies: Movie[]): boolean {
-  return movies.map((m) => m.id).join(',') === SEED_FALLBACK_KEY;
-}
-
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
     withColors,
@@ -178,7 +158,12 @@ export default function SwipeScreen() {
       const seq = (deckSeq.current += 1);
       const movies = await getDeck(filters);
       if (seq !== deckSeq.current) return true;
-      if (isSeedFallback(movies)) return false;
+      // The offline catalog cannot honour /discover parameters, so a mood that
+      // lands there has not been applied to anything, and #11 must say so
+      // rather than relabel a deck. isOffline() can't tell: it stays false on
+      // the empty-page path, since TMDB did answer. Checked before orderDeck(),
+      // which returns a new array.
+      if (isSeedDeck(movies)) return false;
       swapDeck(movies);
       setMood({ text, tone: filters.tone });
       return true;
@@ -268,6 +253,7 @@ export default function SwipeScreen() {
         whyFor={whyFor}
         expectWhyLine={expectWhyLine}
         vibeFor={cachedVibeTags}
+        maxCards={DECK_MAX}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
           nothing here is ever composited over the card's YouTube player. */}

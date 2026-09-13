@@ -197,6 +197,62 @@ describe('SwipeDeck unplayable cards', () => {
   });
 });
 
+describe('SwipeDeck deck cap (#97)', () => {
+  const { seedCandidates } = jest.requireMock('@/src/lib/candidates') as {
+    seedCandidates: jest.Mock;
+  };
+  const extra = Array.from({ length: 10 }, (_, i) => ({
+    ...SEED_MOVIES[0],
+    id: 800000 + i,
+    title: `Extra ${i}`,
+  }));
+
+  /** Like every card until the deck reports it is done; returns how many were swiped. */
+  async function swipeToEnd(ref: React.RefObject<SwipeDeckRef | null>, onSwipedAll: jest.Mock) {
+    let swipes = 0;
+    while (!onSwipedAll.mock.calls.length && swipes < 50) {
+      await act(async () => {
+        ref.current!.swipeRight();
+        jest.advanceTimersByTime(150);
+        for (let i = 0; i < 10; i += 1) await Promise.resolve();
+      });
+      swipes += 1;
+    }
+    return swipes;
+  }
+
+  it('tops the deck up but never past maxCards', async () => {
+    seedCandidates.mockResolvedValue(extra);
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={9} onSwipedAll={onSwipedAll} />
+      );
+    });
+
+    // 6 dealt + top-ups, trimmed to 9 in total.
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(9);
+    expect(seedCandidates).toHaveBeenCalled();
+    seedCandidates.mockReset();
+    seedCandidates.mockImplementation(async () => []);
+  });
+
+  it('does not ask for more once the deck already holds maxCards', async () => {
+    seedCandidates.mockClear();
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={SEED_MOVIES.length} onSwipedAll={onSwipedAll} />
+      );
+    });
+
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(SEED_MOVIES.length);
+    expect(seedCandidates).not.toHaveBeenCalled();
+  });
+});
+
 beforeEach(() => {
   jest.useFakeTimers();
   // >= EPSILON: exploreRank() promotes the top-ranked card rather than exploring.

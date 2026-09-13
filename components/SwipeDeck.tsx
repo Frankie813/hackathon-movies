@@ -76,6 +76,11 @@ export interface SwipeDeckProps {
    * and issues no network calls — useful for rehearsing the end-of-deck state.
    */
   autoSeed?: boolean;
+  /**
+   * The most cards the deck may ever hold, swiped ones included (#97). Top-ups
+   * stop once it is reached and are trimmed to fit. Unset: no cap.
+   */
+  maxCards?: number;
 }
 
 export interface SwipeDeckRef {
@@ -119,6 +124,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     expectWhyLine = false,
     vibeFor,
     autoSeed = true,
+    maxCards = Infinity,
   },
   ref
 ) {
@@ -262,6 +268,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     (currentDeck: Movie[], nextIndex: number) => {
       const liked = likedRef.current;
       if (!autoSeed || liked.length === 0) return;
+      if (currentDeck.length >= maxCards) return;
       if (currentDeck.length - nextIndex > LOW_WATER) return;
       if (seedingRef.current || seededAtLikeCount.current === liked.length) return;
 
@@ -290,7 +297,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           if (fresh.length === 0 || !mounted.current) return;
           setDeck((d) => {
             const have = new Set(d.map((m) => m.id));
-            return [...d, ...fresh.filter((m) => !have.has(m.id))];
+            const room = Math.max(0, maxCards - d.length);
+            return [...d, ...fresh.filter((m) => !have.has(m.id)).slice(0, room)];
           });
         })
         .catch(() => {
@@ -301,7 +309,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           seedingRef.current = false;
         });
     },
-    [autoSeed]
+    [autoSeed, maxCards]
   );
 
   // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In

@@ -261,3 +261,59 @@ describe('searchMovie (#23 title validation)', () => {
     expect(tmdb.isOffline()).toBe(false);
   });
 });
+
+describe('getDeck deck sizing (#97)', () => {
+  type Deck = { getDeck: () => Promise<Movie[]>; isSeedDeck: (deck: Movie[]) => boolean };
+  const loadDeck = () => loadTmdb() as unknown as Deck;
+
+  /** Two /discover pages of 20, ids 1000–1039, every one hydrating with a clip. */
+  function top40(playable: (id: number) => boolean = () => true) {
+    return jest.fn(async (url: string) => {
+      const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? '0');
+      const id = Number(/\/movie\/(\d+)/.exec(url)?.[1] ?? '0');
+      const body = url.includes('/discover/movie')
+        ? { results: Array.from({ length: 20 }, (_, i) => ({ id: 1000 + (page - 1) * 20 + i })) }
+        : detail(id, playable(id) ? {} : { videos: { results: [] } });
+      return { ok: true, status: 200, json: async () => body };
+    });
+  }
+
+  it('hydrates the top 40 and deals a random 20 of them', async () => {
+    const fetch = top40();
+    setFetch(fetch);
+    const decks = [await loadDeck().getDeck(), await loadDeck().getDeck(), await loadDeck().getDeck()];
+
+    for (const deck of decks) {
+      expect(deck).toHaveLength(20);
+      expect(new Set(deck.map((m) => m.id)).size).toBe(20);
+      for (const movie of deck) expect(movie.id).toBeGreaterThanOrEqual(1000);
+      for (const movie of deck) expect(movie.id).toBeLessThan(1040);
+    }
+    // All 40 hydrated per run, not just the 20 dealt.
+    expect(fetch.mock.calls.filter(([url]) => /\/movie\/\d+/.test(String(url)))).toHaveLength(120);
+    // Random: three runs dealing the identical 20 would be a 1-in-10^22 fluke.
+    const keys = decks.map((deck) => deck.map((m) => m.id).join(','));
+    expect(new Set(keys).size).toBeGreaterThan(1);
+  });
+
+  it('pads a short live deck from seed to exactly 20, and it is not a seed deck', async () => {
+    setFetch(top40((id) => id < 1005));
+    const tmdb = loadDeck();
+    const deck = await tmdb.getDeck();
+
+    expect(deck).toHaveLength(20);
+    expect(deck.filter((m) => m.id >= 1000 && m.id < 1040)).toHaveLength(5);
+    expect(tmdb.isSeedDeck(deck)).toBe(false);
+  });
+
+  it('offline, deals a random 20 from the seed catalog and tags it as such', async () => {
+    setFetch(jest.fn(async () => { throw new TypeError('Network request failed'); }));
+    const tmdb = loadDeck();
+    const deck = await tmdb.getDeck();
+
+    expect(deck).toHaveLength(20);
+    expect(deck.every((m) => !!m.video?.key)).toBe(true);
+    expect(tmdb.isSeedDeck(deck)).toBe(true);
+    expect(tmdb.isSeedDeck([...deck])).toBe(false);
+  });
+});
