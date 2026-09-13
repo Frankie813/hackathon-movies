@@ -2,11 +2,24 @@
 
 export type VideoSource = 'tmdb-clip' | 'movieclips' | 'trailer';
 
+/**
+ * A vertical (9:16) YouTube Short for the same film, found by
+ * scripts/find-shorts.mjs. Played full-screen instead of the landscape clip
+ * when present; the landscape clip is the fallback if it fails to embed.
+ */
+export interface MovieShort {
+  key: string;          // YouTube video id
+  /** True when the uploader matched one of the film's production companies. */
+  official: boolean;
+  seconds: number;      // duration; Shorts loop whole, no start/end
+}
+
 export interface MovieVideo {
   key: string;          // YouTube video id (from TMDB /videos or the curation script)
   start: number;        // seconds — skip studio logos / Movieclips bumper
   end: number;          // seconds — cap the segment at ~15–20s
   source: VideoSource;
+  short?: MovieShort;
 }
 
 export interface Movie {

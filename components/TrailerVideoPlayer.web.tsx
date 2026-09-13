@@ -20,6 +20,8 @@ import { StyleSheet, View } from 'react-native';
 import { unstable_createElement } from 'react-native';
 
 export const FRAME_ZOOM = 1.34;
+export const LANDSCAPE_ASPECT = 16 / 9;
+export const SHORT_ASPECT = 9 / 16;
 
 export interface TrailerVideoPlayerRef {
   seekTo: (seconds: number) => void;
@@ -35,6 +37,10 @@ export interface TrailerVideoPlayerProps {
   /** Window for the sharp foreground video: full card width, from `frameTop`, `frameHeight` tall. */
   frameTop: number;
   frameHeight: number;
+  /** Video aspect ratio (width / height). 16:9 for trailers, 9:16 for Shorts. */
+  aspect?: number;
+  /** Zoom applied to the frame inside the window. Defaults to FRAME_ZOOM. */
+  zoom?: number;
   muted: boolean;
   play: boolean;
   onReady: () => void;
@@ -44,7 +50,19 @@ export interface TrailerVideoPlayerProps {
 
 export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideoPlayerProps>(
   function TrailerVideoPlayer(
-    { videoId, start, end, width, height, frameTop, frameHeight, play, onReady },
+    {
+      videoId,
+      start,
+      end,
+      width,
+      height,
+      frameTop,
+      frameHeight,
+      aspect = LANDSCAPE_ASPECT,
+      zoom = FRAME_ZOOM,
+      play,
+      onReady,
+    },
     ref
   ) {
     useImperativeHandle(ref, () => ({
@@ -69,11 +87,11 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     if (end) params.end = String(end);
     const query = new URLSearchParams(params).toString();
 
-    let frameH = frameHeight * FRAME_ZOOM;
-    let frameW = (frameH * 16) / 9;
+    let frameH = frameHeight * zoom;
+    let frameW = frameH * aspect;
     if (frameW < width) {
       frameW = width;
-      frameH = (width * 9) / 16;
+      frameH = width / aspect;
     }
 
     return (

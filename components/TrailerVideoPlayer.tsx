@@ -92,6 +92,10 @@ export interface TrailerVideoPlayerProps {
   /** Window for the sharp video: full card width, from `frameTop`, `frameHeight` tall. */
   frameTop: number;
   frameHeight: number;
+  /** Video aspect ratio (width / height). 16:9 for trailers, 9:16 for Shorts. */
+  aspect?: number;
+  /** Zoom applied to the frame inside the window. Defaults to FRAME_ZOOM. */
+  zoom?: number;
   muted: boolean;
   /** false = mounted hidden as the deck's next card: warm the buffer, stay muted, don't show. */
   play: boolean;
@@ -105,8 +109,12 @@ export interface ShellLayout {
   cardHeight: number;
   frameTop: number;
   frameHeight: number;
+  aspect: number;
   zoom: number;
 }
+
+export const LANDSCAPE_ASPECT = 16 / 9;
+export const SHORT_ASPECT = 9 / 16;
 
 interface ShellOptions {
   videoId: string;
@@ -162,10 +170,10 @@ export function buildShellHtml({ videoId, start, end, autoplay, muted, layout }:
     fg.style.top = layout.frameTop + 'px';
     fg.style.width = W + 'px';
     fg.style.height = layout.frameHeight + 'px';
-    // Zoomed 16:9 frame centered in the window; never narrower than the window.
+    // Zoomed frame centered in the window; never narrower than the window.
     var frameH = layout.frameHeight * layout.zoom;
-    var frameW = frameH * 16 / 9;
-    if (frameW < W) { frameW = W; frameH = W * 9 / 16; }
+    var frameW = frameH * layout.aspect;
+    if (frameW < W) { frameW = W; frameH = W / layout.aspect; }
     var fgp = document.getElementById('fgplayer');
     fgp.style.left = ((W - frameW) / 2) + 'px';
     fgp.style.top = ((layout.frameHeight - frameH) / 2) + 'px';
@@ -222,6 +230,8 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       height,
       frameTop,
       frameHeight,
+      aspect = LANDSCAPE_ASPECT,
+      zoom = FRAME_ZOOM,
       muted,
       play,
       onReady,
@@ -238,30 +248,33 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     const latest = useRef({ play, muted, start, frameTop, frameHeight, onReady, onEnded, onError });
     latest.current = { play, muted, start, frameTop, frameHeight, onReady, onEnded, onError };
 
-    // Player vars and the first layout are baked into the page at load; later
-    // prop changes are applied with injectJavaScript, so the source must not
-    // change on them. A hidden card loads cued (no autoplay) and is warmed
-    // from the ready handler instead.
-    const initial = useRef({ play, muted, frameTop, frameHeight });
+    // Player vars and the window geometry are baked into the page whenever it
+    // is (re)built — on mount, or when the video itself changes (a Short
+    // falling back to the landscape clip). Play/mute/layout changes in
+    // between are applied with injectJavaScript, so they are deliberately
+    // not dependencies: the memo reads their current values via `latest`.
+    // A hidden card loads cued (no autoplay) and is warmed from the ready
+    // handler instead.
     const source = useMemo(
       () => ({
         html: buildShellHtml({
           videoId,
           start,
           end,
-          autoplay: initial.current.play,
-          muted: initial.current.muted,
+          autoplay: latest.current.play,
+          muted: latest.current.muted,
           layout: {
             cardWidth: width,
             cardHeight: height,
-            frameTop: initial.current.frameTop,
-            frameHeight: initial.current.frameHeight,
-            zoom: FRAME_ZOOM,
+            frameTop: latest.current.frameTop,
+            frameHeight: latest.current.frameHeight,
+            aspect,
+            zoom,
           },
         }),
         baseUrl: EMBED_REFERRER,
       }),
-      [videoId, start, end, width, height]
+      [videoId, start, end, width, height, aspect, zoom]
     );
 
     const inject = useCallback((js: string) => {

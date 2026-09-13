@@ -15,6 +15,8 @@ import Animated, {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  LANDSCAPE_ASPECT,
+  SHORT_ASPECT,
   TrailerVideoPlayer,
   type TrailerVideoPlayerRef,
 } from './TrailerVideoPlayer';
@@ -78,8 +80,15 @@ export function MovieCard({
   const [internalMuted, setInternalMuted] = useState(true);
   const muted = isMuted ?? internalMuted;
 
-  const start = movie.video?.start ?? 0;
-  const end = movie.video?.end;
+  // A vertical Short (found by scripts/find-shorts.mjs) plays full-screen in
+  // place of the landscape clip. If it fails to embed, drop back to the clip
+  // rather than the poster.
+  const [shortFailed, setShortFailed] = useState(false);
+  const short = movie.video?.short;
+  const usingShort = !!short && !shortFailed;
+  const videoId = usingShort ? short.key : movie.video?.key;
+  const start = usingShort ? 0 : (movie.video?.start ?? 0);
+  const end = usingShort ? undefined : movie.video?.end;
 
   // Blurred still behind the letterboxed video; walks the candidate list on load errors.
   const [backdropIndex, setBackdropIndex] = useState(0);
@@ -90,6 +99,7 @@ export function MovieCard({
   useEffect(() => {
     setVideoReady(false);
     setVideoFailed(!hasVideo);
+    setShortFailed(false);
     setBackdropIndex(0);
   }, [movie.id, hasVideo]);
 
@@ -97,10 +107,14 @@ export function MovieCard({
   // just above the title block (the block's top is measured, so a two-line
   // title shrinks the window rather than sitting under the video). The player
   // zooms the 16:9 frame inside that window; the sides overspill.
+  // A Short instead covers the whole card at its native 9:16 (the chrome sits
+  // over it, as on any vertical-video feed).
   const [chromeTop, setChromeTop] = useState<number | null>(null);
   const chromeY = chromeTop ?? height - DEFAULT_CHROME_TOP_FROM_BOTTOM;
-  const frameTop = HEADER_INSET;
-  const frameHeight = Math.max(MIN_FRAME_HEIGHT, Math.round(chromeY - FRAME_GAP - HEADER_INSET));
+  const frameTop = usingShort ? 0 : HEADER_INSET;
+  const frameHeight = usingShort
+    ? height
+    : Math.max(MIN_FRAME_HEIGHT, Math.round(chromeY - FRAME_GAP - HEADER_INSET));
 
   // Loop the chosen segment instead of showing the YouTube end screen.
   // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
@@ -115,11 +129,17 @@ export function MovieCard({
   // shows a blank iframe there rather than falling back to the poster.)
   const onVideoError = useCallback(
     (error: string) => {
+      if (usingShort) {
+        console.warn(`[MovieCard] Short failed for "${movie.title}": ${error}; using the landscape clip`);
+        setShortFailed(true);
+        setVideoReady(false);
+        return;
+      }
       console.warn(`[MovieCard] Trailer failed for "${movie.title}": ${error}`);
       setVideoFailed(true);
       onCardFailed?.(movie);
     },
-    [movie, onCardFailed]
+    [movie, onCardFailed, usingShort]
   );
 
   const handleVideoReady = useCallback(() => setVideoReady(true), []);
@@ -213,13 +233,15 @@ export function MovieCard({
           )}
           <TrailerVideoPlayer
             ref={playerRef}
-            videoId={movie.video!.key}
+            videoId={videoId!}
             start={start}
             end={end}
             width={width}
             height={height}
             frameTop={frameTop}
             frameHeight={frameHeight}
+            aspect={usingShort ? SHORT_ASPECT : LANDSCAPE_ASPECT}
+            zoom={usingShort ? 1 : undefined}
             play={active}
             muted={muted}
             onReady={handleVideoReady}

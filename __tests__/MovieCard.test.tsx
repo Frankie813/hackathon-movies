@@ -149,6 +149,36 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     expect(html).toContain("new YT.Player('player'");
   });
 
+  it('plays a vertical Short full-screen when one exists, and falls back to the clip if it fails', () => {
+    const onCardFailedMock = jest.fn();
+    const movieWithShort: Movie = {
+      ...mockMovieWithVideo,
+      video: { ...mockMovieWithVideo.video!, short: { key: 'SHORT123456', official: false, seconds: 42 } },
+    };
+    const root = render(
+      <MovieCard movie={movieWithShort} width={360} height={852} active onCardFailed={onCardFailedMock} />
+    );
+
+    let webview = root.findByProps({ testID: 'trailer-webview' });
+    let html = webview.props.source.html as string;
+    expect(html).toContain('"SHORT123456"');
+    expect(html).toContain('"aspect":0.5625');
+    expect(html).toContain('"zoom":1}');
+    expect(html).toContain('"frameTop":0');
+    expect(html).toContain('"frameHeight":852');
+    expect(html).toContain('"start":0');
+    expect(html).not.toContain('"end":');
+
+    // The Short is unembeddable: switch to the landscape clip, not the poster.
+    postShellMessage(webview, 'error', 101);
+    webview = root.findByProps({ testID: 'trailer-webview' });
+    html = webview.props.source.html as string;
+    expect(html).toContain('"YoHD9XEInc0"');
+    expect(html).toContain('"aspect":1.7777777777777777');
+    expect(html).toContain('"frameTop":104');
+    expect(onCardFailedMock).not.toHaveBeenCalled();
+  });
+
   it('warms a hidden (inactive) card muted, parks it at start, and resumes on promotion', () => {
     jest.useFakeTimers();
     try {
