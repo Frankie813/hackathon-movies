@@ -605,6 +605,85 @@ export function knownMovies(): Movie[] {
   return [...known.values()];
 }
 
+/** Case, accents, punctuation and a leading article don't make two titles different films. */
+export function normalizeTitle(title: string): string {
+  return title
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/^(the|a|an) /, '');
+}
+
+/** Gemini misremembers a release year by one often enough; two is a different film. */
+const YEAR_TOLERANCE = 1;
+
+function yearFits(year: number, wanted?: number): boolean {
+  // No year asked for: any candidate passes.
+  if (!wanted) return true;
+  // Asked for one, but this candidate has no usable release_date. TMDB search
+  // pages carry undated stubs, shorts and unreleased entries that share a title
+  // with a famous film, and letting those through would defeat the whole guard
+  // — an undated "Dune" would satisfy a request for the 2021 one.
+  if (!year) return false;
+  return Math.abs(year - wanted) <= YEAR_TOLERANCE;
+}
+
+/**
+ * A title Gemini named, resolved to a real, playable TMDB movie — #23's guard
+ * against invented films (AGENTS.md §3). Only an exact title match counts
+ * (after normalizeTitle), never TMDB's fuzzy first hit, and when a year is
+ * given it must agree within a year so a remake can't stand in for the
+ * original. Returns null when nothing matches or the match has no trailer.
+ *
+ * Offline it matches against the seed catalog, whose ids are all real. Never
+ * throws, and leaves the offline flag alone: a lookup is not a deck fetch.
+ */
+export async function searchMovie(title: string, year?: number): Promise<Movie | null> {
+  const wanted = normalizeTitle(title);
+  if (!wanted) return null;
+  const matches = (movie: { title: string; year: number }) =>
+    normalizeTitle(movie.title) === wanted && yearFits(movie.year, year);
+
+  const deadline = Date.now() + OPERATION_TIMEOUT_MS;
+  let ids: number[];
+  try {
+    const found = await tmdb<{
+      results?: { id?: number; title?: string; original_title?: string; release_date?: string }[];
+    }>('/search/movie', { query: title.trim(), page: 1, include_adult: 'false' }, deadline);
+    ids = (found.results ?? [])
+      .filter((result): result is typeof result & { id: number } => typeof result.id === 'number')
+      .filter((result) => {
+        const resultYear = Number((result.release_date ?? '').slice(0, 4)) || 0;
+        return [result.title, result.original_title].some(
+          (name) => typeof name === 'string' && matches({ title: name, year: resultYear }),
+        );
+      })
+      .map((result) => result.id);
+  } catch (error) {
+    if (__DEV__) console.warn(`[tmdb] searchMovie(${title}) fell back to seed:`, error);
+    return seedMoviesWithVideo.find(matches) ?? null;
+  }
+
+  // TMDB orders by relevance, so the first playable exact match is the film meant.
+  for (const id of ids) {
+    const movie = await tryHydrate(id, deadline);
+    if (movie?.video) return movie;
+  }
+  // The search matched real films, but not one of them could be hydrated. On the
+  // venue Wi-Fi PLAN.md §L rates the top risk, that is the expected shape: the
+  // small search request squeaks through while every fat
+  // /movie/{id}?append_to_response=… times out. The seed catalog's ids are real
+  // TMDB ids with pre-validated trailers, so it beats returning null.
+  //
+  // An empty `ids` is the opposite case — TMDB answered and genuinely has no
+  // film by that exact title and year — and the seed must not overrule it.
+  if (ids.length > 0) return seedMoviesWithVideo.find(matches) ?? null;
+  return null;
+}
+
 /**
  * TMDB keyword id for a word, for #22's mood filters: /discover takes keyword
  * ids, not names. Prefers an exact name match over TMDB's fuzzy first hit.

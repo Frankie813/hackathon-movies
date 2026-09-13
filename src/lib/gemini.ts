@@ -1,5 +1,6 @@
 import type { Member, Movie } from '../types';
 import { createMoodToFilters } from './mood';
+import { createRankedCandidates } from './ranked';
 
 export interface Compromise {
   pick: string;
@@ -23,7 +24,15 @@ export const COMPROMISE_SCHEMA = {
 const MAX_WHY_LENGTH = 320;
 const MAX_WHY_WORDS = 45;
 const MAX_CACHE_ENTRIES = 32;
-/** Matches the card's `providers.slice(0, 4)` so the line stays readable on screen. */
+/**
+ * How many providers the watch line may name.
+ *
+ * This is the reveal's *only* where-to-watch surface — #10 dropped its badge
+ * row rather than print the same thing twice — so the cap is about what reads
+ * well in a sentence, not about matching a row of badges. (It used to track the
+ * card's `providers.slice(0, 4)`; #8 replaced that with width-based fitting in
+ * `fitProviders`, so the two are no longer coupled.)
+ */
 const MAX_WATCH_PROVIDERS = 4;
 
 function watchLine(movie: Movie): string {
@@ -157,8 +166,18 @@ export function algorithmicWinner(members: Member[], catalog: Movie[]): Movie | 
     (likes.get(movie.id) ?? 0) > (likes.get(best.id) ?? 0) ? movie : best, eligible[0]);
 }
 
-// Validation failures now fall back to an algorithmic winner and ask Gemini
-// only to explain it, rather than leaving the reveal blank.
+/**
+ * #21's published contract: Gemini both *picks* the group's film and explains
+ * it, falling back to an algorithmic winner when validation rejects the pick.
+ *
+ * Not on the demo path, and deliberately kept anyway. Once #17 landed, the
+ * group's film is decided before Gemini is asked anything — watchForMatch
+ * claims the match document, then calls onDetect — so the app uses
+ * `explainPick` below, which is this minus the choosing. This stays because it
+ * is the shape #21's brief and #29's pitch slide both describe, and because it
+ * is the path back if the group ever needs a pick without a prior verdict.
+ * Prefer `explainPick` for anything that renders.
+ */
 export const groupCompromise = createGroupCompromise({
   generate: generateCompromiseText,
   fallback: algorithmicWinner,
@@ -197,6 +216,14 @@ export function createExplainPick({ generate }: Pick<CompromiseDependencies, 'ge
 }
 
 export const explainPick = createExplainPick({ generate: generateCompromiseText });
+
+// Issue #23: Gemini's ranked next titles, for when #13's pool runs dry. Every
+// title is resolved through TMDB /search/movie before it can reach the deck.
+export type { RankedOptions } from './ranked';
+export const rankedCandidates = createRankedCandidates({
+  generate: async (prompt) => (await import('./ranked-model')).generateRankedText(prompt),
+  resolve: async (title, year) => (await import('../../lib/tmdb')).searchMovie(title, year),
+});
 
 // Issue #22: natural-language mood → TMDB /discover filters. Firebase and
 // TMDB load lazily, as with the compromise, so importing this costs nothing.
