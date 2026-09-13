@@ -35,6 +35,14 @@ import type { Movie, TasteVector } from '@/types';
 import { applySwipe, makeJitter, rank, type RankJitter } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
 import { exploreRank } from '@/src/lib/explore';
+import {
+  countsTowardPin,
+  getGenrePin,
+  GENRE_PIN_LIMIT,
+  pinnedRank,
+  setGenrePin,
+  type GenrePin,
+} from '@/src/lib/genre-pin';
 import { rankedCandidates } from '@/src/lib/gemini';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
@@ -120,8 +128,12 @@ export interface SwipeDeckRef {
 
 const VELOCITY_THRESHOLD = 380;
 const EXIT_DURATION = 200;
-/** Like/Pass buttons throw the card the way a flick does: a touch slower, with a little lift. */
-const THROW_DURATION = 340;
+/**
+ * Like/Pass buttons throw the card the way a flick does, with a little lift —
+ * 40% slower than a raw flick's EXIT_DURATION so the button-triggered throw
+ * reads as more deliberate than a finger swipe.
+ */
+const THROW_DURATION = 476;
 const THROW_LIFT = -28;
 /** Vertical drag (with little sideways drift) that opens or closes the description. */
 const DETAILS_SWIPE_DISTANCE = 80;
@@ -173,6 +185,22 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // stored vector lands would shuffle under the judge's thumb (#18).
   const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies, jitter.current!));
   const taste = useRef<TasteVector>(initialTaste);
+
+  // The onboarding genre pin (src/lib/genre-pin.ts): forces the deck to keep
+  // surfacing the onboarding genre for a few titles even after a dislike would
+  // otherwise have pushed it out of the ranking. null until the AsyncStorage
+  // read resolves (a handful of ms after mount) or there simply isn't one —
+  // both render identically, as "use the normal ranking".
+  const [genrePin, setGenrePinState] = useState<GenrePin | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getGenrePin().then((pin) => {
+      if (!cancelled) setGenrePinState(pin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // #13's inputs. Liked movies in swipe order — seedCandidates re-ranks them
   // by the current taste vector, so the order here is not load-bearing.
@@ -253,7 +281,6 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   }, [onUpcoming, topMovie, nextCandidates]);
 
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
-  const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
 
   // Preload upcoming movie posters and trailer backdrops
   useEffect(() => {
@@ -357,7 +384,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     [autoSeed, maxCards, seenIds]
   );
 
-  // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
+  // Sequence: Old Deck Out -> gif backdrop -> Next Deck In
   const handleSwipeComplete = useCallback(
     (direction: 'left' | 'right') => {
       const swipedIndex = currentIndex;
@@ -369,14 +396,30 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         if (direction === 'right') likedRef.current = [...likedRef.current, movie];
         // Retain the consumed prefix so callback indices and end-of-deck
         // behavior stay intact. Only unseen cards may move.
-        const nextDeck = [
-          ...deck.slice(0, nextIndex),
-          ...exploreRank(taste.current, deck.slice(nextIndex), undefined, undefined, jitter.current!),
-        ];
+        // While the onboarding genre pin still has budget, force that genre
+        // to the front regardless of what the taste vector just did to it —
+        // that's the whole point: a dislike must not be able to push it out
+        // before GENRE_PIN_LIMIT titles from it have actually been shown.
+        // Either way jitter.current carries this session's tie-break (#96)
+        // through, so a pinned reorder isn't any more deterministic than a
+        // normal one.
+        const remaining = deck.slice(nextIndex);
+        const reordered =
+          genrePin && genrePin.count < GENRE_PIN_LIMIT
+            ? pinnedRank(genrePin, taste.current, remaining, jitter.current!)
+            : exploreRank(taste.current, remaining, undefined, undefined, jitter.current!);
+        const nextDeck = [...deck.slice(0, nextIndex), ...reordered];
         setDeck(nextDeck);
         maybeSeedMore(nextDeck, nextIndex);
         onTasteChange?.(taste.current);
         setPreviousMovie(movie);
+
+        if (countsTowardPin(genrePin, movie)) {
+          const updatedPin: GenrePin = { genreIds: genrePin!.genreIds, count: genrePin!.count + 1 };
+          setGenrePinState(updatedPin);
+          void setGenrePin(updatedPin);
+        }
+
         if (direction === 'left') {
           onSwipeLeft?.(swipedIndex, movie);
         } else {
@@ -416,7 +459,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         });
       }, 100);
     },
-    [currentIndex, deck, maybeSeedMore, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating, setDetails]
+    [currentIndex, deck, genrePin, maybeSeedMore, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating, setDetails]
   );
 
   // Programmatic swipe (Like / Pass buttons): the same off-screen throw a
@@ -673,15 +716,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   return (
     <View style={styles.container}>
-      {/* Full-Screen 2% Gaussian Blurred index.gif, High-Luminance Bloom Glow & Smooth Hue Shift */}
-      <DynamicHueBackdrop
-        currentThemeColor={currentTheme}
-        previousThemeColor={previousMovie?.themeColor}
-        currentAccentColor={currentAccent}
-        previousAccentColor={previousMovie?.negativeColor}
-        width={cardW}
-        height={cardH}
-      />
+      {/* Full-screen loader.gif backdrop, scaled to fill the deck viewport */}
+      <DynamicHueBackdrop width={cardW} height={cardH} />
 
       {/* Full-Screen Deck Viewport */}
       <View style={[styles.deckArea, { width: cardW, height: cardH }]}>

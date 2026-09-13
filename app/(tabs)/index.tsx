@@ -1,45 +1,83 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { useAnonymousAuth } from '@/lib/auth';
-import { ONBOARDING_GENRES, tasteFromGenres } from '@/src/lib/onboarding';
+import { FONT_IMPACT } from '@/constants/fonts';
+import { UsernamePrompt } from '@/components/UsernamePrompt';
+import { setGenrePin } from '@/src/lib/genre-pin';
+import { ONBOARDED_KEY, ONBOARDING_GENRES, tasteFromGenres } from '@/src/lib/onboarding';
 import { flushTaste, saveTaste } from '@/src/lib/persist';
+import { getUsername, setUsername as saveUsername } from '@/src/lib/username';
 
 /** 50% taller than a Saved-tab row's poster (96 — components/../app/(tabs)/saved.tsx). */
 const GENRE_ROW_HEIGHT = 144;
 
-/** Set the first time Start is shown; every later launch skips straight to Swipe. */
-const ONBOARDED_KEY = 'moviematch.onboarded';
-
 export default function OnboardingScreen() {
   const router = useRouter();
 
-  // null = still reading the flag; true = seen before, go to Swipe.
-  const [seenBefore, setSeenBefore] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    AsyncStorage.getItem(ONBOARDED_KEY)
-      .then((value) => {
-        if (cancelled) return;
-        if (value) {
-          setSeenBefore(true);
-        } else {
-          setSeenBefore(false);
-          AsyncStorage.setItem(ONBOARDED_KEY, String(Date.now())).catch(() => {});
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSeenBefore(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const { uid } = useAnonymousAuth();
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // null = still reading the flag; true = seen before, go to Swipe.
+  const [seenBefore, setSeenBefore] = useState<boolean | null>(null);
+
+  // useFocusEffect, not a mount-once useEffect: bottom-tab screens stay
+  // mounted when you switch tabs (AGENTS.md), so this screen is never
+  // remounted after the very first launch — a preferences reset's
+  // router.replace('/') only re-focuses this same instance. A one-shot effect
+  // would keep serving the seenBefore=true it read back at first launch and
+  // bounce straight back to /swipe instead of showing the genre picker; this
+  // re-reads the flag (and clears it back to "in progress" below) every time
+  // the screen regains focus.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setSeenBefore(null);
+      // A reset must present a blank genre picker, not whatever was checked
+      // the last time this same screen instance had focus.
+      setSelected(new Set());
+      AsyncStorage.getItem(ONBOARDED_KEY)
+        .then((value) => {
+          if (cancelled) return;
+          if (value) {
+            setSeenBefore(true);
+          } else {
+            setSeenBefore(false);
+            AsyncStorage.setItem(ONBOARDED_KEY, String(Date.now())).catch(() => {});
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setSeenBefore(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  // null = still reading storage; '' would collide with "no username yet" so
+  // absence is represented as null throughout this gate.
+  const [username, setUsernameState] = useState<string | null>(null);
+  const [usernameReady, setUsernameReady] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      getUsername().then((name) => {
+        if (cancelled) return;
+        setUsernameState(name);
+        setUsernameReady(true);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
+
+  const handleUsernameConfirm = useCallback((name: string) => {
+    void saveUsername(name).then(() => setUsernameState(name));
+  }, []);
 
   const toggleGenre = useCallback((id: number) => {
     setSelected((prev) => {
@@ -55,6 +93,11 @@ export default function OnboardingScreen() {
   const finish = useCallback(
     (genreIds: number[]) => {
       const proceed = () => router.replace('/swipe');
+      // Local, on-device, and fast — never worth gating navigation on (see
+      // src/lib/genre-pin.ts). A fresh pick always replaces whatever pin an
+      // earlier run left behind; Skip (or Done with nothing selected) clears
+      // it outright.
+      void setGenrePin(genreIds.length > 0 ? { genreIds, count: 0 } : null);
       if (uid && genreIds.length > 0) {
         const vector = tasteFromGenres(genreIds);
         // Fire-and-forget: registers the vector, then flushTaste writes it
@@ -71,8 +114,16 @@ export default function OnboardingScreen() {
   const handleDone = useCallback(() => finish([...selected]), [finish, selected]);
   const handleSkip = useCallback(() => finish([]), [finish]);
 
-  if (seenBefore === null) return <View style={styles.loading} />;
+  if (seenBefore === null || !usernameReady) return <View style={styles.loading} />;
   if (seenBefore) return <Redirect href="/swipe" />;
+
+  // First-launch sequence: pick a name before the genre picker ever shows.
+  // Skipped on a preferences reset — src/lib/persist.ts's resetPreferences()
+  // deliberately leaves the stored username alone, so this only fires once
+  // per install.
+  if (!username) {
+    return <UsernamePrompt visible mode="create" onConfirm={handleUsernameConfirm} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -239,6 +290,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.85)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 8,
+    fontFamily: FONT_IMPACT,
   },
   checkCircle: {
     width: 30,

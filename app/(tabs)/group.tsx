@@ -15,8 +15,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { JoinQR } from '@/components/JoinQR';
+import { UsernamePrompt } from '@/components/UsernamePrompt';
 import { setActiveCode, useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { onJoinRequested, parseJoinLink, takeParkedJoin } from '@/lib/join-link';
@@ -30,6 +32,7 @@ import {
   SessionNotFoundError,
   subscribe,
 } from '@/lib/session';
+import { getUsername, setUsername as saveUsername } from '@/src/lib/username';
 import type { Member } from '@/types';
 
 export default function GroupScreen() {
@@ -43,6 +46,39 @@ export default function GroupScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The display name this device sends when it (re)joins a session, so the
+  // member list shows something better than "Guest XXXX" from the first join
+  // onward. Set in the onboarding gate (app/(tabs)/index.tsx); editable here.
+  const [username, setUsernameState] = useState<string | null>(null);
+  const [editingUsername, setEditingUsername] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getUsername().then((name) => {
+      if (!cancelled) setUsernameState(name);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleUsernameSave = useCallback(
+    (name: string) => {
+      setEditingUsername(false);
+      void saveUsername(name).then(() => {
+        setUsernameState(name);
+        // joinSession() on an existing member only updates `name` — it never
+        // touches likes/dislikes (see lib/session.ts), so this is safe to fire
+        // even mid-session.
+        if (code) {
+          joinSession(code, name).catch((cause: unknown) => {
+            console.warn('[group] could not update the name on the session:', cause);
+          });
+        }
+      });
+    },
+    [code],
+  );
+
   // enterSession() needs the code as it is *now*, not as it was when the work
   // it is awaiting started — see the setMembers guard below.
   const codeRef = useRef<string | null>(null);
@@ -54,7 +90,7 @@ export default function GroupScreen() {
   // presence — likes and dislikes are left alone (see joinSession).
   useEffect(() => {
     if (!code || !uid) return;
-    joinSession(code).catch((cause: unknown) => {
+    joinSession(code, username ?? undefined).catch((cause: unknown) => {
       if (cause instanceof SessionNotFoundError) {
         setActiveCode(null);
         setError('That session is gone. Start a new one.');
@@ -62,7 +98,9 @@ export default function GroupScreen() {
       }
       console.warn('[group] rejoin failed:', cause);
     });
-  }, [code, uid]);
+    // Also fires once the async username read resolves, so a restored session
+    // picks up the name even though it wasn't known yet on the first rejoin.
+  }, [code, uid, username]);
 
   useEffect(() => {
     if (!code || !uid) return;
@@ -101,16 +139,19 @@ export default function GroupScreen() {
   useEffect(() => {
     const handle = (incoming: string) => {
       void enterSession(async () => {
-        await joinSession(incoming);
+        await joinSession(incoming, username ?? undefined);
         return incoming;
       });
     };
     const parked = takeParkedJoin();
     if (parked) handle(parked);
     return onJoinRequested(handle);
-  }, [enterSession]);
+  }, [enterSession, username]);
 
-  const onCreate = useCallback(() => void enterSession(() => createSession()), [enterSession]);
+  const onCreate = useCallback(
+    () => void enterSession(() => createSession(username ?? undefined)),
+    [enterSession, username],
+  );
 
   const onJoin = useCallback(() => {
     // The keyboard's "go" key reaches this too, where the Join button's
@@ -119,10 +160,10 @@ export default function GroupScreen() {
     if (busy || !isValidCode(input)) return;
     const normalized = normalizeCode(input);
     void enterSession(async () => {
-      await joinSession(normalized);
+      await joinSession(normalized, username ?? undefined);
       return normalized;
     });
-  }, [busy, enterSession, input]);
+  }, [busy, enterSession, input, username]);
 
   const onLeave = useCallback(() => {
     // Tell the other phones (#101): the member doc is flagged `left`, so it
@@ -237,10 +278,23 @@ export default function GroupScreen() {
         ) : (
           members.map((member) => (
             <View key={member.uid} style={styles.memberRow}>
-              <Text style={styles.memberName}>
-                {memberLabel(member)}
-                {member.uid === uid ? ' (you)' : ''}
-              </Text>
+              <View style={styles.memberNameRow}>
+                <Text style={styles.memberName}>
+                  {memberLabel(member)}
+                  {member.uid === uid ? ' (you)' : ''}
+                </Text>
+                {member.uid === uid ? (
+                  <Pressable
+                    onPress={() => setEditingUsername(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit your name"
+                    hitSlop={8}
+                    style={({ pressed }) => [styles.editNameButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="pencil" size={13} color="#9a9aa2" />
+                  </Pressable>
+                ) : null}
+              </View>
               <Text style={styles.memberCounts}>
                 ♥ {member.likes.length} · ✕ {member.dislikes.length}
               </Text>
@@ -265,6 +319,14 @@ export default function GroupScreen() {
       >
         <Text style={styles.secondaryLabel}>Leave</Text>
       </Pressable>
+
+      <UsernamePrompt
+        visible={editingUsername}
+        mode="edit"
+        initialValue={username ?? ''}
+        onConfirm={handleUsernameSave}
+        onCancel={() => setEditingUsername(false)}
+      />
     </ScrollView>
   );
 }
@@ -380,10 +442,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
+  memberNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   memberName: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  editNameButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   memberCounts: {
     color: '#9a9aa2',
