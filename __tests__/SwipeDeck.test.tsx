@@ -74,6 +74,24 @@ describe('SwipeDeck next-card preloading', () => {
     for (const card of hidden) expect(card.props.movie.id).not.toBe(SEED_MOVIES[0].id);
   });
 
+  it('tells the cards to hold the why slot open only when it can supply lines', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    for (const card of tree!.root.findAllByType(MovieCard)) {
+      expect(card.props.expectWhyLine).toBe(false);
+    }
+
+    act(() => {
+      tree!.update(
+        <SwipeDeck movies={SEED_MOVIES} autoSeed={false} whyFor={() => undefined} />
+      );
+    });
+    for (const card of tree!.root.findAllByType(MovieCard)) {
+      expect(card.props.expectWhyLine).toBe(true);
+    }
+  });
+
   it('keeps the promoted card instance (same WebView source object) across a swipe', () => {
     const ref = React.createRef<SwipeDeckRef>();
     act(() => {

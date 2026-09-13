@@ -422,9 +422,19 @@ describe('card content overlay (Issue #8)', () => {
     expect(root.findAllByProps({ accessibilityLabel: 'Unmute trailer' }).length).toBeGreaterThan(0);
   });
 
-  it('reserves the why slot at the same height before and after Gemini answers', () => {
+  it('leaves out the why slot entirely when no line is coming', () => {
     const root = render(
       <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
+
+    // Nothing to jump, so nothing to reserve — a permanent gap above the
+    // genres would just cost the trailer height.
+    expect(root.findAllByProps({ testID: 'why-slot' })).toHaveLength(0);
+  });
+
+  it('reserves the why slot at the same height before and after Gemini answers', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active expectWhyLine />
     );
 
     // Empty, not absent: the line arrives asynchronously (#20) and the chrome's
@@ -440,6 +450,7 @@ describe('card content overlay (Issue #8)', () => {
           width={360}
           height={720}
           active
+          expectWhyLine
           whyLine="Mind-bending visual masterpiece for fans of sci-fi heists."
         />
       );

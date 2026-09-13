@@ -517,6 +517,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           active={active}
           showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
+          // A deck with a whyFor will produce a line for this card sooner or
+          // later, so the card holds the slot open from the start rather than
+          // growing when it lands (#8, #20).
+          expectWhyLine={!!whyFor}
         />
       );
     },

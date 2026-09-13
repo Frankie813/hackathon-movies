@@ -118,6 +118,13 @@ interface MovieCardProps {
   /** Swipe-up state: replace the title block with the TMDB synopsis. */
   showDetails?: boolean;
   whyLine?: string;
+  /**
+   * True when a why line is on its way but has not arrived yet, so the slot is
+   * held open at its final height (#20). False — the deck has no Gemini line to
+   * give — drops the slot entirely rather than leaving a permanent gap above
+   * the genres, since without a line there is nothing to jump.
+   */
+  expectWhyLine?: boolean;
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
@@ -130,6 +137,7 @@ export function MovieCard({
   active = false,
   showDetails = false,
   whyLine,
+  expectWhyLine = false,
   onToggleMute,
   isMuted,
   onCardFailed,
@@ -410,18 +418,20 @@ export function MovieCard({
           )}
         </View>
 
-        {/* Gemini "Why you'll like this" slot (#20). Rendered empty rather
-            than absent — see WHY_SLOT_HEIGHT. */}
-        <View testID="why-slot" style={styles.whySlot}>
-          {whyLine ? (
-            <>
-              <Text style={styles.whyBadge}>WHY YOU'LL LIKE THIS</Text>
-              <Text style={styles.whyText} numberOfLines={2}>
-                "{whyLine}"
-              </Text>
-            </>
-          ) : null}
-        </View>
+        {/* Gemini "Why you'll like this" slot (#20). Held open at its final
+            height while the line is in flight — see WHY_SLOT_HEIGHT. */}
+        {(whyLine || expectWhyLine) && (
+          <View testID="why-slot" style={styles.whySlot}>
+            {whyLine ? (
+              <>
+                <Text style={styles.whyBadge}>WHY YOU'LL LIKE THIS</Text>
+                <Text style={styles.whyText} numberOfLines={2}>
+                  "{whyLine}"
+                </Text>
+              </>
+            ) : null}
+          </View>
+        )}
 
         {/* Tag pills: genres */}
         <View style={styles.tagRow}>
