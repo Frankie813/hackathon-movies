@@ -20,9 +20,10 @@
 //   - the iPhone silent switch vs. tap-to-unmute
 //
 // The whole app below the screen is real: lib/tmdb's mapper, lib/seed.json,
-// src/lib/taste, src/lib/explore and components/SwipeDeck all run unmocked.
-// Only the four things Jest has no version of are stubbed — the network, the
-// WebView, Firebase, and the native gradient/icon shims.
+// src/lib/taste, src/lib/explore, lib/use-why-lines and components/SwipeDeck
+// all run unmocked. Only what Jest has no version of is stubbed — the network,
+// the WebView, Firebase (Firestore, Auth and AI), AsyncStorage's native module,
+// and the gradient/icon shims.
 
 import React from 'react';
 import renderer, { act, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
@@ -85,6 +86,45 @@ jest.mock('firebase/firestore', () => ({
   getFirestore: jest.fn(),
 }));
 jest.mock('firebase/auth', () => new Proxy({}, { get: () => jest.fn() }));
+
+/**
+ * #20's why-line, which `app/(tabs)/swipe.tsx` warms from the deck's own view
+ * of what is coming up. `lib/gemini` builds a Firebase AI model and opens the
+ * AsyncStorage line cache at import time, so both have to answer for the
+ * screen to mount at all.
+ *
+ * The model is stubbed to reject in *both* directions, online and off. A why
+ * line is not what #24 is about — #20 owns it, in why-line.test.ts and
+ * use-why-lines.test.tsx — and what this file needs to know is the stronger
+ * claim anyway: the swipe loop keeps running when Gemini cannot be reached,
+ * which on venue Wi-Fi is the likely case.
+ */
+jest.mock('firebase/ai', () => ({
+  getAI: jest.fn(() => ({})),
+  getGenerativeModel: jest.fn(() => ({
+    generateContent: jest.fn(() => Promise.reject(new Error('Network request failed'))),
+  })),
+  GoogleAIBackend: jest.fn(),
+  Schema: {
+    object: (params: unknown) => params,
+    string: (params: unknown) => params,
+    number: (params: unknown) => params,
+  },
+}));
+
+const mockLineCache = new Map<string, string>();
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async (key: string) => mockLineCache.get(key) ?? null),
+    setItem: jest.fn(async (key: string, value: string) => {
+      mockLineCache.set(key, value);
+    }),
+    removeItem: jest.fn(async (key: string) => {
+      mockLineCache.delete(key);
+    }),
+  },
+}));
 jest.mock('@/lib/firebase', () => ({ app: {}, db: {}, auth: {} }));
 
 /** Sign-in state the screen sees. The offline case sets isSigningIn forever. */
