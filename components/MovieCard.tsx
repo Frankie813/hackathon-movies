@@ -155,6 +155,8 @@ export function MovieCard({
   const [videoFailed, setVideoFailed] = useState(!hasVideo);
   const [internalMuted, setInternalMuted] = useState(true);
   const muted = isMuted ?? internalMuted;
+  // The pause button (#98). Per card: the next card starts playing as usual.
+  const [userPaused, setUserPaused] = useState(false);
 
   // A vertical Short (found by scripts/find-shorts.mjs) plays full-screen in
   // place of the landscape clip. If it fails to embed, drop back to the clip
@@ -177,6 +179,7 @@ export function MovieCard({
     setVideoFailed(!hasVideo);
     setShortFailed(false);
     setBackdropIndex(0);
+    setUserPaused(false);
   }, [movie.id, hasVideo]);
 
   // The sharp video fills a full-width window from just below the header to
@@ -236,6 +239,8 @@ export function MovieCard({
       setInternalMuted((prev) => !prev);
     }
   }, [onToggleMute]);
+
+  const handleTogglePause = useCallback(() => setUserPaused((prev) => !prev), []);
 
   const providerFit = useMemo(
     () => fitProviders(movie.providers ?? [], width),
@@ -324,6 +329,7 @@ export function MovieCard({
             aspect={usingShort ? SHORT_ASPECT : LANDSCAPE_ASPECT}
             zoom={usingShort ? 1 : undefined}
             play={active}
+            userPaused={userPaused}
             muted={muted}
             onReady={handleVideoReady}
             onEnded={onVideoEnded}
@@ -406,18 +412,30 @@ export function MovieCard({
           </View>
 
           {showVideo && (
-            <Pressable
-              onPress={handleToggleMute}
-              style={styles.muteButton}
-              accessibilityLabel={muted ? 'Unmute trailer' : 'Mute trailer'}
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name={muted ? 'volume-mute' : 'volume-high'}
-                size={18}
-                color="#ffffff"
-              />
-            </Pressable>
+            <View style={styles.videoControls}>
+              {/* Pause / play (#98). Below the video window like the mute
+                  button, never drawn over the player (AGENTS.md §3). */}
+              <Pressable
+                onPress={handleTogglePause}
+                style={styles.muteButton}
+                accessibilityLabel={userPaused ? 'Play trailer' : 'Pause trailer'}
+                accessibilityRole="button"
+              >
+                <Ionicons name={userPaused ? 'play' : 'pause'} size={17} color="#ffffff" />
+              </Pressable>
+              <Pressable
+                onPress={handleToggleMute}
+                style={styles.muteButton}
+                accessibilityLabel={muted ? 'Unmute trailer' : 'Mute trailer'}
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name={muted ? 'volume-mute' : 'volume-high'}
+                  size={18}
+                  color="#ffffff"
+                />
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -598,6 +616,10 @@ const styles = StyleSheet.create({
   titleSection: {
     flex: 1,
     marginRight: 12,
+  },
+  videoControls: {
+    flexDirection: 'row',
+    gap: 8,
   },
   muteButton: {
     width: 34,

@@ -303,6 +303,71 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     }
   });
 
+  it('pauses on the pause button and continues from there, not from the clip start (#98)', () => {
+    jest.useFakeTimers();
+    try {
+      let tree2: renderer.ReactTestRenderer | null = null;
+      const card = (active: boolean) => (
+        <MovieCard movie={mockMovieWithVideo} width={360} height={852} active={active} />
+      );
+      act(() => {
+        tree2 = renderer.create(card(true));
+      });
+      const root = tree2!.root;
+      postShellMessage(root.findByProps({ testID: 'trailer-webview' }), 'ready');
+      const sent = () => mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
+      const button = () =>
+        root.findAll((n) => typeof n.props.onPress === 'function' && /trailer$/.test(n.props.accessibilityLabel ?? ''))
+          .find((n) => /^(Pause|Play) trailer$/.test(n.props.accessibilityLabel))!;
+
+      // Pause: the player stops, and the launch follow-ups must not restart it.
+      expect(button().props.accessibilityLabel).toBe('Pause trailer');
+      mockInjectJavaScript.mockClear();
+      act(() => button().props.onPress());
+      act(() => {
+        jest.advanceTimersByTime(5_000);
+      });
+      expect(sent()).toContain('player.pauseVideo();');
+      expect(sent()).not.toContain('player.playVideo()');
+      expect(button().props.accessibilityLabel).toBe('Play trailer');
+
+      // A tab switch and back while paused keeps it paused.
+      mockInjectJavaScript.mockClear();
+      act(() => tree2!.update(card(false)));
+      act(() => tree2!.update(card(true)));
+      act(() => {
+        jest.advanceTimersByTime(5_000);
+      });
+      expect(sent()).not.toContain('player.playVideo()');
+
+      // Play: continues where it stopped, so no seek back to `start`.
+      mockInjectJavaScript.mockClear();
+      act(() => button().props.onPress());
+      expect(sent()).toContain('player.playVideo();');
+      expect(sent()).not.toContain('seekTo');
+      expect(button().props.accessibilityLabel).toBe('Pause trailer');
+
+      act(() => {
+        tree2!.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('starts the next movie playing even if the last one was paused (#98)', () => {
+    const root = render(<MovieCard movie={mockMovieWithVideo} width={360} height={852} active />);
+    const pause = () => root.findAll((n) => n.props.accessibilityLabel === 'Pause trailer' && typeof n.props.onPress === 'function')[0];
+    act(() => pause().props.onPress());
+    expect(root.findAll((n) => n.props.accessibilityLabel === 'Play trailer').length).toBeGreaterThan(0);
+
+    act(() => tree!.update(
+      <MovieCard movie={{ ...mockMovieWithVideo, id: 603, title: 'The Matrix' }} width={360} height={852} active />
+    ));
+    expect(pause()).toBeTruthy();
+    expect(root.findByProps({ testID: 'trailer-webview' }).props.source.html).toContain('"autoplay":1');
+  });
+
   it('re-sends the window geometry once the title block has been measured', () => {
     const root = render(
       <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />

@@ -116,6 +116,13 @@ export interface TrailerVideoPlayerProps {
   muted: boolean;
   /** false = mounted hidden as the deck's next card: warm the buffer, stay muted, don't show. */
   play: boolean;
+  /**
+   * The card's pause button (#98). Separate from `play` on purpose: `play`
+   * going true restarts the clip from `start` (a promotion), while un-pausing
+   * continues from where the user stopped it. A user pause also outlasts a tab
+   * switch — coming back to the Swipe tab leaves it paused.
+   */
+  userPaused?: boolean;
   onReady: () => void;
   onEnded: () => void;
   onError: (error: string) => void;
@@ -251,6 +258,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       zoom = FRAME_ZOOM,
       muted,
       play,
+      userPaused = false,
       onReady,
       onEnded,
       onError,
@@ -262,8 +270,8 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Latest props/callbacks, readable from handlers without re-binding them.
-    const latest = useRef({ play, muted, start, frameTop, frameHeight, onReady, onEnded, onError });
-    latest.current = { play, muted, start, frameTop, frameHeight, onReady, onEnded, onError };
+    const latest = useRef({ play, userPaused, muted, start, frameTop, frameHeight, onReady, onEnded, onError });
+    latest.current = { play, userPaused, muted, start, frameTop, frameHeight, onReady, onEnded, onError };
 
     // Player vars and the window geometry are baked into the page whenever it
     // is (re)built — on mount, or when the video itself changes (a Short
@@ -278,7 +286,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           videoId,
           start,
           end,
-          autoplay: latest.current.play,
+          autoplay: latest.current.play && !latest.current.userPaused,
           muted: latest.current.muted,
           layout: {
             cardWidth: width,
@@ -320,7 +328,9 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       clearResume();
       resumeTimers.current = RESUME_CHECKS_MS.map((ms) =>
         setTimeout(() => {
-          if (readyRef.current && latest.current.play) inject(ensurePlayingJs(latest.current.muted));
+          if (readyRef.current && latest.current.play && !latest.current.userPaused) {
+            inject(ensurePlayingJs(latest.current.muted));
+          }
         }, ms)
       );
     }, [clearResume, inject]);
@@ -348,7 +358,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     // from `start`, which the warm-up left buffered. Demotion just pauses.
     useEffect(() => {
       if (!readyRef.current) return;
-      if (play) {
+      if (play && !latest.current.userPaused) {
         clearWarm();
         inject(
           `${muted ? 'player.mute();' : 'player.unMute();'} ` +
@@ -356,12 +366,28 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
         );
         keepPlaying();
       } else {
+        // Demoted, off screen, or promoted while the user has it paused (#98).
+        clearWarm();
         clearResume();
         inject('player.pauseVideo();');
       }
       // `muted` is applied by the effect above when it changes on its own.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [play, clearWarm, clearResume, keepPlaying, inject]);
+
+    // The pause button (#98): stop where it is, and continue from there, rather
+    // than restarting the clip the way a promotion does. Only meaningful while
+    // the card is the one playing; a hidden card is already paused.
+    useEffect(() => {
+      if (!readyRef.current || !latest.current.play) return;
+      if (userPaused) {
+        clearResume();
+        inject('player.pauseVideo();');
+      } else {
+        inject(ensurePlayingJs(latest.current.muted));
+        keepPlaying();
+      }
+    }, [userPaused, clearResume, keepPlaying, inject]);
 
     // Window geometry can change after mount (the card measures its title
     // block). Harmless before the page has loaded; re-sent on ready.
@@ -389,10 +415,13 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
         switch (message.eventType) {
           case 'ready': {
             readyRef.current = true;
-            const { play: shouldPlay, muted: isMuted, start: from, frameTop: top, frameHeight: h } =
+            const { play: shouldPlay, userPaused: stopped, muted: isMuted, start: from, frameTop: top, frameHeight: h } =
               latest.current;
             inject(`setLayout(${JSON.stringify({ frameTop: top, frameHeight: h })});`);
-            if (shouldPlay) {
+            if (shouldPlay && stopped) {
+              // Paused by the user before the player finished loading (#98).
+              inject('player.pauseVideo();');
+            } else if (shouldPlay) {
               // Reconcile with the props as they are now, in case they changed
               // during load. Only issue commands that change something: a
               // redundant playVideo() on an already-autoplaying video makes
