@@ -1,6 +1,7 @@
 import React from 'react';
+import { StyleSheet, Text } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
-import { MovieCard } from '@/components/MovieCard';
+import { fitProviders, MovieCard } from '@/components/MovieCard';
 import { WARM_MS } from '@/components/TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
@@ -385,5 +386,163 @@ describe('MovieCard trailer playback (Issue #7)', () => {
 
     expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
     expect(mockInjectJavaScript.mock.calls[0][0]).toContain('player.seekTo(5, true);');
+  });
+});
+
+describe('card content overlay (Issue #8)', () => {
+  /** Longer than the AC's 60-character long-title case. */
+  const LONG_TITLE = 'The Assassination of Jesse James by the Coward Robert Ford Jr.';
+  /** Real TMDB provider names, including the longest one in the seed catalog. */
+  const MANY_PROVIDERS = [
+    'Netflix',
+    'Paramount+ Roku Premium Channel',
+    'Amazon Prime Video with Ads',
+    'fuboTV',
+    'YouTube TV',
+  ];
+
+  const heightOf = (node: renderer.ReactTestInstance) =>
+    StyleSheet.flatten(node.props.style).height;
+
+  it('renders the whole overlay from a Movie object alone', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
+
+    const chrome = root.findByProps({ testID: 'card-chrome' });
+    expect(chrome.findAllByProps({ children: mockMovieWithVideo.title }).length).toBeGreaterThan(0);
+    expect(chrome.findAllByProps({ children: mockMovieWithVideo.year }).length).toBeGreaterThan(0);
+    for (const genre of mockMovieWithVideo.genreNames) {
+      expect(chrome.findAllByProps({ children: genre }).length).toBeGreaterThan(0);
+    }
+    for (const provider of mockMovieWithVideo.providers) {
+      expect(chrome.findAllByProps({ children: provider }).length).toBeGreaterThan(0);
+    }
+    // The mute toggle needs no owning screen state to render.
+    expect(root.findAllByProps({ accessibilityLabel: 'Unmute trailer' }).length).toBeGreaterThan(0);
+  });
+
+  it('leaves out the why slot entirely when no line is coming', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active />
+    );
+
+    // Nothing to jump, so nothing to reserve — a permanent gap above the
+    // genres would just cost the trailer height.
+    expect(root.findAllByProps({ testID: 'why-slot' })).toHaveLength(0);
+  });
+
+  it('reserves the why slot at the same height before and after Gemini answers', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} active expectWhyLine />
+    );
+
+    // Empty, not absent: the line arrives asynchronously (#20) and the chrome's
+    // measured top is what sizes the video window above it.
+    const empty = root.findByProps({ testID: 'why-slot' });
+    expect(heightOf(empty)).toBeGreaterThan(0);
+    expect(empty.findAllByType(Text)).toHaveLength(0);
+
+    act(() => {
+      tree!.update(
+        <MovieCard
+          movie={mockMovieWithVideo}
+          width={360}
+          height={720}
+          active
+          expectWhyLine
+          whyLine="Mind-bending visual masterpiece for fans of sci-fi heists."
+        />
+      );
+    });
+
+    const filled = root.findByProps({ testID: 'why-slot' });
+    expect(heightOf(filled)).toBe(heightOf(empty));
+    expect(filled.findAllByProps({ children: "WHY YOU'LL LIKE THIS" }).length).toBeGreaterThan(0);
+  });
+
+  it('holds the layout for a 60-character title', () => {
+    const root = render(
+      <MovieCard
+        movie={{ ...mockMovieWithVideo, title: LONG_TITLE }}
+        width={360}
+        height={720}
+        active
+      />
+    );
+
+    expect(LONG_TITLE.length).toBeGreaterThanOrEqual(60);
+    const [title] = root.findAllByProps({ children: LONG_TITLE });
+    expect(title.props.numberOfLines).toBe(2);
+  });
+
+  it('keeps 3+ providers on one row and collapses the rest into a +N badge', () => {
+    const root = render(
+      <MovieCard
+        movie={{ ...mockMovieWithVideo, providers: MANY_PROVIDERS }}
+        width={360}
+        height={720}
+        active
+      />
+    );
+
+    const row = root.findByProps({ testID: 'provider-row' });
+    // No wrapping — a second row would change the chrome's height per card.
+    expect(StyleSheet.flatten(row.props.style).flexWrap).toBe('nowrap');
+
+    // Whatever fits is named in full, not shrunk down to an initial.
+    const { shown, hidden } = fitProviders(MANY_PROVIDERS, 360);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(hidden).toBe(MANY_PROVIDERS.length - shown.length);
+    for (const provider of shown) {
+      const [badge] = row.findAllByProps({ children: provider });
+      expect(badge.props.numberOfLines).toBe(1);
+    }
+    // The rest are summarised, not silently dropped.
+    for (const provider of MANY_PROVIDERS.slice(shown.length)) {
+      expect(row.findAllByProps({ children: provider })).toHaveLength(0);
+    }
+    const overflow = root.findByProps({ testID: 'provider-overflow' });
+    expect(overflow.findAllByProps({ children: `+${hidden}` }).length).toBeGreaterThan(0);
+  });
+
+  it('names every provider when they all fit, with no overflow badge', () => {
+    const root = render(
+      <MovieCard
+        movie={{ ...mockMovieWithVideo, providers: ['Netflix', 'Max', 'Hulu'] }}
+        width={360}
+        height={720}
+        active
+      />
+    );
+
+    const row = root.findByProps({ testID: 'provider-row' });
+    for (const provider of ['Netflix', 'Max', 'Hulu']) {
+      expect(row.findAllByProps({ children: provider }).length).toBeGreaterThan(0);
+    }
+    expect(() => root.findByProps({ testID: 'provider-overflow' })).toThrow();
+  });
+});
+
+describe('fitProviders (Issue #8)', () => {
+  it('drops long names into the +N count rather than ellipsizing short ones', () => {
+    // Three names totalling far more than a 360pt card can show.
+    const { shown, hidden } = fitProviders(
+      ['Netflix', 'Paramount+ Roku Premium Channel', 'Amazon Prime Video with Ads'],
+      360
+    );
+    expect(shown).toContain('Netflix');
+    expect(shown.length + hidden).toBe(3);
+    expect(hidden).toBeGreaterThan(0);
+  });
+
+  it('always shows at least one name, however long it is', () => {
+    const { shown, hidden } = fitProviders(['Paramount+ Roku Premium Channel'], 320);
+    expect(shown).toEqual(['Paramount+ Roku Premium Channel']);
+    expect(hidden).toBe(0);
+  });
+
+  it('handles an empty provider list', () => {
+    expect(fitProviders([], 360)).toEqual({ shown: [], hidden: 0 });
   });
 });
