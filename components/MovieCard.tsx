@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -43,8 +43,57 @@ const WHY_BADGE_LINE_HEIGHT = 13;
 const WHY_BADGE_GAP = 2;
 const WHY_LINE_HEIGHT = 18;
 const WHY_SLOT_HEIGHT = WHY_BADGE_LINE_HEIGHT + WHY_BADGE_GAP + WHY_LINE_HEIGHT * 2;
-/** Named provider badges shown before the rest collapse into a "+N" badge. */
-const MAX_PROVIDER_BADGES = 3;
+/**
+ * Provider badges are fitted to one line by name length rather than by a fixed
+ * count: TMDB mixes "Max" with "Paramount+ Roku Premium Channel", so a fixed
+ * count either wastes the row or — with flexShrink sharing the overflow — leaves
+ * the short names ellipsized down to "N…". A name is shown whole or not at all;
+ * the rest collapse into "+N". The estimate only has to be close, since every
+ * badge still clips to one line if it comes out narrow.
+ */
+const CHROME_SIDE_INSET = 20;
+const PROVIDER_GAP = 6;
+/** paddingHorizontal 8 + 1pt border, both sides. */
+const PROVIDER_BADGE_PADDING = 18;
+/** Rough advance of the 10pt semibold provider name, per character. */
+const PROVIDER_CHAR_WIDTH = 6;
+/** Enough for "+12". */
+const PROVIDER_OVERFLOW_WIDTH = 40;
+
+function providerBadgeWidth(name: string): number {
+  return PROVIDER_BADGE_PADDING + name.length * PROVIDER_CHAR_WIDTH;
+}
+
+/**
+ * Split providers into the names that fit on one row and a count for the rest.
+ * Always shows at least one, even if that single name has to ellipsize.
+ */
+export function fitProviders(
+  providers: string[],
+  cardWidth: number
+): { shown: string[]; hidden: number } {
+  const budget = cardWidth - CHROME_SIDE_INSET * 2;
+  const shown: string[] = [];
+  let used = 0;
+
+  for (const name of providers) {
+    const next = providerBadgeWidth(name) + (shown.length ? PROVIDER_GAP : 0);
+    if (shown.length > 0 && used + next > budget) break;
+    used += next;
+    shown.push(name);
+  }
+
+  // Give back whatever the "+N" badge needs, but never the last name.
+  while (
+    shown.length > 1 &&
+    shown.length < providers.length &&
+    used + PROVIDER_GAP + PROVIDER_OVERFLOW_WIDTH > budget
+  ) {
+    used -= providerBadgeWidth(shown.pop()!) + PROVIDER_GAP;
+  }
+
+  return { shown, hidden: providers.length - shown.length };
+}
 
 /**
  * Backdrop candidates for a trailer, tried in order. YouTube serves every
@@ -176,6 +225,11 @@ export function MovieCard({
       setInternalMuted((prev) => !prev);
     }
   }, [onToggleMute]);
+
+  const providerFit = useMemo(
+    () => fitProviders(movie.providers ?? [], width),
+    [movie.providers, width]
+  );
 
   const accentColor = movie.negativeColor || '#f59e0b';
   const themeBase = movie.themeColor || '#080d1a';
@@ -387,26 +441,23 @@ export function MovieCard({
         </View>
 
         {/* Where-to-watch badges. Always a single row: TMDB hands back up to
-            nine providers with names as long as "Paramount+ Roku Premium
-            Channel", and a wrapping row would change the chrome's height from
-            card to card. The first three share the row and ellipsize; the rest
-            collapse into "+N". */}
+            nine providers per title, and a wrapping row would change the
+            chrome's height from card to card — which moves the video window
+            above it. See fitProviders. */}
         {movie.providers && movie.providers.length > 0 && (
           <View style={styles.providersSection}>
             <Text style={styles.providersLabel}>STREAMING ON</Text>
             <View testID="provider-row" style={styles.providerRow}>
-              {movie.providers.slice(0, MAX_PROVIDER_BADGES).map((prov) => (
+              {providerFit.shown.map((prov) => (
                 <View key={prov} style={[styles.providerBadge, styles.providerBadgeShrink]}>
                   <Text style={styles.providerName} numberOfLines={1}>
                     {prov}
                   </Text>
                 </View>
               ))}
-              {movie.providers.length > MAX_PROVIDER_BADGES && (
+              {providerFit.hidden > 0 && (
                 <View testID="provider-overflow" style={styles.providerBadge}>
-                  <Text style={styles.providerName}>
-                    {`+${movie.providers.length - MAX_PROVIDER_BADGES}`}
-                  </Text>
+                  <Text style={styles.providerName}>{`+${providerFit.hidden}`}</Text>
                 </View>
               )}
             </View>

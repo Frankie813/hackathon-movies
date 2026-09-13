@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
-import { MovieCard } from '@/components/MovieCard';
+import { fitProviders, MovieCard } from '@/components/MovieCard';
 import { WARM_MS } from '@/components/TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
@@ -479,14 +479,59 @@ describe('card content overlay (Issue #8)', () => {
     // No wrapping — a second row would change the chrome's height per card.
     expect(StyleSheet.flatten(row.props.style).flexWrap).toBe('nowrap');
 
-    // First three named, each ellipsizing rather than wrapping.
-    for (const provider of MANY_PROVIDERS.slice(0, 3)) {
+    // Whatever fits is named in full, not shrunk down to an initial.
+    const { shown, hidden } = fitProviders(MANY_PROVIDERS, 360);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(hidden).toBe(MANY_PROVIDERS.length - shown.length);
+    for (const provider of shown) {
       const [badge] = row.findAllByProps({ children: provider });
       expect(badge.props.numberOfLines).toBe(1);
     }
-    // The remaining two are summarised, not silently dropped.
-    expect(row.findAllByProps({ children: 'fuboTV' })).toHaveLength(0);
+    // The rest are summarised, not silently dropped.
+    for (const provider of MANY_PROVIDERS.slice(shown.length)) {
+      expect(row.findAllByProps({ children: provider })).toHaveLength(0);
+    }
     const overflow = root.findByProps({ testID: 'provider-overflow' });
-    expect(overflow.findAllByProps({ children: '+2' }).length).toBeGreaterThan(0);
+    expect(overflow.findAllByProps({ children: `+${hidden}` }).length).toBeGreaterThan(0);
+  });
+
+  it('names every provider when they all fit, with no overflow badge', () => {
+    const root = render(
+      <MovieCard
+        movie={{ ...mockMovieWithVideo, providers: ['Netflix', 'Max', 'Hulu'] }}
+        width={360}
+        height={720}
+        active
+      />
+    );
+
+    const row = root.findByProps({ testID: 'provider-row' });
+    for (const provider of ['Netflix', 'Max', 'Hulu']) {
+      expect(row.findAllByProps({ children: provider }).length).toBeGreaterThan(0);
+    }
+    expect(() => root.findByProps({ testID: 'provider-overflow' })).toThrow();
+  });
+});
+
+describe('fitProviders (Issue #8)', () => {
+  it('drops long names into the +N count rather than ellipsizing short ones', () => {
+    // Three names totalling far more than a 360pt card can show.
+    const { shown, hidden } = fitProviders(
+      ['Netflix', 'Paramount+ Roku Premium Channel', 'Amazon Prime Video with Ads'],
+      360
+    );
+    expect(shown).toContain('Netflix');
+    expect(shown.length + hidden).toBe(3);
+    expect(hidden).toBeGreaterThan(0);
+  });
+
+  it('always shows at least one name, however long it is', () => {
+    const { shown, hidden } = fitProviders(['Paramount+ Roku Premium Channel'], 320);
+    expect(shown).toEqual(['Paramount+ Roku Premium Channel']);
+    expect(hidden).toBe(0);
+  });
+
+  it('handles an empty provider list', () => {
+    expect(fitProviders([], 360)).toEqual({ shown: [], hidden: 0 });
   });
 });
