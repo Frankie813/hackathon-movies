@@ -40,6 +40,10 @@ function tabBarFor(focusedRoute: string): React.ReactNode {
     { key: 'saved-1', name: 'saved' },
   ];
   const index = routes.findIndex((route) => route.name === focusedRoute);
+  // Without this, a typo'd route name yields index -1 → routes[-1] is undefined
+  // → the layout renders the bar, and the "every other tab" case passes for the
+  // wrong reason.
+  if (index < 0) throw new Error(`no route named ${focusedRoute}`);
   const tabBar = tabs.props.tabBar as (props: unknown) => React.ReactNode;
   return tabBar({ state: { index, routes }, descriptors: {}, navigation: {} });
 }
