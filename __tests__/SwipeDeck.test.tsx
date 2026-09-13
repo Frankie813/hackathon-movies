@@ -197,6 +197,30 @@ describe('SwipeDeck unplayable cards', () => {
   });
 });
 
+describe('SwipeDeck session order (#96)', () => {
+  /** The deck order a fresh mount deals, with `random` behind makeJitter(). */
+  function dealtOrder(random: () => number): number[] {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    const onUpcoming = jest.fn<void, [typeof SEED_MOVIES]>();
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} onUpcoming={onUpcoming} />);
+    });
+    const top = cardsByActive(tree!.root).top[0].props.movie.id as number;
+    act(() => tree!.unmount());
+    tree = null;
+    return [top];
+  }
+
+  it('does not open on the same card every session', () => {
+    const tops = new Set<number>();
+    for (let seed = 1; seed <= 12; seed += 1) {
+      let state = seed;
+      tops.add(dealtOrder(() => ((state = (state * 1664525 + 1013904223) % 4294967296) / 4294967296))[0]);
+    }
+    expect(tops.size).toBeGreaterThan(1);
+  });
+});
+
 describe('SwipeDeck deck cap (#97)', () => {
   const { seedCandidates } = jest.requireMock('@/src/lib/candidates') as {
     seedCandidates: jest.Mock;
