@@ -33,6 +33,7 @@ import type { Movie, TasteVector } from '@/types';
 import { applySwipe, rank } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
 import { exploreRank } from '@/src/lib/explore';
+import { rankedCandidates } from '@/src/lib/gemini';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
@@ -238,8 +239,23 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // ids are behind the user or its pool cap counts them as live cards.
         swiped: currentDeck.slice(0, nextIndex).map((m) => m.id),
       })
+        // #13 came back empty: the related-title pool is dry, which is the one
+        // case #23's Gemini recommender is for. Every title it returns has
+        // already been resolved to a real TMDB movie; offline it resolves [].
+        .then((fresh) =>
+          // `mounted` too: if the deck has been left while #13 was in flight,
+          // there is no screen to top up, and the fallback would spend a Gemini
+          // request plus eight TMDB searches on it.
+          fresh.length > 0 || !mounted.current
+            ? fresh
+            : rankedCandidates(taste.current, liked, { exclude: currentDeck.map((m) => m.id) })
+        )
         .then((fresh) => {
-          if (fresh.length > 0 && mounted.current) setDeck((d) => [...d, ...fresh]);
+          if (fresh.length === 0 || !mounted.current) return;
+          setDeck((d) => {
+            const have = new Set(d.map((m) => m.id));
+            return [...d, ...fresh.filter((m) => !have.has(m.id))];
+          });
         })
         .catch(() => {
           // seedCandidates() is documented not to reject. If that ever changes,
