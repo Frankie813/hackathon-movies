@@ -759,7 +759,12 @@ const styles = StyleSheet.create({
   },
   topBar: {
     position: 'absolute',
-    top: 50,
+    // The Dynamic Island's bottom edge sits ~48pt down on the Pro phones, so
+    // the old 50 left the wordmark grazing it. The app carries no safe-area
+    // provider to read a real inset from (see app/(tabs)/index.tsx's footer),
+    // so this is a fixed offset: ~20pt of air below the island, and still
+    // clear of the 47pt status bar on the non-island phones.
+    top: 68,
     left: 20,
     right: 20,
     flexDirection: 'row',
