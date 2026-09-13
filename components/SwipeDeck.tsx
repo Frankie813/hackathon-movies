@@ -728,13 +728,6 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       {/* Floating Top Header Bar */}
       <View style={styles.topBar} pointerEvents="box-none">
         <Text style={styles.brandTitle}>MOVIEMATCH</Text>
-        <View style={[styles.counterPill, { borderColor: `${currentAccent}66` }]}>
-          <Text style={[styles.counterText, { color: currentAccent }]}>
-            {deck.length > 0 && !isDone
-              ? `${currentIndex + 1} / ${deck.length}`
-              : `${deck.length} / ${deck.length}`}
-          </Text>
-        </View>
       </View>
 
       {/* Floating Bottom Action Buttons (Scaled down 30%, bottom: 98 above floating tab bar) */}
@@ -817,7 +810,12 @@ const styles = StyleSheet.create({
   },
   topBar: {
     position: 'absolute',
-    top: 50,
+    // The Dynamic Island's bottom edge sits ~48pt down on the Pro phones, so
+    // the old 50 left the wordmark grazing it. The app carries no safe-area
+    // provider to read a real inset from (see app/(tabs)/index.tsx's footer),
+    // so this is a fixed offset: ~20pt of air below the island, and still
+    // clear of the 47pt status bar on the non-island phones.
+    top: 68,
     left: 20,
     right: 20,
     flexDirection: 'row',
@@ -830,17 +828,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: 2,
-  },
-  counterPill: {
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  counterText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   deckArea: {
     flex: 1,
