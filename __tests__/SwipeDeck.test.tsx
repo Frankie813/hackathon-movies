@@ -14,7 +14,7 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 //   - Math.random is stubbed above EPSILON so exploreRank() takes its greedy
 //     branch (#14). Left live, roughly one run in eight promotes a random card
 //     that was deliberately never pre-mounted.
-//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 5, so the first
+//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 10, so the first
 //     swipe would otherwise fire the TMDB top-up (#13), which resolves on its
 //     own schedule and appends to the deck mid-assertion.
 
@@ -235,6 +235,34 @@ describe('SwipeDeck deck cap (#97)', () => {
     expect(await swipeToEnd(ref, onSwipedAll)).toBe(9);
     expect(seedCandidates).toHaveBeenCalled();
     seedCandidates.mockReset();
+    seedCandidates.mockImplementation(async () => []);
+  });
+
+  it('waits on a top-up that lands after the last card, then shows the new cards', async () => {
+    let land!: (movies: typeof extra) => void;
+    seedCandidates.mockImplementationOnce(() => new Promise((resolve) => { land = resolve; }));
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={30} onSwipedAll={onSwipedAll} />
+      );
+    });
+    const text = () =>
+      tree!.root.findAll((n) => typeof n.props.children === 'string').map((n) => n.props.children);
+
+    // Swipe the whole deck faster than the top-up answers.
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(SEED_MOVIES.length);
+    expect(text()).toContain('Finding more movies for you…');
+    expect(text()).not.toContain('DECK COMPLETED');
+
+    await act(async () => {
+      land(extra);
+      for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    });
+    const top = cardsByActive(tree!.root).top;
+    expect(top).toHaveLength(1);
+    expect(top[0].props.movie.id).toBeGreaterThanOrEqual(800000);
     seedCandidates.mockImplementation(async () => []);
   });
 

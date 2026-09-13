@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -102,13 +103,12 @@ const DETAILS_SWIPE_MAX_DRIFT = 60;
 const COLD_TASTE: TasteVector = {};
 
 /**
- * Unseen cards left before we ask #13 for more. Low enough that a full deck
- * never triggers a network call, high enough that the request has several
- * swipes to land first: seedCandidates() can take up to 8s on venue Wi-Fi, and
- * if the deck empties before it returns the user sees "DECK COMPLETED" flash
- * and then get replaced — which would be a bad beat to hit in front of judges.
+ * Unseen cards left before we ask #13 for more. High enough that the request
+ * has many swipes to land first: a top-up hydrates ~36 related titles and can
+ * take up to 8s on venue Wi-Fi, and at 5 a quick thumb emptied the deck before
+ * it came back. With #97's 20-card deck this asks after the 10th swipe.
  */
-const LOW_WATER = 5;
+const LOW_WATER = 10;
 
 export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function SwipeDeck(
   {
@@ -141,6 +141,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // by the current taste vector, so the order here is not load-bearing.
   const likedRef = useRef<Movie[]>([]);
   const seedingRef = useRef(false);
+  /** Mirrors seedingRef for render: the end of the deck waits on a top-up in flight. */
+  const [toppingUp, setToppingUp] = useState(false);
   /**
    * Likes at the last seeding attempt. An attempt that came back empty (every
    * suggestion already in the deck, or the Wi-Fi is down) would otherwise retry
@@ -273,6 +275,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       if (seedingRef.current || seededAtLikeCount.current === liked.length) return;
 
       seedingRef.current = true;
+      setToppingUp(true);
       seededAtLikeCount.current = liked.length;
 
       seedCandidates(taste.current, liked, {
@@ -307,6 +310,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         })
         .finally(() => {
           seedingRef.current = false;
+          if (mounted.current) setToppingUp(false);
         });
     },
     [autoSeed, maxCards]
@@ -353,6 +357,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       if (nextIndex >= deck.length) {
         setIsTransitioning(false);
         isAnimating.value = false;
+        // No card to fade in now, but a top-up still in flight can append
+        // some. Left at 0, those cards would arrive invisible and the deck
+        // would look finished while it has cards.
+        nextCardOpacity.value = 1;
         onSwipedAll?.();
         return;
       }
@@ -625,7 +633,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       {/* Full-Screen Deck Viewport */}
       <View style={[styles.deckArea, { width: cardW, height: cardH }]}>
-        {isDone ? (
+        {isDone && toppingUp ? (
+          <View style={[styles.emptyCard, { width: cardW - 32, height: cardH * 0.6 }]}>
+            <ActivityIndicator color={currentAccent} />
+            <Text style={[styles.emptySubtitle, { marginTop: 16 }]}>Finding more movies for you…</Text>
+          </View>
+        ) : isDone ? (
           <View style={[styles.emptyCard, { width: cardW - 32, height: cardH * 0.6 }]}>
             <Text style={styles.emptyEmoji}>🎉</Text>
             <Text style={styles.emptyTitle}>DECK COMPLETED</Text>

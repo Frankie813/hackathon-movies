@@ -183,7 +183,7 @@ const RERANKED_TOP_ID = FIRST_ID + PAGE_SIZE;
 const UNRANKED_TOP_ID = FIRST_ID + 1;
 
 /**
- * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (5), which is
+ * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (10), which is
  * what makes #13's top-up fire. Anything shorter never calls fetch() again
  * after the deck has landed, so a test that only swipes a handful of cards
  * would report on a dead network without ever touching one. Four short of the
