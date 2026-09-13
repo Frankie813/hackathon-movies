@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
+import { MoodInput, type AppliedMood } from '@/components/MoodInput';
 import { SwipeDeck } from '@/components/SwipeDeck';
 import { SEED_MOVIES } from '@/data/seedMovies';
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
+import { seedMoviesWithVideo } from '@/lib/seed';
 import { getDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
 // Bundled tags only (#39): the swipe loop never spends an image request.
-import { cachedVibeTags } from '@/src/lib/gemini';
+import { cachedVibeTags, type MoodFilters } from '@/src/lib/gemini';
 import {
   flushTaste,
   loadTaste,
@@ -37,6 +39,25 @@ const withColors = (m: Movie): Movie => {
  * clip. (The taste vector re-ranks all of this anyway; the order here only
  * decides ties, i.e. the cold start.)
  */
+/** The exact deck getDeck() hands back on every fallback path, in its order. */
+const SEED_FALLBACK_KEY = seedMoviesWithVideo.map((m) => m.id).join(',');
+
+/**
+ * True when getDeck() answered from the offline catalog rather than /discover
+ * — a dead network, an unset token, or a filtered page that came back empty.
+ * A fixed catalog cannot honour /discover parameters, so a mood that lands
+ * here has not been applied to anything, and #11 must say so rather than
+ * relabel the same deck.
+ *
+ * Checked this way because there is no flag for it: isOffline() stays false on
+ * the empty-page path, since TMDB did answer. Compare before orderDeck(),
+ * which reorders. Ordered, not set-wise: a filtered deck too small for
+ * MIN_DECK is padded from the same catalog, and that ordering differs.
+ */
+function isSeedFallback(movies: Movie[]): boolean {
+  return movies.map((m) => m.id).join(',') === SEED_FALLBACK_KEY;
+}
+
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
     withColors,
@@ -52,10 +73,19 @@ export default function SwipeScreen() {
   // null means "still loading". getDeck() never rejects and is bounded by its
   // own 8s operation budget; offline it answers with seed in ~3s.
   const [deck, setDeck] = useState<Movie[] | null>(null);
+  // The mood filtering the deck, if any (#11). null is the default deck.
+  const [mood, setMood] = useState<AppliedMood | null>(null);
+  /**
+   * Bumped by every mood-driven reload. The boot fetch below checks it before
+   * it commits, so a slow first /discover can never land on top of a deck the
+   * user has since re-asked for.
+   */
+  const deckSeq = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
     void getDeck().then((movies) => {
-      if (!cancelled) setDeck(orderDeck(movies));
+      if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
     });
     return () => {
       cancelled = true;
@@ -65,6 +95,14 @@ export default function SwipeScreen() {
   // null means "still hydrating" — the deck must not mount before this lands
   // or the first cards a judge sees were ranked against an empty vector (#18).
   const [taste, setTaste] = useState<TasteVector | null>(null);
+  /**
+   * The live vector, which `taste` deliberately is not: `taste` feeds
+   * SwipeDeck's `initialTaste`, and that prop resets the deck when it changes,
+   * so it must not move on every swipe. A mood reload re-seeds the deck from
+   * this instead, or the swap would silently roll the session's learning back
+   * to whatever was on disk at boot.
+   */
+  const tasteRef = useRef<TasteVector>({});
   // Sign-in has no deadline of its own: loadTaste() gives up after
   // LOAD_TIMEOUT_MS, but nothing bounds signInAnonymously(). On the venue
   // Wi-Fi that accepts a connection and then swallows it, it can stay pending
@@ -90,7 +128,9 @@ export default function SwipeScreen() {
 
     let cancelled = false;
     void loadTaste(uid ?? '').then((stored) => {
-      if (!cancelled) setTaste(stored);
+      if (cancelled) return;
+      tasteRef.current = stored;
+      setTaste(stored);
     });
 
     return () => {
@@ -111,10 +151,48 @@ export default function SwipeScreen() {
 
   const handleTasteChange = useCallback(
     (vector: TasteVector) => {
+      tasteRef.current = vector;
       if (uid) void saveTaste(uid, vector);
     },
     [uid],
   );
+
+  /**
+   * Swap the deck for a freshly fetched one (#11). `taste` is re-seeded in the
+   * same commit as `deck` because SwipeDeck resets its internal vector to
+   * `initialTaste` whenever `movies` changes — handing it the stale boot value
+   * would throw away everything this session's swipes taught it.
+   */
+  const swapDeck = useCallback((movies: Movie[]) => {
+    setTaste(tasteRef.current);
+    setDeck(orderDeck(movies));
+  }, []);
+
+  /**
+   * A mood from #22, turned into a deck. Returns false when the filters never
+   * reached /discover — showing the same catalog under a new label would be a
+   * worse answer than admitting the mood didn't take.
+   */
+  const applyMood = useCallback(
+    async (filters: MoodFilters, text: string) => {
+      const seq = (deckSeq.current += 1);
+      const movies = await getDeck(filters);
+      if (seq !== deckSeq.current) return true;
+      if (isSeedFallback(movies)) return false;
+      swapDeck(movies);
+      setMood({ text, tone: filters.tone });
+      return true;
+    },
+    [swapDeck],
+  );
+
+  const clearMood = useCallback(async () => {
+    const seq = (deckSeq.current += 1);
+    const movies = await getDeck();
+    if (seq !== deckSeq.current) return;
+    swapDeck(movies);
+    setMood(null);
+  }, [swapDeck]);
 
   // One small write per swipe onto this member's session document (#16).
   // Undebounced on purpose: the other phone reacting within a second is the
@@ -178,22 +256,30 @@ export default function SwipeScreen() {
   }
 
   return (
-    <SwipeDeck
-      movies={deck}
-      initialTaste={taste}
-      onTasteChange={handleTasteChange}
-      onSwipeLeft={handleSwipeLeft}
-      onSwipeRight={handleSwipeRight}
-      onSwipedAll={handleSwipedAll}
-      onUpcoming={handleUpcoming}
-      whyFor={whyFor}
-      expectWhyLine={expectWhyLine}
-      vibeFor={cachedVibeTags}
-    />
+    <View style={styles.screen}>
+      <SwipeDeck
+        movies={deck}
+        initialTaste={taste}
+        onTasteChange={handleTasteChange}
+        onSwipeLeft={handleSwipeLeft}
+        onSwipeRight={handleSwipeRight}
+        onSwipedAll={handleSwipedAll}
+        onUpcoming={handleUpcoming}
+        whyFor={whyFor}
+        expectWhyLine={expectWhyLine}
+        vibeFor={cachedVibeTags}
+      />
+      {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
+          nothing here is ever composited over the card's YouTube player. */}
+      <MoodInput active={mood} onApply={applyMood} onClear={clearMood} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     backgroundColor: '#080d1a',

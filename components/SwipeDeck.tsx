@@ -556,6 +556,31 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     return { opacity };
   });
 
+  /**
+   * A card whose trailer cannot play — embedding revoked by the uploader
+   * (YouTube 101/150), a dead key, a load timeout — is dropped from the deck
+   * rather than left in it as a static poster. This is a clip-first app, and
+   * the seed catalog goes stale on its own: scripts/curate.mjs does verify
+   * `status.embeddable` when it builds seed.json, but an uploader can revoke
+   * embedding afterwards, which is what happened to The Lion King's clip.
+   *
+   * Only cards ahead of the one on screen are removed. The top card keeps
+   * MovieCard's poster fallback: it is usually mid-gesture by the time an
+   * error lands, and having it vanish under the user's thumb reads as a bug.
+   * In practice the deck pre-mounts the next one or two cards precisely so
+   * their trailers buffer early, so a bad title is normally caught and
+   * dropped while it is still invisible.
+   */
+  const handleCardFailed = useCallback((movie: Movie) => {
+    setDeck((current) => {
+      const at = current.findIndex((m) => m.id === movie.id);
+      // Never touch the consumed prefix or the top card: callback indices and
+      // the end-of-deck check are both counted against it.
+      if (at <= currentIndex) return current;
+      return [...current.slice(0, at), ...current.slice(at + 1)];
+    });
+  }, [currentIndex]);
+
   const renderMovieContent = useCallback(
     (movie: Movie, index: number, active: boolean) => {
       if (renderCard) {
@@ -571,10 +596,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           whyLine={whyFor ? whyFor(movie) : undefined}
           expectWhyLine={expectWhyLine}
           vibeTags={vibeFor?.(movie)}
+          onCardFailed={handleCardFailed}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed]
   );
 
   return (

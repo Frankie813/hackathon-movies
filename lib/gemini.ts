@@ -26,9 +26,10 @@ export const gemini = getGenerativeModel(ai, { model: GEMINI_MODEL });
 
 const WHY_SYSTEM_PROMPT =
   'You are Reel, a witty film concierge. Given a user\'s liked movies and one ' +
-  'candidate, explain in ONE sentence (max 20 words) why they would like it. ' +
-  'No spoilers. Never name a film other than the candidate. Address the user ' +
-  'as "you". Return only the JSON object.';
+  'candidate, explain in ONE sentence (at most 14 words and 90 characters) why ' +
+  'they would like it. Being short matters more than being complete: the line ' +
+  'is clipped on screen if it runs long. No spoilers. Never name a film other ' +
+  'than the candidate. Address the user as "you". Return only the JSON object.';
 
 /**
  * Mime type *and* schema together are what make the response parseable —
@@ -37,7 +38,7 @@ const WHY_SYSTEM_PROMPT =
 const WHY_SCHEMA = Schema.object({
   properties: {
     reason: Schema.string({
-      description: 'One sentence, at most 20 words, no spoilers.',
+      description: 'One sentence, at most 14 words and 90 characters, no spoilers.',
     }),
     confidence: Schema.number({
       description: 'How well the candidate fits the likes, 0 to 1.',
@@ -48,7 +49,18 @@ const WHY_SCHEMA = Schema.object({
 });
 
 /** Hard cap from the acceptance criteria — enforced locally, not just asked for. */
-const MAX_WORDS = 20;
+const MAX_WORDS = 14;
+
+/**
+ * ...and a character cap, because a word count is a poor proxy for width.
+ * MovieCard gives the line a fixed two-line slot (WHY_SLOT_HEIGHT) at 13pt
+ * italic and clips the overflow with `numberOfLines={2}`, which cuts mid-word.
+ * Measured on a 402pt card: 111 characters wrapped to exactly two lines, 114
+ * was cut. A 375pt phone has ~7% less room, so this leaves real headroom
+ * rather than sitting on the observed edge. Excludes the quotation marks
+ * MovieCard adds and the ellipsis below, which cost 3 more in the worst case.
+ */
+const MAX_CHARS = 90;
 
 /** Likes to send. More than this is prompt noise and the taste is already clear. */
 const MAX_LIKES = 5;
@@ -153,15 +165,33 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Collapses whitespace and enforces the 20-word cap ourselves. The prompt asks
- * for it and the model usually obliges, but "usually" is not an acceptance
- * criterion, and a paragraph would overflow the card chrome.
+ * Collapses whitespace and enforces both caps ourselves. The prompt asks for
+ * them and the model usually obliges, but "usually" is not an acceptance
+ * criterion, and an over-long line is silently cut mid-word by the card.
+ *
+ * Trimming happens on whole words, so the result still reads as a phrase; the
+ * trailing ellipsis is what tells the user the thought was cut, rather than a
+ * sentence that appears to simply stop.
  */
 function toWhyLine(reason: string): string | null {
   const words = reason.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   if (words.length === 0) return null;
-  if (words.length <= MAX_WORDS) return words.join(' ');
-  return `${words.slice(0, MAX_WORDS).join(' ').replace(/[,;:.!?—-]+$/, '')}…`;
+
+  const kept: string[] = [];
+  let length = 0;
+  for (const word of words) {
+    if (kept.length === MAX_WORDS) break;
+    const grown = length === 0 ? word.length : length + 1 + word.length;
+    if (grown > MAX_CHARS) break;
+    kept.push(word);
+    length = grown;
+  }
+
+  // One word longer than the whole budget. Vanishingly unlikely, but returning
+  // null here would drop a line the card is already holding space for.
+  if (kept.length === 0) return `${words[0].slice(0, MAX_CHARS)}…`;
+  if (kept.length === words.length) return kept.join(' ');
+  return `${kept.join(' ').replace(/[,;:.!?—-]+$/, '')}…`;
 }
 
 /**
@@ -285,10 +315,15 @@ export async function whyLine(candidate: Movie, likes: Movie[]): Promise<string 
   if (pending) return pending;
 
   const work = (async (): Promise<string | null> => {
+    // Re-clamped on the way out, not trusted as written: lines cached by an
+    // earlier build were capped at 20 words and would otherwise keep rendering
+    // cut off forever. Re-trimming beats bumping the cache key, which would
+    // throw away every line on the device and spend the quota re-earning them.
     const stored = await readDisk(candidate.id);
-    if (stored) {
-      cacheWhyLine(candidate.id, stored);
-      return stored;
+    const clamped = stored ? toWhyLine(stored) : null;
+    if (clamped) {
+      cacheWhyLine(candidate.id, clamped);
+      return clamped;
     }
 
     // Over quota: answer immediately rather than queue behind a wall we know is
