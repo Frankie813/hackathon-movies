@@ -621,7 +621,14 @@ export function normalizeTitle(title: string): string {
 const YEAR_TOLERANCE = 1;
 
 function yearFits(year: number, wanted?: number): boolean {
-  return !wanted || !year || Math.abs(year - wanted) <= YEAR_TOLERANCE;
+  // No year asked for: any candidate passes.
+  if (!wanted) return true;
+  // Asked for one, but this candidate has no usable release_date. TMDB search
+  // pages carry undated stubs, shorts and unreleased entries that share a title
+  // with a famous film, and letting those through would defeat the whole guard
+  // — an undated "Dune" would satisfy a request for the 2021 one.
+  if (!year) return false;
+  return Math.abs(year - wanted) <= YEAR_TOLERANCE;
 }
 
 /**
@@ -665,6 +672,15 @@ export async function searchMovie(title: string, year?: number): Promise<Movie |
     const movie = await tryHydrate(id, deadline);
     if (movie?.video) return movie;
   }
+  // The search matched real films, but not one of them could be hydrated. On the
+  // venue Wi-Fi PLAN.md §L rates the top risk, that is the expected shape: the
+  // small search request squeaks through while every fat
+  // /movie/{id}?append_to_response=… times out. The seed catalog's ids are real
+  // TMDB ids with pre-validated trailers, so it beats returning null.
+  //
+  // An empty `ids` is the opposite case — TMDB answered and genuinely has no
+  // film by that exact title and year — and the seed must not overrule it.
+  if (ids.length > 0) return seedMoviesWithVideo.find(matches) ?? null;
   return null;
 }
 

@@ -8,6 +8,7 @@
 // The Movie objects handed back are TMDB's, never Gemini's text.
 
 import type { Movie, TasteVector } from '../types';
+import { isOverQuota } from '../../lib/quota';
 import { TMDB_GENRES } from './mood';
 
 /** Titles to ask for. Each costs a search and a hydration, so keep it small. */
@@ -108,7 +109,10 @@ export function parseSuggestions(raw: string): Suggestion[] {
     const title = typeof item?.title === 'string' ? item.title.trim() : '';
     if (!title || title.length > 200) continue;
     const year = Number.isInteger(item.year) && item.year > 1880 && item.year < 2100 ? item.year : undefined;
-    const key = `${title.toLowerCase()}|${year ?? ''}`;
+    // Keyed on the title alone: `year` is optional in the schema, so the same
+    // film can legally come back both with and without one. Keyed on both, that
+    // pair would burn two of the eight resolve slots on one movie.
+    const key = title.toLowerCase().replace(/\s+/g, ' ');
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ title, year });
@@ -138,10 +142,15 @@ export function createRankedCandidates({ generate, resolve }: RankedDependencies
 
     let resolved = cache.get(prompt);
     if (!resolved) {
+      // Already over the free tier: answer now. Falling through would spend a
+      // dynamic import of the Firebase model on a request we know is walled.
+      if (isOverQuota()) return [];
+
       let suggestions: Suggestion[];
       try {
         suggestions = parseSuggestions(await generate(prompt));
       } catch {
+        // A failed *call* is not memoized: the next like should try again.
         return [];
       }
       const movies = await Promise.all(
@@ -151,10 +160,12 @@ export function createRankedCandidates({ generate, resolve }: RankedDependencies
       resolved = movies.filter(
         (movie): movie is Movie => !!movie && Number.isInteger(movie.id) && !!movie.video?.key,
       );
-      if (resolved.length > 0) {
-        if (cache.size >= MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!);
-        cache.set(prompt, resolved);
-      }
+      // Cached even when empty. Gemini answered and none of it exists, so
+      // replaying the same prompt would re-spend a request plus eight TMDB
+      // round-trips to learn the same thing. The prompt carries the last likes,
+      // so the next like asks a different question anyway.
+      if (cache.size >= MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!);
+      cache.set(prompt, resolved);
     }
 
     const out: Movie[] = [];

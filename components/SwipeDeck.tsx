@@ -243,7 +243,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // case #23's Gemini recommender is for. Every title it returns has
         // already been resolved to a real TMDB movie; offline it resolves [].
         .then((fresh) =>
-          fresh.length > 0
+          // `mounted` too: if the deck has been left while #13 was in flight,
+          // there is no screen to top up, and the fallback would spend a Gemini
+          // request plus eight TMDB searches on it.
+          fresh.length > 0 || !mounted.current
             ? fresh
             : rankedCandidates(taste.current, liked, { exclude: currentDeck.map((m) => m.id) })
         )

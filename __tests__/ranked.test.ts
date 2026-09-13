@@ -10,6 +10,7 @@ import {
   RANKED_SCHEMA,
 } from '../src/lib/ranked';
 import type { Movie } from '../src/types';
+import { __resetQuotaCooldown, openQuotaCooldown } from '../lib/quota';
 
 function movie(id: number, title: string, year = 2010, extra: Partial<Movie> = {}): Movie {
   return {
@@ -30,7 +31,10 @@ const json = (value: unknown) => JSON.stringify(value);
 const liked = [movie(27205, 'Inception'), movie(157336, 'Interstellar', 2014)];
 const taste = { 'genre:878': 3, 'keyword:time travel': 2, 'genre:27': -2, 'cast:6193': 4 };
 
-beforeEach(() => resolve.mockClear());
+beforeEach(() => {
+  resolve.mockClear();
+  __resetQuotaCooldown();
+});
 
 describe('rankedCandidates (#23)', () => {
   it('returns only titles that resolved to a real TMDB id, in Gemini\'s order', async () => {
@@ -97,6 +101,51 @@ describe('rankedCandidates (#23)', () => {
   });
 });
 
+describe('quota wall (#23)', () => {
+  it('answers [] without calling Gemini while the shared cooldown is open', async () => {
+    // The wall is shared with #8's why lines, so it may already be open when the
+    // deck runs dry. Calling anyway would spend a dynamic import of the Firebase
+    // model plus a request we know is refused.
+    const generate = jest.fn(async () => json({ candidates: [{ title: 'Arrival' }] }));
+    openQuotaCooldown();
+    await expect(createRankedCandidates({ generate, resolve })(taste, liked)).resolves.toEqual([]);
+    expect(generate).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('serves an already-cached list even while walled', async () => {
+    const generate = jest.fn(async () => json({ candidates: [{ title: 'Arrival' }] }));
+    const rankedCandidates = createRankedCandidates({ generate, resolve });
+    await rankedCandidates(taste, liked);
+    openQuotaCooldown();
+    await expect(rankedCandidates(taste, liked)).resolves.toHaveLength(1);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('caching (#23)', () => {
+  it('memoizes an all-unresolvable response instead of replaying it', async () => {
+    // Eight invented titles cost a request and eight TMDB round-trips to learn
+    // nothing. Asking the identical question again should not re-spend that.
+    const generate = jest.fn(async () => json({ candidates: [{ title: 'The Quantum Heist of Neptune' }] }));
+    const rankedCandidates = createRankedCandidates({ generate, resolve });
+
+    await expect(rankedCandidates(taste, liked)).resolves.toEqual([]);
+    await expect(rankedCandidates(taste, liked)).resolves.toEqual([]);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not memoize a failed call — the next like tries again', async () => {
+    const generate = jest.fn(async () => { throw new Error('offline'); });
+    const rankedCandidates = createRankedCandidates({ generate, resolve });
+
+    await expect(rankedCandidates(taste, liked)).resolves.toEqual([]);
+    await expect(rankedCandidates(taste, liked)).resolves.toEqual([]);
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('parsing and prompt', () => {
   it('caps, dedupes and sanitises suggestions', () => {
     const many = Array.from({ length: 20 }, (_, i) => ({ title: `Film ${i}`, year: 2000 + i }));
@@ -105,6 +154,12 @@ describe('parsing and prompt', () => {
       candidates: [{ title: ' Arrival ', year: 2016 }, { title: 'arrival', year: 2016 }, { title: '' }, { year: 1999 },
         { title: 'Old', year: 12 }],
     }))).toEqual([{ title: 'Arrival', year: 2016 }, { title: 'Old', year: undefined }]);
+    // `year` is optional in the schema, so the same film can come back both with
+    // and without one. Keyed on title+year that pair would burn two of the eight
+    // resolve slots on one movie; the first (best-ranked) spelling wins.
+    expect(parseSuggestions(json({
+      candidates: [{ title: 'Arrival', year: 2016 }, { title: 'Arrival' }],
+    }))).toEqual([{ title: 'Arrival', year: 2016 }]);
     expect(parseSuggestions(json({ nope: [] }))).toEqual([]);
   });
 

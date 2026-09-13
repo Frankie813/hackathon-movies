@@ -217,6 +217,42 @@ describe('searchMovie (#23 title validation)', () => {
     await expect(tmdb.searchMovie("Le fabuleux destin d'Amelie Poulain", 2001)).resolves.toMatchObject({ id: 900004 });
   });
 
+  it('rejects an undated search result when a year was asked for', async () => {
+    // TMDB search pages carry undated stubs, shorts and unreleased entries that
+    // share a title with a famous film. Treating "no release_date" as "fits any
+    // year" would let one of those stand in for the film Gemini actually named.
+    const tmdb = loadSearch();
+    setFetch(searchFetch([{ id: 900005, title: 'Dune', release_date: '' }]));
+    await expect(tmdb.searchMovie('Dune', 2021)).resolves.toBeNull();
+    // With no year asked for there is nothing to contradict, so it still counts.
+    await expect(tmdb.searchMovie('Dune')).resolves.toMatchObject({ id: 900005 });
+  });
+
+  it('falls back to seed when the search lands but every hydration times out', async () => {
+    // Degraded venue Wi-Fi (PLAN.md §L): the small /search/movie request gets
+    // through while the fat append_to_response hydration does not. The seed has
+    // a real id and a pre-validated trailer, which beats returning null.
+    const tmdb = loadSearch();
+    setFetch(
+      jest.fn(async (url: string) => {
+        if (String(url).includes('/search/movie')) {
+          return { ok: true, status: 200, json: async () => ({ results: [{ id: 603, title: 'The Matrix', release_date: '1999-03-30' }] }) };
+        }
+        throw new TypeError('Network request failed');
+      }),
+    );
+    await expect(tmdb.searchMovie('The Matrix', 1999)).resolves.toMatchObject({ id: 603 });
+    expect(tmdb.isOffline()).toBe(false);
+  });
+
+  it('does not let seed overrule a search that genuinely found nothing', async () => {
+    // The opposite case: TMDB answered fine and has no such film. The seed must
+    // not resurrect a title the catalog just disowned.
+    const tmdb = loadSearch();
+    setFetch(searchFetch([{ id: 900006, title: 'Something Else', release_date: '1999-01-01' }]));
+    await expect(tmdb.searchMovie('The Matrix', 1999)).resolves.toBeNull();
+  });
+
   it('falls back to the seed catalog offline, and never marks the deck offline', async () => {
     const tmdb = loadSearch();
     setFetch(jest.fn(async () => { throw new TypeError('Network request failed'); }));
