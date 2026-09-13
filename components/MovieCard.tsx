@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -33,6 +33,67 @@ const DEFAULT_CHROME_TOP_FROM_BOTTOM = 420;
 /** Bottom inset of the floating content: clears the action buttons and the tab bar. */
 const CHROME_BOTTOM = 160;
 const OVERVIEW_LINE_HEIGHT = 21;
+/**
+ * The Gemini "why" line (#20) arrives long after the card has been laid out, so
+ * its slot is reserved up front at a fixed height: badge line + two lines of
+ * quote. An absent slot would grow the chrome when the line lands, and the
+ * chrome's measured top is what sizes the video window above it.
+ */
+const WHY_BADGE_LINE_HEIGHT = 13;
+const WHY_BADGE_GAP = 2;
+const WHY_LINE_HEIGHT = 18;
+const WHY_SLOT_HEIGHT = WHY_BADGE_LINE_HEIGHT + WHY_BADGE_GAP + WHY_LINE_HEIGHT * 2;
+/**
+ * Provider badges are fitted to one line by name length rather than by a fixed
+ * count: TMDB mixes "Max" with "Paramount+ Roku Premium Channel", so a fixed
+ * count either wastes the row or — with flexShrink sharing the overflow — leaves
+ * the short names ellipsized down to "N…". A name is shown whole or not at all;
+ * the rest collapse into "+N". The estimate only has to be close, since every
+ * badge still clips to one line if it comes out narrow.
+ */
+const CHROME_SIDE_INSET = 20;
+const PROVIDER_GAP = 6;
+/** paddingHorizontal 8 + 1pt border, both sides. */
+const PROVIDER_BADGE_PADDING = 18;
+/** Rough advance of the 10pt semibold provider name, per character. */
+const PROVIDER_CHAR_WIDTH = 6;
+/** Enough for "+12". */
+const PROVIDER_OVERFLOW_WIDTH = 40;
+
+function providerBadgeWidth(name: string): number {
+  return PROVIDER_BADGE_PADDING + name.length * PROVIDER_CHAR_WIDTH;
+}
+
+/**
+ * Split providers into the names that fit on one row and a count for the rest.
+ * Always shows at least one, even if that single name has to ellipsize.
+ */
+export function fitProviders(
+  providers: string[],
+  cardWidth: number
+): { shown: string[]; hidden: number } {
+  const budget = cardWidth - CHROME_SIDE_INSET * 2;
+  const shown: string[] = [];
+  let used = 0;
+
+  for (const name of providers) {
+    const next = providerBadgeWidth(name) + (shown.length ? PROVIDER_GAP : 0);
+    if (shown.length > 0 && used + next > budget) break;
+    used += next;
+    shown.push(name);
+  }
+
+  // Give back whatever the "+N" badge needs, but never the last name.
+  while (
+    shown.length > 1 &&
+    shown.length < providers.length &&
+    used + PROVIDER_GAP + PROVIDER_OVERFLOW_WIDTH > budget
+  ) {
+    used -= providerBadgeWidth(shown.pop()!) + PROVIDER_GAP;
+  }
+
+  return { shown, hidden: providers.length - shown.length };
+}
 
 /**
  * Backdrop candidates for a trailer, tried in order. YouTube serves every
@@ -57,7 +118,13 @@ interface MovieCardProps {
   /** Swipe-up state: replace the title block with the TMDB synopsis. */
   showDetails?: boolean;
   whyLine?: string;
-  onPressSpeaker?: (movie: Movie) => void;
+  /**
+   * True when a why line is on its way but has not arrived yet, so the slot is
+   * held open at its final height (#20). False — the deck has no Gemini line to
+   * give — drops the slot entirely rather than leaving a permanent gap above
+   * the genres, since without a line there is nothing to jump.
+   */
+  expectWhyLine?: boolean;
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
@@ -70,7 +137,7 @@ export function MovieCard({
   active = false,
   showDetails = false,
   whyLine,
-  onPressSpeaker,
+  expectWhyLine = false,
   onToggleMute,
   isMuted,
   onCardFailed,
@@ -166,6 +233,11 @@ export function MovieCard({
       setInternalMuted((prev) => !prev);
     }
   }, [onToggleMute]);
+
+  const providerFit = useMemo(
+    () => fitProviders(movie.providers ?? [], width),
+    [movie.providers, width]
+  );
 
   const accentColor = movie.negativeColor || '#f59e0b';
   const themeBase = movie.themeColor || '#080d1a';
@@ -346,24 +418,20 @@ export function MovieCard({
           )}
         </View>
 
-        {/* Gemini "Why you'll like this" slot + ElevenLabs Voice Read-Aloud Placeholder */}
-        {whyLine ? (
-          <View style={styles.whyWrapper}>
-            <View style={styles.whyHeaderRow}>
-              <Text style={styles.whyBadge}>WHY YOU'LL LIKE THIS</Text>
-              <Pressable
-                onPress={() => onPressSpeaker?.(movie)}
-                style={styles.speakerButton}
-                accessibilityLabel="Listen to Reel AI"
-              >
-                <Ionicons name="volume-medium" size={14} color={accentColor} />
-              </Pressable>
-            </View>
-            <Text style={styles.whyText} numberOfLines={2}>
-              "{whyLine}"
-            </Text>
+        {/* Gemini "Why you'll like this" slot (#20). Held open at its final
+            height while the line is in flight — see WHY_SLOT_HEIGHT. */}
+        {(whyLine || expectWhyLine) && (
+          <View testID="why-slot" style={styles.whySlot}>
+            {whyLine ? (
+              <>
+                <Text style={styles.whyBadge}>WHY YOU'LL LIKE THIS</Text>
+                <Text style={styles.whyText} numberOfLines={2}>
+                  "{whyLine}"
+                </Text>
+              </>
+            ) : null}
           </View>
-        ) : null}
+        )}
 
         {/* Tag pills: genres */}
         <View style={styles.tagRow}>
@@ -382,16 +450,26 @@ export function MovieCard({
           ))}
         </View>
 
-        {/* Where-to-watch badges */}
+        {/* Where-to-watch badges. Always a single row: TMDB hands back up to
+            nine providers per title, and a wrapping row would change the
+            chrome's height from card to card — which moves the video window
+            above it. See fitProviders. */}
         {movie.providers && movie.providers.length > 0 && (
           <View style={styles.providersSection}>
             <Text style={styles.providersLabel}>STREAMING ON</Text>
-            <View style={styles.providerRow}>
-              {movie.providers.slice(0, 4).map((prov) => (
-                <View key={prov} style={styles.providerBadge}>
-                  <Text style={styles.providerName}>{prov}</Text>
+            <View testID="provider-row" style={styles.providerRow}>
+              {providerFit.shown.map((prov) => (
+                <View key={prov} style={[styles.providerBadge, styles.providerBadgeShrink]}>
+                  <Text style={styles.providerName} numberOfLines={1}>
+                    {prov}
+                  </Text>
                 </View>
               ))}
+              {providerFit.hidden > 0 && (
+                <View testID="provider-overflow" style={styles.providerBadge}>
+                  <Text style={styles.providerName}>{`+${providerFit.hidden}`}</Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -533,33 +611,26 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  whyWrapper: {
+  whySlot: {
+    height: WHY_SLOT_HEIGHT,
     marginVertical: 4,
+    overflow: 'hidden',
     backgroundColor: 'transparent',
-  },
-  whyHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
   },
   whyBadge: {
     fontSize: 10,
+    lineHeight: WHY_BADGE_LINE_HEIGHT,
+    marginBottom: WHY_BADGE_GAP,
     fontWeight: '800',
     color: 'rgba(255, 255, 255, 0.65)',
     letterSpacing: 1.5,
-  },
-  speakerButton: {
-    padding: 3,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   whyText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#f3f4f6',
     fontStyle: 'italic',
-    lineHeight: 18,
+    lineHeight: WHY_LINE_HEIGHT,
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 6,
@@ -593,7 +664,8 @@ const styles = StyleSheet.create({
   },
   providerRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
     gap: 6,
   },
   providerBadge: {
@@ -603,6 +675,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  providerBadgeShrink: {
+    // Long names ellipsize to share one row instead of wrapping onto a second.
+    flexShrink: 1,
   },
   providerName: {
     fontSize: 10,

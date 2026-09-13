@@ -33,6 +33,7 @@ import type { Movie, TasteVector } from '@/types';
 import { applySwipe, rank } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
 import { exploreRank } from '@/src/lib/explore';
+import { rankedCandidates } from '@/src/lib/gemini';
 import { SEED_MOVIES } from '@/data/seedMovies';
 
 export interface SwipeDeckProps {
@@ -52,6 +53,21 @@ export interface SwipeDeckProps {
   onSwipedAll?: () => void;
   renderCard?: (movie: Movie, index: number, active: boolean) => React.JSX.Element;
   whyFor?: (movie: Movie) => string | undefined;
+  /**
+   * The card on screen plus the one or two the deck has pre-mounted behind it,
+   * whenever that set changes. #20 warms their why lines from here rather than
+   * from the swipe handler, which runs inside the gesture (AGENTS.md §4), and
+   * from here rather than the screen, which cannot see the deck's ranking.
+   *
+   * Must be referentially stable — it drives an effect.
+   */
+  onUpcoming?: (movies: Movie[]) => void;
+  /**
+   * Hold the why slot open on every card (#8). The screen owns this: only it
+   * knows whether Gemini has answered at all this session, and reserving space
+   * for a line that will never come is just a gap above the genres.
+   */
+  expectWhyLine?: boolean;
   /**
    * Pull related titles from TMDB (#13) as the deck runs low, so it does not
    * dead-end on "DECK COMPLETED" mid-demo. Off makes the deck exactly `movies`
@@ -97,6 +113,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     onSwipedAll,
     renderCard,
     whyFor,
+    onUpcoming,
+    expectWhyLine = false,
     autoSeed = true,
   },
   ref
@@ -170,6 +188,22 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deck, currentIndex, topMovie]);
 
+  // The cards a why line is worth spending a request on: the one being looked
+  // at, plus whatever is pre-mounted behind it. Deliberately not the whole deck
+  // — the free tier is 15 requests a minute (#20).
+  // Keyed by id, not by array identity: the mount-time re-rank replaces `deck`
+  // with an equal-but-new array, and the listener would otherwise be told the
+  // same three cards twice on every deck reset.
+  const announcedAhead = useRef('');
+  useEffect(() => {
+    if (!onUpcoming || !topMovie) return;
+    const ahead = [topMovie, ...nextCandidates];
+    const key = ahead.map((m) => m.id).join(',');
+    if (key === announcedAhead.current) return;
+    announcedAhead.current = key;
+    onUpcoming(ahead);
+  }, [onUpcoming, topMovie, nextCandidates]);
+
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
   const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
 
@@ -238,8 +272,23 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // ids are behind the user or its pool cap counts them as live cards.
         swiped: currentDeck.slice(0, nextIndex).map((m) => m.id),
       })
+        // #13 came back empty: the related-title pool is dry, which is the one
+        // case #23's Gemini recommender is for. Every title it returns has
+        // already been resolved to a real TMDB movie; offline it resolves [].
+        .then((fresh) =>
+          // `mounted` too: if the deck has been left while #13 was in flight,
+          // there is no screen to top up, and the fallback would spend a Gemini
+          // request plus eight TMDB searches on it.
+          fresh.length > 0 || !mounted.current
+            ? fresh
+            : rankedCandidates(taste.current, liked, { exclude: currentDeck.map((m) => m.id) })
+        )
         .then((fresh) => {
-          if (fresh.length > 0 && mounted.current) setDeck((d) => [...d, ...fresh]);
+          if (fresh.length === 0 || !mounted.current) return;
+          setDeck((d) => {
+            const have = new Set(d.map((m) => m.id));
+            return [...d, ...fresh.filter((m) => !have.has(m.id))];
+          });
         })
         .catch(() => {
           // seedCandidates() is documented not to reject. If that ever changes,
@@ -517,10 +566,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           active={active}
           showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
+          expectWhyLine={expectWhyLine}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, showDetails]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, showDetails]
   );
 
   return (

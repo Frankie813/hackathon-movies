@@ -8,6 +8,7 @@ import { getAI, getGenerativeModel, GoogleAIBackend, Schema } from 'firebase/ai'
 
 import type { Movie } from '@/types';
 import { app } from './firebase';
+import { QUOTA_COOLDOWN_MS, isOverQuota, isRateLimited, openQuotaCooldown, __resetQuotaCooldown } from './quota';
 
 /**
  * Pinned on purpose (AGENTS.md §3). `gemini-2.0-flash` is shut down and the 1.x
@@ -63,13 +64,11 @@ const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_RETRIES = 2;
 const BACKOFF_BASE_MS = 600;
 
-/**
- * After the retries are also rate-limited we are genuinely over the 15 RPM free
- * tier, so stop asking. Every call during the cooldown returns null instantly
- * and the deck keeps swiping — the alternative is 60 cards each burning three
- * doomed requests.
- */
-const QUOTA_COOLDOWN_MS = 60_000;
+// After the retries are also rate-limited we are genuinely over the 15 RPM free
+// tier, so stop asking. Every call during the cooldown returns null instantly
+// and the deck keeps swiping — the alternative is 60 cards each burning three
+// doomed requests. The wall lives in ./quota because #23's ranked fallback
+// draws on the same bucket and has to see the same wall.
 
 const DISK_KEY_PREFIX = 'why:v1:';
 
@@ -83,7 +82,6 @@ const memoryCache = new Map<number, string>();
 /** Dedupes concurrent calls — #8 prefetches the next few cards at once. */
 const inFlight = new Map<number, Promise<string | null>>();
 
-let quotaCooldownUntil = 0;
 
 interface WhyResponse {
   reason?: unknown;
@@ -140,16 +138,14 @@ function cacheWhyLine(tmdbId: number, line: string): void {
   }
 }
 
-/** A 429 from Firebase AI Logic arrives as an AIError carrying the HTTP status. */
-function isRateLimited(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const status = (error as { customErrorData?: { status?: number } }).customErrorData?.status;
-  // When the SDK gave us a status, believe it. Sniffing the message as well
-  // would let an unrelated failure that happens to contain "429" (a request id,
-  // a byte count, a port) trip the 60s cooldown and silence the whole deck.
-  if (typeof status === 'number') return status === 429;
-  // Older SDK paths only put the status in the message.
-  return error instanceof Error && /\b429\b|RESOURCE_EXHAUSTED/i.test(error.message);
+/**
+ * A one-line, key-free summary of a failure, safe to print in a dev log. The
+ * SDK quotes the request URL in its message, so anything that looks like a
+ * Google API key is masked before it can reach a terminal or a screen share.
+ */
+function scrubbed(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/AIza[0-9A-Za-z_-]{10,}/g, 'AIza…').slice(0, 300);
 }
 
 function delay(ms: number): Promise<void> {
@@ -242,7 +238,7 @@ async function requestWhy(candidate: Movie, likes: Movie[]): Promise<string | nu
     // at once, so a sibling can hit the wall and open the cooldown while this
     // loop is sleeping. Without this they each spend their remaining retries on
     // a quota we already know is exhausted.
-    if (Date.now() < quotaCooldownUntil) return null;
+    if (isOverQuota()) return null;
     try {
       return await generate(candidate, likes);
     } catch (error) {
@@ -251,8 +247,15 @@ async function requestWhy(candidate: Movie, likes: Movie[]): Promise<string | nu
         return null;
       }
       if (attempt === MAX_RETRIES) {
-        quotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_MS;
-        log(`whyLine(${candidate.id}) rate limited — pausing for ${QUOTA_COOLDOWN_MS}ms`);
+        openQuotaCooldown();
+        // The reason matters and the three cases look identical from here: a
+        // 15 RPM burst clears in a minute, the 1,500/day cap does not clear
+        // until tomorrow, and depleted billing credits never clear at all.
+        // Scrubbed: the message can quote the request URL.
+        log(
+          `whyLine(${candidate.id}) rate limited — pausing for ${QUOTA_COOLDOWN_MS}ms: ` +
+            scrubbed(error),
+        );
         return null;
       }
       // Full jitter, so two cards retrying at once don't collide again.
@@ -290,7 +293,7 @@ export async function whyLine(candidate: Movie, likes: Movie[]): Promise<string 
 
     // Over quota: answer immediately rather than queue behind a wall we know is
     // there. Not cached, so the next deck pass tries again.
-    if (Date.now() < quotaCooldownUntil) return null;
+    if (isOverQuota()) return null;
 
     const line = await requestWhy(candidate, likes);
     if (!line) return null;
@@ -313,5 +316,5 @@ export async function whyLine(candidate: Movie, likes: Movie[]): Promise<string 
 export function __resetWhyLineCache(): void {
   memoryCache.clear();
   inFlight.clear();
-  quotaCooldownUntil = 0;
+  __resetQuotaCooldown();
 }
