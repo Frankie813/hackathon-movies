@@ -142,6 +142,15 @@ const RERANKED_TOP_ID = FIRST_ID + PAGE_SIZE;
 const UNRANKED_TOP_ID = FIRST_ID + 1;
 
 /**
+ * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (5), which is
+ * what makes #13's top-up fire. Anything shorter never calls fetch() again
+ * after the deck has landed, so a test that only swipes a handful of cards
+ * would report on a dead network without ever touching one. Four short of the
+ * end, so the deck still has cards left when the assertions run.
+ */
+const SWIPES_PAST_LOW_WATER = DECK_IDS.length - 4;
+
+/**
  * A /movie/{id} payload with exactly one feature (`genre:N`) — no keywords, no
  * cast. score() averages over a movie's features, so a single-feature title
  * scores the full weight of that genre and the ranking has one variable in it.
@@ -355,21 +364,37 @@ describe('the solo loop, online', () => {
     const before = topMovieId();
 
     // The venue Wi-Fi goes down between one card and the next. Nothing
-    // re-mounts; the deck in memory is all the app has left.
-    setFetch(offlineFetch);
+    // re-mounts; the deck in memory is all the app has left. Counted, because
+    // the deck only reaches for the network again once it runs low — without
+    // that the "offline" half of this test would never be exercised at all.
+    let callsAfterTheCut = 0;
+    setFetch(() => {
+      callsAfterTheCut += 1;
+      return offlineFetch();
+    });
     mockSetDoc = () => new Promise<void>(() => {});
 
     const seen: number[] = [before];
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < SWIPES_PAST_LOW_WATER; i += 1) {
       await press(i % 2 === 0 ? 'Like' : 'Pass');
       seen.push(topMovieId());
     }
 
-    // Four distinct cards, three swipes, no stall — even though every
-    // Firestore write from those swipes is still sitting unacknowledged.
-    expect(new Set(seen).size).toBe(4);
+    // A new card every time, no stall — even though #13's top-up went out over
+    // a dead network and came back with nothing, and every Firestore write
+    // from those swipes is still sitting unacknowledged.
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(callsAfterTheCut).toBeGreaterThan(0);
+    expect(tree!.root.findAllByType(ActivityIndicator)).toHaveLength(0);
+    // Positive control first: a visibleText() that silently stopped collecting
+    // would make the negative assertion below pass without meaning anything.
+    expect(visibleText()).toContain(topCard().props.movie.title);
     expect(visibleText()).not.toMatch(/DECK COMPLETED/);
-  });
+    // Crossing LOW_WATER takes SWIPES_PAST_LOW_WATER presses, and each one
+    // mounts a card and drains the promise chain behind it. That lands close
+    // enough to jest's 5s default to time out under a parallel full-suite run
+    // — which reads as a flaky test rather than as the slow one it is.
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
