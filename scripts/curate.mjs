@@ -541,6 +541,7 @@ function buildMovie(detail, video) {
       .slice(0, CAST_LIMIT)
       .map((c) => c.id),
     poster: POSTER_BASE + detail.poster_path,
+    overview: detail.overview ?? '',
     providers: [...new Set(providers)],
     video,
   };

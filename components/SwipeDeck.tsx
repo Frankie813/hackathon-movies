@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -67,6 +68,12 @@ export interface SwipeDeckRef {
 
 const VELOCITY_THRESHOLD = 380;
 const EXIT_DURATION = 200;
+/** Like/Pass buttons throw the card the way a flick does: a touch slower, with a little lift. */
+const THROW_DURATION = 340;
+const THROW_LIFT = -28;
+/** Vertical drag (with little sideways drift) that opens or closes the description. */
+const DETAILS_SWIPE_DISTANCE = 80;
+const DETAILS_SWIPE_MAX_DRIFT = 60;
 
 /** Module-level so the default prop keeps a stable identity across renders. */
 const COLD_TASTE: TasteVector = {};
@@ -118,6 +125,17 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const [currentIndex, setCurrentIndex] = useState(0);
   const [previousMovie, setPreviousMovie] = useState<Movie | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  // Swipe up on the card: the title block gives way to the TMDB synopsis.
+  // Mirrored into a shared value so the gesture worklets can read it.
+  const [showDetails, setShowDetails] = useState(false);
+  const detailsOpen = useSharedValue(false);
+  const setDetails = useCallback(
+    (open: boolean) => {
+      detailsOpen.value = open;
+      setShowDetails(open);
+    },
+    [detailsOpen]
+  );
 
   const isDone = currentIndex >= deck.length;
 
@@ -128,20 +146,52 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   const topMovie = deck[currentIndex];
 
+  // Cards to keep mounted underneath the top card so their trailers are
+  // already buffered (see TrailerVideoPlayer warm-up) by the time they are
+  // promoted. The rest of the deck is re-ranked after every swipe, so the
+  // next card depends on the direction: predict both outcomes (usually the
+  // same movie) and pre-mount each. Promotion keeps the instance because
+  // cards are keyed by movie id within one parent.
+  const nextCandidates = useMemo(() => {
+    if (!topMovie) return [];
+    const rest = deck.slice(currentIndex + 1);
+    if (rest.length === 0) return [];
+    const seen = new Set<number>();
+    const out: Movie[] = [];
+    for (const direction of ['right', 'left'] as const) {
+      const head = rank(applySwipe(taste.current, topMovie, direction), rest)[0];
+      if (head && !seen.has(head.id)) {
+        seen.add(head.id);
+        out.push(head);
+      }
+    }
+    return out;
+    // taste.current changes together with deck/currentIndex in handleSwipeComplete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck, currentIndex, topMovie]);
+
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
   const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
 
-  // Preload upcoming movie posters
+  // Preload upcoming movie posters and trailer backdrops
   useEffect(() => {
     const preloadPool = deck.slice(currentIndex, currentIndex + 5);
     preloadPool.forEach((m) => {
       if (m.poster) {
-        Image.prefetch(m.poster).catch(() => {});
+        Promise.resolve(Image.prefetch(m.poster)).catch(() => {});
+      }
+      if (m.video?.key) {
+        Promise.resolve(
+          Image.prefetch(`https://i.ytimg.com/vi/${m.video.key}/maxresdefault.jpg`)
+        ).catch(() => {});
       }
     });
   }, [deck, currentIndex]);
 
-  // Sync internal deck when the movies or the seeded taste vector change
+  // Sync internal deck when the movies or the seeded taste vector change.
+  // Those are the only real dependencies: shared values are stable refs (and
+  // under the Reanimated Jest mock they are not, which would make this reset
+  // the deck every render).
   useEffect(() => {
     setDeck(rank(initialTaste, movies));
     taste.current = initialTaste;
@@ -150,11 +200,13 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
+    setDetails(false);
     translateX.value = 0;
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, initialTaste, translateX, translateY, nextCardOpacity, isAnimating]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movies, initialTaste]);
 
   useEffect(() => {
     mounted.current = true;
@@ -200,7 +252,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     [autoSeed]
   );
 
-  // Sequence: Old Deck Out -> Bright +40% index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
+  // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
   const handleSwipeComplete = useCallback(
     (direction: 'left' | 'right') => {
       const swipedIndex = currentIndex;
@@ -229,6 +281,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       // 1. Enter intermediate transition state
       setIsTransitioning(true);
+      setDetails(false);
 
       // 2. Advance index and reset gesture position
       translateX.value = 0;
@@ -254,10 +307,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         });
       }, 100);
     },
-    [currentIndex, deck, maybeSeedMore, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
+    [currentIndex, deck, maybeSeedMore, onTasteChange, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating, setDetails]
   );
 
-  // Programmatic swipe (Like / Pass buttons)
+  // Programmatic swipe (Like / Pass buttons): the same off-screen throw a
+  // flick produces — rotation follows translateX, plus a small lift.
   const triggerProgrammaticSwipe = useCallback(
     (direction: 'left' | 'right') => {
       if (isDone || isAnimating.value || isTransitioning) return;
@@ -268,7 +322,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       translateX.value = withTiming(
         targetX,
         {
-          duration: EXIT_DURATION,
+          duration: THROW_DURATION,
           easing: Easing.bezier(0.18, 0.9, 0.22, 1),
         },
         (finished) => {
@@ -277,8 +331,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           }
         }
       );
+      translateY.value = withTiming(THROW_LIFT, {
+        duration: THROW_DURATION,
+        easing: Easing.out(Easing.quad),
+      });
     },
-    [isDone, isAnimating, isTransitioning, width, translateX, handleSwipeComplete]
+    [isDone, isAnimating, isTransitioning, width, translateX, translateY, handleSwipeComplete]
   );
 
   // "Start over" replays the deck, not the user, so the vector is kept as it
@@ -294,11 +352,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
+    setDetails(false);
     translateX.value = 0;
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
+  }, [movies, translateX, translateY, nextCardOpacity, isAnimating, setDetails]);
 
   useImperativeHandle(
     ref,
@@ -328,6 +387,23 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     .onEnd((event) => {
       'worklet';
       if (isAnimating.value) return;
+
+      // Mostly-vertical drags toggle the description instead of deciding.
+      const drift = Math.abs(event.translationX);
+      if (drift < DETAILS_SWIPE_MAX_DRIFT) {
+        if (event.translationY < -DETAILS_SWIPE_DISTANCE && !detailsOpen.value) {
+          runOnJS(setDetails)(true);
+          translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+          translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+          return;
+        }
+        if (event.translationY > DETAILS_SWIPE_DISTANCE && detailsOpen.value) {
+          runOnJS(setDetails)(false);
+          translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+          translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+          return;
+        }
+      }
 
       const swipeThreshold = width * 0.22;
       const isSwipeRight =
@@ -380,6 +456,14 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       }
     });
 
+  // A plain tap closes the description. Exclusive with the pan: the tap only
+  // wins when the finger never moved enough for the pan to activate.
+  const tapGesture = Gesture.Tap().onEnd(() => {
+    'worklet';
+    if (detailsOpen.value) runOnJS(setDetails)(false);
+  });
+  const cardGesture = Gesture.Exclusive(panGesture, tapGesture);
+
   // Top card gesture animation
   const topCardAnimatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(
@@ -431,16 +515,17 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           width={cardW}
           height={cardH}
           active={active}
+          showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor]
+    [renderCard, cardW, cardH, whyFor, showDetails]
   );
 
   return (
     <View style={styles.container}>
-      {/* Full-Screen 2% Gaussian Blurred index.gif with +40% Brightness, High-Luminance Bloom Glow & Smooth Hue Shift */}
+      {/* Full-Screen 2% Gaussian Blurred index.gif, High-Luminance Bloom Glow & Smooth Hue Shift */}
       <DynamicHueBackdrop
         currentThemeColor={currentTheme}
         previousThemeColor={previousMovie?.themeColor}
@@ -470,51 +555,71 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
             </Pressable>
           </View>
         ) : (
-          <View style={[styles.stackContainer, { width: cardW, height: cardH }]}>
-            {/* Top Active Card (Interactive Pan Gestures + Clean Off-Screen Exit) */}
-            {topMovie && !isTransitioning && (
-              <GestureDetector gesture={panGesture}>
-                <Animated.View
-                  key={`top-card-${topMovie.id}-${currentIndex}`}
-                  style={[
-                    styles.cardWrapper,
-                    { width: cardW, height: cardH, zIndex: 2 },
-                    topCardAnimatedStyle,
-                  ]}
-                >
-                  {renderMovieContent(topMovie, currentIndex, true)}
-
-                  {/* Dynamic Match Stamp */}
+          <GestureDetector gesture={cardGesture}>
+            <View style={[styles.stackContainer, { width: cardW, height: cardH }]}>
+              {/* One flat list: pre-mounted next cards first (always invisible:
+                  they exist only to buffer their trailer, and must never peek
+                  out while the top card is dragged or thrown), then the top
+                  card. React matches keys
+                  within a single sibling list, so keying every card by movie
+                  id here is what lets a promoted card keep its instance and
+                  its buffered trailer. The top card stays mounted through the
+                  transition; nextCardOpacity keeps it invisible until the hue
+                  shift hands off. */}
+              {[
+                ...nextCandidates.map((movie) => ({ movie, isTop: false })),
+                ...(topMovie ? [{ movie: topMovie, isTop: true }] : []),
+              ].map(({ movie, isTop }) =>
+                isTop ? (
                   <Animated.View
-                    style={[StyleSheet.absoluteFill, likeStampStyle]}
-                    pointerEvents="none"
+                    key={`card-${movie.id}`}
+                    style={[
+                      styles.cardWrapper,
+                      { width: cardW, height: cardH, zIndex: 2 },
+                      topCardAnimatedStyle,
+                    ]}
                   >
-                    <Stamp
-                      text="MATCH"
-                      tint={currentAccent}
-                      bg="rgba(0, 0, 0, 0.8)"
-                      fg={currentAccent}
-                      side="right"
-                    />
-                  </Animated.View>
+                    {renderMovieContent(movie, currentIndex, true)}
 
-                  {/* Nope Stamp */}
-                  <Animated.View
-                    style={[StyleSheet.absoluteFill, nopeStampStyle]}
-                    pointerEvents="none"
-                  >
-                    <Stamp
-                      text="PASS"
-                      tint="#f43f5e"
-                      bg="rgba(0, 0, 0, 0.8)"
-                      fg="#fb7185"
-                      side="left"
-                    />
+                    {/* Dynamic Match Stamp */}
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, likeStampStyle]}
+                      pointerEvents="none"
+                    >
+                      <Stamp
+                        text="MATCH"
+                        tint={currentAccent}
+                        bg="rgba(0, 0, 0, 0.8)"
+                        fg={currentAccent}
+                        side="right"
+                      />
+                    </Animated.View>
+
+                    {/* Nope Stamp */}
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, nopeStampStyle]}
+                      pointerEvents="none"
+                    >
+                      <Stamp
+                        text="PASS"
+                        tint="#f43f5e"
+                        bg="rgba(0, 0, 0, 0.8)"
+                        fg="#fb7185"
+                        side="left"
+                      />
+                    </Animated.View>
                   </Animated.View>
-                </Animated.View>
-              </GestureDetector>
-            )}
-          </View>
+                ) : (
+                  <Animated.View
+                    key={`card-${movie.id}`}
+                    style={[styles.cardWrapper, { width: cardW, height: cardH, zIndex: 1, opacity: 0 }]}
+                  >
+                    {renderMovieContent(movie, currentIndex + 1, false)}
+                  </Animated.View>
+                )
+              )}
+            </View>
+          </GestureDetector>
         )}
       </View>
 

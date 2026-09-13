@@ -2,11 +2,24 @@
 
 export type VideoSource = 'tmdb-clip' | 'movieclips' | 'trailer';
 
+/**
+ * A vertical (9:16) YouTube Short for the same film, found by
+ * scripts/find-shorts.mjs. Played full-screen instead of the landscape clip
+ * when present; the landscape clip is the fallback if it fails to embed.
+ */
+export interface MovieShort {
+  key: string;          // YouTube video id
+  /** True when the uploader matched one of the film's production companies. */
+  official: boolean;
+  seconds: number;      // duration; Shorts loop whole, no start/end
+}
+
 export interface MovieVideo {
   key: string;          // YouTube video id (from TMDB /videos or the curation script)
   start: number;        // seconds — skip studio logos / Movieclips bumper
   end: number;          // seconds — cap the segment at ~15–20s
   source: VideoSource;
+  short?: MovieShort;
 }
 
 export interface Movie {
@@ -19,6 +32,8 @@ export interface Movie {
   /** TMDB person IDs in billing order; scoring uses the first three. */
   castIds?: number[];
   poster: string;       // https://image.tmdb.org/t/p/w780/...
+  /** TMDB synopsis, shown when the card is swiped up. */
+  overview?: string;
   providers: string[];  // from /watch/providers (JustWatch data), region US
   video: MovieVideo | null; // null → card shows poster only
   /** Optional poster colors used by the swipe UI. */

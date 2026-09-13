@@ -10,7 +10,8 @@ export default function TabsLayout() {
         headerShown: false,
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Start' }} />
+      {/* Start is the first-launch onboarding (#9): reachable on launch, never from the tab bar. */}
+      <Tabs.Screen name="index" options={{ title: 'Start', href: null }} />
       <Tabs.Screen name="swipe" options={{ title: 'Swipe' }} />
       <Tabs.Screen name="group" options={{ title: 'Group' }} />
       <Tabs.Screen name="saved" options={{ title: 'Saved' }} />

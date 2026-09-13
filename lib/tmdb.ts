@@ -112,6 +112,7 @@ interface TmdbMovieDetail {
   id?: number;
   title?: string;
   release_date?: string;
+  overview?: string | null;
   poster_path?: string | null;
   genres?: { id?: number; name?: string }[];
   videos?: { results?: TmdbVideo[] };
@@ -333,6 +334,7 @@ function toMovie(detail: TmdbMovieDetail): Movie | null {
       .slice(0, CAST_LIMIT)
       .map((member) => member.id),
     poster: POSTER_BASE + detail.poster_path,
+    overview: typeof detail.overview === 'string' ? detail.overview : '',
     providers: [
       ...new Set(
         (detail['watch/providers']?.results?.US?.flatrate ?? [])

@@ -15,7 +15,11 @@
     "preset": "jest-expo",
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-qrcode-svg|rn-swiper-list|react-native-reanimated)"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^react-native-reanimated$": "react-native-reanimated/mock",
+      "^react-native-worklets$": "react-native-worklets/lib/module/mock"
+    }
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -43,6 +47,7 @@
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
+    "react-native-webview": "13.16.1",
     "rn-swiper-list": "^3.0.0"
   },
   "devDependencies": {

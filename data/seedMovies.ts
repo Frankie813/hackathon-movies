@@ -81,7 +81,7 @@ export const SEED_MOVIES: Movie[] = [
     castIds: [19587, 19588, 19589, 19590, 19591],
     poster: 'https://image.tmdb.org/t/p/w780/39wmItIWsg5sZMyRUHLkWBcuVCM.jpg',
     providers: ['Max'],
-    video: { key: 'ByXuk9QqQkk', start: 5, end: 25, source: 'trailer' },
+    video: { key: 'ByXuk9QqQkk', start: 5, end: 25, source: 'trailer', short: { key: 'gu36jKQvg0Q', official: true, seconds: 14 } },
     themeColor: '#300811',
     negativeColor: '#2dd4bf',
   },
