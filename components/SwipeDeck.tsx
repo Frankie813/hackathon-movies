@@ -15,6 +15,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -50,6 +51,20 @@ export interface SwipeDeckProps {
   onTasteChange?: (taste: TasteVector) => void;
   onSwipeLeft?: (index: number, movie: Movie) => void;
   onSwipeRight?: (index: number, movie: Movie) => void;
+  /**
+   * The Watch Later button (#87): an explicit save, on top of the right swipe
+   * the press also fires. The deck owns the button because only it knows which
+   * card is on top and can throw it.
+   *
+   * Fires the moment the button is pressed, not when the throw lands. The
+   * animation can be cancelled — a mood reload swapping `movies` mid-flight
+   * resets translateX — in which case onSwipeRight never fires and the title is
+   * saved but not liked. That is the right side to fail on for a save.
+   *
+   * Need not be referentially stable: it is read from an inline handler, not an
+   * effect, unlike onUpcoming and initialTaste.
+   */
+  onWatchLater?: (movie: Movie) => void;
   onSwipedAll?: () => void;
   renderCard?: (movie: Movie, index: number, active: boolean) => React.JSX.Element;
   whyFor?: (movie: Movie) => string | undefined;
@@ -112,6 +127,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     onTasteChange,
     onSwipeLeft,
     onSwipeRight,
+    onWatchLater,
     onSwipedAll,
     renderCard,
     whyFor,
@@ -364,9 +380,13 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   // Programmatic swipe (Like / Pass buttons): the same off-screen throw a
   // flick produces — rotation follows translateX, plus a small lift.
+  /**
+   * @returns false when the press was swallowed by the guard — nothing moved,
+   *   so a caller with a side effect (the Watch Later button) must not run it.
+   */
   const triggerProgrammaticSwipe = useCallback(
-    (direction: 'left' | 'right') => {
-      if (isDone || isAnimating.value || isTransitioning) return;
+    (direction: 'left' | 'right'): boolean => {
+      if (isDone || isAnimating.value || isTransitioning) return false;
 
       isAnimating.value = true;
       const targetX = direction === 'right' ? width * 1.55 : -width * 1.55;
@@ -387,6 +407,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         duration: THROW_DURATION,
         easing: Easing.out(Easing.quad),
       });
+
+      return true;
     },
     [isDone, isAnimating, isTransitioning, width, translateX, translateY, handleSwipeComplete]
   );
@@ -710,41 +732,70 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       {/* Floating Bottom Action Buttons (Scaled down 30%, bottom: 98 above floating tab bar) */}
       {!isDone && (
-        <View style={styles.actions} pointerEvents="box-none">
-          {/* Pass / Nope button */}
-          <Pressable
-            onPress={() => triggerProgrammaticSwipe('left')}
-            accessibilityLabel="Pass"
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.passButton,
-              { transform: [{ scale: pressed ? 0.9 : 1 }] },
-            ]}
-          >
-            <Text style={styles.passButtonText}>✕</Text>
-          </Pressable>
+        <>
+          <View style={styles.actions} pointerEvents="box-none">
+            {/* Pass / Nope button */}
+            <Pressable
+              onPress={() => triggerProgrammaticSwipe('left')}
+              accessibilityLabel="Pass"
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.passButton,
+                { transform: [{ scale: pressed ? 0.9 : 1 }] },
+              ]}
+            >
+              <Text style={styles.passButtonText}>✕</Text>
+            </Pressable>
 
-          {/* Like button with local project asset & negative glow */}
-          <Pressable
-            onPress={() => triggerProgrammaticSwipe('right')}
-            accessibilityLabel="Like"
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.likeButton,
-              {
-                borderColor: currentAccent,
-                shadowColor: currentAccent,
-                transform: [{ scale: pressed ? 0.92 : 1 }],
-              },
-            ]}
-          >
-            <Image
-              source={require('@/assets/logo-symbol-removebg-preview1.png')}
-              style={styles.likeLogoImage}
-              resizeMode="contain"
-            />
-          </Pressable>
-        </View>
+            {/* Like button with local project asset & negative glow */}
+            <Pressable
+              onPress={() => triggerProgrammaticSwipe('right')}
+              accessibilityLabel="Like"
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.likeButton,
+                {
+                  borderColor: currentAccent,
+                  shadowColor: currentAccent,
+                  transform: [{ scale: pressed ? 0.92 : 1 }],
+                },
+              ]}
+            >
+              <Image
+                source={require('@/assets/logo-symbol-removebg-preview1.png')}
+                style={styles.likeLogoImage}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
+
+          {/* Watch Later (#87) — its own dock at right: 20, mirroring MoodInput's
+              on the left, because styles.actions is a centered row and a third
+              child there would push Pass/Like off-centre. Same bottom: 98 band,
+              so it clears MovieCard's CHROME_BOTTOM and never covers the
+              YouTube player. */}
+          <View style={styles.watchLaterDock} pointerEvents="box-none">
+            <Pressable
+              onPress={() => {
+                // Captured, not re-read: handleSwipeComplete() recomputes
+                // deck[currentIndex] from this same render's closure, so this is
+                // the exact object onSwipeRight will report. Only save if the
+                // throw actually started — otherwise the card never moves and
+                // nothing else in the swipe path runs.
+                const movie = topMovie;
+                if (movie && triggerProgrammaticSwipe('right')) onWatchLater?.(movie);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Watch later"
+              style={({ pressed }) => [
+                styles.watchLaterButton,
+                { transform: [{ scale: pressed ? 0.92 : 1 }] },
+              ]}
+            >
+              <Ionicons name="bookmark" size={20} color={currentAccent} />
+            </Pressable>
+          </View>
+        </>
       )}
     </View>
   );
@@ -834,6 +885,30 @@ const styles = StyleSheet.create({
   likeLogoImage: {
     width: 26,
     height: 26,
+  },
+  watchLaterDock: {
+    position: 'absolute',
+    right: 20,
+    // Same band as the action buttons above. They never overlap: this sits at
+    // right 20–68, that row is 120pt wide and centered. Card chrome's lowest
+    // pixel is MovieCard's CHROME_BOTTOM (160), clear of this button's top (146).
+    bottom: 98,
+    zIndex: 40,
+  },
+  watchLaterButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20, 20, 30, 0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 5,
   },
   emptyCard: {
     alignSelf: 'center',

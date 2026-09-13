@@ -67,13 +67,25 @@ jest.mock('@/components/DynamicHueBackdrop', () => {
  */
 let mockGetDoc: () => Promise<unknown> = () => Promise.resolve({ exists: () => false, data: () => ({}) });
 let mockSetDoc: () => Promise<void> = () => Promise.resolve();
+/**
+ * Every document path written this test, in order. The behaviour of a write is
+ * swapped per test above; this records *what* was written regardless, so a test
+ * can tell a watchlist row from a like row (#87).
+ */
+const mockWrittenPaths: string[] = [];
 
 jest.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
   collection: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
   getDoc: () => mockGetDoc(),
-  setDoc: () => mockSetDoc(),
-  deleteDoc: () => mockSetDoc(),
+  setDoc: (ref: { path: string }) => {
+    mockWrittenPaths.push(ref.path);
+    return mockSetDoc();
+  },
+  deleteDoc: (ref: { path: string }) => {
+    mockWrittenPaths.push(ref.path);
+    return mockSetDoc();
+  },
   getDocs: async () => ({ docs: [] }),
   query: (ref: unknown) => ref,
   orderBy: jest.fn(),
@@ -296,8 +308,8 @@ function topMovieId(): number {
   return topCard().props.movie.id as number;
 }
 
-/** Like / Pass, pressed the way a user presses them. */
-async function press(label: 'Like' | 'Pass'): Promise<void> {
+/** Like / Pass / Watch later, pressed the way a user presses them. */
+async function press(label: 'Like' | 'Pass' | 'Watch later'): Promise<void> {
   const button = tree!.root
     .findAllByProps({ accessibilityLabel: label })
     .find((node) => typeof node.props.onPress === 'function');
@@ -335,6 +347,7 @@ beforeEach(() => {
   mockAuth = { uid: 'solo-uid', isSigningIn: false, error: null };
   mockGetDoc = () => Promise.resolve({ exists: () => false, data: () => ({}) });
   mockSetDoc = () => Promise.resolve();
+  mockWrittenPaths.length = 0;
 });
 
 afterEach(() => {
@@ -392,6 +405,45 @@ describe('the solo loop, online', () => {
     // physically next in the deck. This is the demo beat in step 2.
     expect(topMovieId()).toBe(RERANKED_TOP_ID);
     expect(topMovieId()).not.toBe(UNRANKED_TOP_ID);
+  });
+
+  // #87. The Watch Later button is a save *and* a like: the watchlist is what
+  // the Saved tab shows, the like is what the taste vector learns from. Both
+  // rows, one tap, and the card still moves on.
+  it('writes a watchlist row and a like row on one Watch Later tap', async () => {
+    setFetch(onlineFetch);
+
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+    const saved = topMovieId();
+    expect(saved).toBe(FIRST_ID);
+
+    await press('Watch later');
+
+    // Order is deliberately not asserted: Reanimated's Jest mock runs the
+    // throw's callback synchronously, so onSwipeRight lands before the press
+    // handler returns here and ~340ms after it on a device.
+    expect(mockWrittenPaths).toContain(`users/solo-uid/watchlist/${saved}`);
+    expect(mockWrittenPaths).toContain(`users/solo-uid/likes/${saved}`);
+    expect(topMovieId()).not.toBe(saved);
+  });
+
+  it('leaves a plain right swipe out of the watchlist', async () => {
+    setFetch(onlineFetch);
+
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+    const liked = topMovieId();
+
+    await press('Like');
+
+    // The whole point of #87: the Saved tab is a shortlist, not a swipe log.
+    expect(mockWrittenPaths).toContain(`users/solo-uid/likes/${liked}`);
+    expect(mockWrittenPaths.some((path) => path.includes('/watchlist/'))).toBe(false);
   });
 
   it('keeps advancing when the Wi-Fi dies mid-deck, without a restart', async () => {

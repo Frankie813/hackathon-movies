@@ -19,6 +19,7 @@ import {
   removeLike,
   saveLike,
   saveTaste,
+  saveWatchLater,
 } from '@/src/lib/persist';
 import type { Movie, TasteVector } from '@/types';
 
@@ -243,6 +244,24 @@ export default function SwipeScreen() {
     [uid, recordInSession],
   );
 
+  /**
+   * The Watch Later button (#87). The deck also throws the card to the right,
+   * so handleSwipeRight runs too: the tap is a save *and* a like, and the taste
+   * vector learns from it exactly as it would from the swipe.
+   *
+   * Nothing removes the row on a later left swipe, unlike removeLike() above.
+   * That asymmetry is the point — a pass retracts a signal, but it should not
+   * silently throw away a title the user deliberately saved. Removal is the
+   * long-press on the Saved tab.
+   */
+  const handleWatchLater = useCallback(
+    (movie: Movie) => {
+      console.log(`[Swipe] Watch later: ${movie.title}`);
+      if (uid) void saveWatchLater(uid, movie.id);
+    },
+    [uid],
+  );
+
   const handleSwipedAll = useCallback(() => {
     console.log('[Swipe] Swiped all cards in deck');
   }, []);
@@ -263,6 +282,7 @@ export default function SwipeScreen() {
         onTasteChange={handleTasteChange}
         onSwipeLeft={handleSwipeLeft}
         onSwipeRight={handleSwipeRight}
+        onWatchLater={handleWatchLater}
         onSwipedAll={handleSwipedAll}
         onUpcoming={handleUpcoming}
         whyFor={whyFor}

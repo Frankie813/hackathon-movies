@@ -6,8 +6,14 @@
 // tab with nothing to read.
 //
 // Data model (rules live in firestore.rules)
-//   users/{uid}/taste/current    { vector: { 'genre:28': 3, ... }, updatedAt }
-//   users/{uid}/likes/{movieId}  { movieId, likedAt }
+//   users/{uid}/taste/current         { vector: { 'genre:28': 3, ... }, updatedAt }
+//   users/{uid}/likes/{movieId}       { movieId, likedAt }
+//   users/{uid}/watchlist/{movieId}   { movieId, addedAt }
+//
+// Likes and the watchlist are deliberately separate collections (#87). A like
+// is a cheap, high-volume taste signal; a Watch Later is a deliberate save, and
+// only the latter is what the Saved tab shows. They share a row shape, so
+// toSavedRows() below reads both.
 //
 // `users/{uid}/taste` is a collection — Firestore path segments alternate
 // collection/document — so the vector lives in a fixed document inside it, the
@@ -39,6 +45,7 @@ const TASTE = 'taste';
 /** Fixed id, so loading the vector is a single-document read. */
 const TASTE_DOC = 'current';
 const LIKES = 'likes';
+const WATCHLIST = 'watchlist';
 
 /**
  * Coalescing window. Long enough to swallow a burst of fast swipes, short
@@ -130,11 +137,30 @@ function likeRef(uid: string, movieId: number) {
   return doc(db, USERS, uid, LIKES, String(movieId));
 }
 
-/** A liked title as #41's Saved tab reads it back. */
+function watchlistRef(uid: string) {
+  return collection(db, USERS, uid, WATCHLIST);
+}
+
+/** Same one-row-per-title shape as likeRef: saving the same title twice is a no-op. */
+function watchLaterRef(uid: string, movieId: number) {
+  return doc(db, USERS, uid, WATCHLIST, String(movieId));
+}
+
+/**
+ * A liked title. Taste history: since #87 the Saved tab no longer reads these —
+ * a right swipe is a signal, not a save.
+ */
 export interface LikedMovie {
   movieId: number;
   /** Epoch ms. */
   likedAt: number;
+}
+
+/** A title the user explicitly saved, as the Saved tab reads it back (#87). */
+export interface WatchLaterMovie {
+  movieId: number;
+  /** Epoch ms. */
+  addedAt: number;
 }
 
 /**
@@ -151,6 +177,30 @@ function toTasteVector(value: unknown): TasteVector {
     if (typeof weight === 'number' && Number.isFinite(weight)) vector[key] = weight;
   }
   return vector;
+}
+
+/**
+ * Rows of a saved-title collection, defensively. Likes and the watchlist differ
+ * only in the name of their timestamp field, so both read through here.
+ *
+ * The document id *is* the movie id, so a row whose own `movieId` went missing
+ * is still recoverable; one that cannot name a number is dropped rather than
+ * rendered as "Movie #NaN".
+ */
+function toSavedRows<T>(
+  docs: { id: string; data(): Record<string, unknown> }[],
+  timestampField: string,
+  build: (movieId: number, at: number) => T,
+): T[] {
+  const rows: T[] = [];
+  for (const docSnap of docs) {
+    const data = docSnap.data();
+    const movieId = typeof data.movieId === 'number' ? data.movieId : Number(docSnap.id);
+    if (!Number.isFinite(movieId)) continue;
+    const at = data[timestampField];
+    rows.push(build(movieId, typeof at === 'number' ? at : 0));
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,8 +343,8 @@ export async function saveLike(uid: string, movieId: number): Promise<void> {
  *
  * Swiping the other way on a title has to move it out, not leave it in — the
  * same reasoning #16 applies to a member's likes/dislikes arrays. Without this
- * a title liked in one run and rejected in the next stays in #41's Saved tab
- * forever, and the user is looking at a film they explicitly passed on.
+ * a title liked in one run and rejected in the next stays in the taste history
+ * forever, still counting as a positive signal the user has since withdrawn.
  *
  * Deliberately not coalesced, unlike the taste vector. That debounce exists
  * because the vector document is rewritten in full on every swipe; this is one
@@ -314,10 +364,12 @@ export async function removeLike(uid: string, movieId: number): Promise<void> {
 /**
  * Every title the user has liked, newest first, live.
  *
- * #41's Saved tab mounts this instead of loadLikes(): Firestore applies
- * saveLike()/removeLike()'s write to the local cache before the server
- * acknowledges it, so a swipe (or a long-press removal on the tab itself)
- * shows up here in the same tick — well inside the "within a second" AC.
+ * Firestore applies saveLike()/removeLike()'s write to the local cache before
+ * the server acknowledges it, so a swipe shows up here in the same tick.
+ *
+ * No screen reads this since #87 split saving from liking — the Saved tab
+ * mounts subscribeWatchLater() now. Kept because the like list is still the
+ * user's taste history, which #94's profile reset has to clear.
  *
  * Fires with `[]` and returns a no-op unsubscribe when there is no uid yet,
  * the same "cold rather than broken" stance as the rest of this file.
@@ -333,16 +385,7 @@ export function subscribeLikes(uid: string, cb: (likes: LikedMovie[]) => void): 
   return onSnapshot(
     query(likesRef(uid), orderBy('likedAt', 'desc')),
     (snapshot) => {
-      cb(
-        snapshot.docs
-          .map((docSnap) => {
-            const data = docSnap.data();
-            const movieId = typeof data.movieId === 'number' ? data.movieId : Number(docSnap.id);
-            if (!Number.isFinite(movieId)) return null;
-            return { movieId, likedAt: typeof data.likedAt === 'number' ? data.likedAt : 0 };
-          })
-          .filter((like): like is LikedMovie => like !== null),
-      );
+      cb(toSavedRows(snapshot.docs, 'likedAt', (movieId, likedAt) => ({ movieId, likedAt })));
     },
     (error) => {
       console.warn('[persist] likes listener failed:', error.message);
@@ -351,23 +394,85 @@ export function subscribeLikes(uid: string, cb: (likes: LikedMovie[]) => void): 
 }
 
 /**
- * Every title the user has liked, newest first. This is what #41's Saved tab
- * reads; it is here so that "the likes survived the reload" is something the
- * app can show rather than something you take on faith.
+ * Every title the user has liked, newest first — the one-shot read behind
+ * subscribeLikes(). It is here so that "the likes survived the reload" is
+ * something the app can show rather than something you take on faith.
  */
 export async function loadLikes(uid: string): Promise<LikedMovie[]> {
   if (!uid) return [];
 
   const read = getDocs(query(likesRef(uid), orderBy('likedAt', 'desc'))).then((snapshot) =>
-    snapshot.docs
-      .map((docSnap) => {
-        const data = docSnap.data();
-        const movieId = typeof data.movieId === 'number' ? data.movieId : Number(docSnap.id);
-        if (!Number.isFinite(movieId)) return null;
-        return { movieId, likedAt: typeof data.likedAt === 'number' ? data.likedAt : 0 };
-      })
-      .filter((like): like is LikedMovie => like !== null),
+    toSavedRows(snapshot.docs, 'likedAt', (movieId, likedAt) => ({ movieId, likedAt })),
   );
 
   return orFallback(read, [], 'load likes');
+}
+
+// ---------------------------------------------------------------------------
+// Watch later (#87)
+// ---------------------------------------------------------------------------
+
+/**
+ * Saves a title the user explicitly asked to keep. One small write per tap,
+ * unbatched for the same reason saveLike() is — there is nothing to coalesce.
+ * Never throws and never hangs.
+ *
+ * Deliberately has no counterpart on the left swipe. removeLike() exists
+ * because a like is a running signal that a later pass should retract; a Watch
+ * Later is a decision the user made on purpose, and a swipe should not silently
+ * revoke it. Removal is the long-press on the Saved tab.
+ */
+export async function saveWatchLater(uid: string, movieId: number): Promise<void> {
+  if (!uid) return;
+
+  const write = setDoc(watchLaterRef(uid, movieId), { movieId, addedAt: Date.now() }).catch(
+    (error: unknown) => {
+      console.warn('[persist] could not save watch later:', error);
+    },
+  );
+
+  await settleWithin(write, WRITE_ACK_MS);
+}
+
+/** Drops a title from the watchlist — the Saved tab's long-press. */
+export async function removeWatchLater(uid: string, movieId: number): Promise<void> {
+  if (!uid) return;
+
+  const write = deleteDoc(watchLaterRef(uid, movieId)).catch((error: unknown) => {
+    console.warn('[persist] could not remove watch later:', error);
+  });
+
+  await settleWithin(write, WRITE_ACK_MS);
+}
+
+/**
+ * Every title the user saved for later, newest first, live.
+ *
+ * The Saved tab mounts this: Firestore applies the write to the local cache
+ * before the server acknowledges it, so a tap on the deck (or a long-press
+ * removal on the tab itself) shows up here in the same tick — which is also
+ * what makes the tab work with the Wi-Fi off.
+ *
+ * Fires with `[]` and returns a no-op unsubscribe when there is no uid yet.
+ *
+ * @returns the Firestore unsubscribe — call it on unmount or listeners leak.
+ */
+export function subscribeWatchLater(
+  uid: string,
+  cb: (saved: WatchLaterMovie[]) => void,
+): Unsubscribe {
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    query(watchlistRef(uid), orderBy('addedAt', 'desc')),
+    (snapshot) => {
+      cb(toSavedRows(snapshot.docs, 'addedAt', (movieId, addedAt) => ({ movieId, addedAt })));
+    },
+    (error) => {
+      console.warn('[persist] watchlist listener failed:', error.message);
+    },
+  );
 }
