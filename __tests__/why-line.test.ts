@@ -90,8 +90,30 @@ describe('whyLine', () => {
 
     const line = await whyLine(candidate, likes);
 
-    expect(line!.split(' ')).toHaveLength(20);
+    expect(line!.split(' ')).toHaveLength(14);
     expect(line!.endsWith('…')).toBe(true);
+  });
+
+  // The card gives the line a fixed two-line slot and cuts the overflow
+  // mid-word, so a handful of long words has to be trimmed even though the
+  // word count is nowhere near the cap.
+  it('truncates on width when the word count alone would pass', async () => {
+    const wide = Array.from({ length: 9 }, () => 'extraordinarily').join(' ');
+    mockGenerateContent.mockResolvedValue(reply(wide));
+
+    const line = await whyLine(candidate, likes);
+
+    expect(line!.split(' ').length).toBeLessThan(14);
+    expect(line!.length).toBeLessThanOrEqual(91);
+    expect(line!.endsWith('…')).toBe(true);
+  });
+
+  it('leaves a line that already fits exactly as written', async () => {
+    // 73 characters, 13 words — just inside both caps.
+    const reason = 'A tense, funny heist that rewards the patience your last picks showed.';
+    mockGenerateContent.mockResolvedValue(reply(reason));
+
+    expect(await whyLine(candidate, likes)).toBe(reason);
   });
 
   it('sends the recent likes and the candidate, and pins the model and schema', async () => {
