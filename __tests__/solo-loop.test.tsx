@@ -281,6 +281,10 @@ const SwipeScreen = require('@/app/(tabs)/swipe').default as React.ComponentType
 const { MovieCard } = require('@/components/MovieCard') as {
   MovieCard: React.ComponentType;
 };
+// The screen records every swipe as seen and the next deck skips those titles.
+// Each test here is a fresh user, so the history must not carry over from the
+// test before, or the deck would open on the second fixture instead of the first.
+const { __resetSeen } = require('@/lib/seen') as { __resetSeen: () => void };
 
 let tree: ReactTestRenderer | null = null;
 
@@ -349,6 +353,8 @@ beforeEach(() => {
   mockGetDoc = () => Promise.resolve({ exists: () => false, data: () => ({}) });
   mockSetDoc = () => Promise.resolve();
   mockWrittenPaths.length = 0;
+  __resetSeen();
+  mockLineCache.delete('moviematch.seenMovies.v1');
 });
 
 afterEach(() => {
