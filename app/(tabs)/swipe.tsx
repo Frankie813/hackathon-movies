@@ -7,8 +7,8 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
-import { seedMoviesWithVideo } from '@/lib/seed';
-import { getDeck } from '@/lib/tmdb';
+import { getSeen, loadSeen, markSeen } from '@/lib/seen';
+import { DECK_MAX, getDeck, isSeedDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
 // Bundled tags only (#39): the swipe loop never spends an image request.
 import { cachedVibeTags, type MoodFilters } from '@/src/lib/gemini';
@@ -19,6 +19,7 @@ import {
   removeLike,
   saveLike,
   saveTaste,
+  saveWatchLater,
 } from '@/src/lib/persist';
 import type { Movie, TasteVector } from '@/types';
 
@@ -32,32 +33,26 @@ const withColors = (m: Movie): Movie => {
 };
 
 /**
+ * The movies this device already swiped in earlier sessions, so the first deck
+ * skips them. Bounded like the taste read: a storage read that never answers
+ * must not keep the Swipe tab on a spinner, it just means repeats are allowed.
+ */
+function seenForDeck(): Promise<ReadonlySet<number>> {
+  return Promise.race([
+    loadSeen(),
+    new Promise<ReadonlySet<number>>((resolve) => setTimeout(() => resolve(getSeen()), LOAD_TIMEOUT_MS)),
+  ]);
+}
+
+/**
  * The deck comes from #15's fetch layer: TMDB /discover when online, the
  * curated seed catalog (lib/seed.json, 68 titles) when the token is unset or
  * the network is down — the caller can't tell which. Titles with a vertical
  * Short come first so the full-screen cards lead; the rest play their 16:9
- * clip. (The taste vector re-ranks all of this anyway; the order here only
- * decides ties, i.e. the cold start.)
+ * clip. (The taste vector re-ranks all of this anyway, and since #96 a
+ * per-session random tie-break in SwipeDeck decides near-ties, so this order
+ * rarely survives past the deal.)
  */
-/** The exact deck getDeck() hands back on every fallback path, in its order. */
-const SEED_FALLBACK_KEY = seedMoviesWithVideo.map((m) => m.id).join(',');
-
-/**
- * True when getDeck() answered from the offline catalog rather than /discover
- * — a dead network, an unset token, or a filtered page that came back empty.
- * A fixed catalog cannot honour /discover parameters, so a mood that lands
- * here has not been applied to anything, and #11 must say so rather than
- * relabel the same deck.
- *
- * Checked this way because there is no flag for it: isOffline() stays false on
- * the empty-page path, since TMDB did answer. Compare before orderDeck(),
- * which reorders. Ordered, not set-wise: a filtered deck too small for
- * MIN_DECK is padded from the same catalog, and that ordering differs.
- */
-function isSeedFallback(movies: Movie[]): boolean {
-  return movies.map((m) => m.id).join(',') === SEED_FALLBACK_KEY;
-}
-
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
     withColors,
@@ -84,9 +79,11 @@ export default function SwipeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    void getDeck().then((movies) => {
-      if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
-    });
+    void seenForDeck()
+      .then((seen) => getDeck(undefined, { seen }))
+      .then((movies) => {
+        if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
+      });
     return () => {
       cancelled = true;
     };
@@ -176,9 +173,14 @@ export default function SwipeScreen() {
   const applyMood = useCallback(
     async (filters: MoodFilters, text: string) => {
       const seq = (deckSeq.current += 1);
-      const movies = await getDeck(filters);
+      const movies = await getDeck(filters, { seen: getSeen() });
       if (seq !== deckSeq.current) return true;
-      if (isSeedFallback(movies)) return false;
+      // The offline catalog cannot honour /discover parameters, so a mood that
+      // lands there has not been applied to anything, and #11 must say so
+      // rather than relabel a deck. isOffline() can't tell: it stays false on
+      // the empty-page path, since TMDB did answer. Checked before orderDeck(),
+      // which returns a new array.
+      if (isSeedDeck(movies)) return false;
       swapDeck(movies);
       setMood({ text, tone: filters.tone });
       return true;
@@ -188,7 +190,7 @@ export default function SwipeScreen() {
 
   const clearMood = useCallback(async () => {
     const seq = (deckSeq.current += 1);
-    const movies = await getDeck();
+    const movies = await getDeck(undefined, { seen: getSeen() });
     if (seq !== deckSeq.current) return;
     swapDeck(movies);
     setMood(null);
@@ -211,6 +213,8 @@ export default function SwipeScreen() {
   const handleSwipeLeft = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
+      // Passes count as seen too: the next launch should not deal it again.
+      markSeen(movie.id);
       // A title liked in an earlier run and passed on now must leave the
       // Saved tab, or #41 shows the user a film they explicitly rejected.
       if (uid) void removeLike(uid, movie.id);
@@ -235,12 +239,31 @@ export default function SwipeScreen() {
   const handleSwipeRight = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped RIGHT (Like) on #${index}: ${movie.title}`);
+      markSeen(movie.id);
       likesRef.current = [...likesRef.current, movie];
       // Undebounced: one small write per right swipe, and #41 reads these.
       if (uid) void saveLike(uid, movie.id);
       recordInSession(movie, 'right');
     },
     [uid, recordInSession],
+  );
+
+  /**
+   * The Watch Later button (#87). The deck also throws the card to the right,
+   * so handleSwipeRight runs too: the tap is a save *and* a like, and the taste
+   * vector learns from it exactly as it would from the swipe.
+   *
+   * Nothing removes the row on a later left swipe, unlike removeLike() above.
+   * That asymmetry is the point — a pass retracts a signal, but it should not
+   * silently throw away a title the user deliberately saved. Removal is the
+   * long-press on the Saved tab.
+   */
+  const handleWatchLater = useCallback(
+    (movie: Movie) => {
+      console.log(`[Swipe] Watch later: ${movie.title}`);
+      if (uid) void saveWatchLater(uid, movie.id);
+    },
+    [uid],
   );
 
   const handleSwipedAll = useCallback(() => {
@@ -263,11 +286,14 @@ export default function SwipeScreen() {
         onTasteChange={handleTasteChange}
         onSwipeLeft={handleSwipeLeft}
         onSwipeRight={handleSwipeRight}
+        onWatchLater={handleWatchLater}
         onSwipedAll={handleSwipedAll}
         onUpcoming={handleUpcoming}
         whyFor={whyFor}
         expectWhyLine={expectWhyLine}
         vibeFor={cachedVibeTags}
+        maxCards={DECK_MAX}
+        seenIds={getSeen}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
           nothing here is ever composited over the card's YouTube player. */}

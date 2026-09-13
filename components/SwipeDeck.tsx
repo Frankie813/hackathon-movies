@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -30,7 +32,7 @@ import { MovieCard } from './MovieCard';
 import { Stamp } from './Stamp';
 import { DynamicHueBackdrop } from './DynamicHueBackdrop';
 import type { Movie, TasteVector } from '@/types';
-import { applySwipe, rank } from '@/src/lib/taste';
+import { applySwipe, makeJitter, rank, type RankJitter } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
 import { exploreRank } from '@/src/lib/explore';
 import {
@@ -58,6 +60,20 @@ export interface SwipeDeckProps {
   onTasteChange?: (taste: TasteVector) => void;
   onSwipeLeft?: (index: number, movie: Movie) => void;
   onSwipeRight?: (index: number, movie: Movie) => void;
+  /**
+   * The Watch Later button (#87): an explicit save, on top of the right swipe
+   * the press also fires. The deck owns the button because only it knows which
+   * card is on top and can throw it.
+   *
+   * Fires the moment the button is pressed, not when the throw lands. The
+   * animation can be cancelled — a mood reload swapping `movies` mid-flight
+   * resets translateX — in which case onSwipeRight never fires and the title is
+   * saved but not liked. That is the right side to fail on for a save.
+   *
+   * Need not be referentially stable: it is read from an inline handler, not an
+   * effect, unlike onUpcoming and initialTaste.
+   */
+  onWatchLater?: (movie: Movie) => void;
   onSwipedAll?: () => void;
   renderCard?: (movie: Movie, index: number, active: boolean) => React.JSX.Element;
   whyFor?: (movie: Movie) => string | undefined;
@@ -84,6 +100,17 @@ export interface SwipeDeckProps {
    * and issues no network calls — useful for rehearsing the end-of-deck state.
    */
   autoSeed?: boolean;
+  /**
+   * The most cards the deck may ever hold, swiped ones included (#97). Top-ups
+   * stop once it is reached and are trimmed to fit. Unset: no cap.
+   */
+  maxCards?: number;
+  /**
+   * Movies swiped in earlier sessions (lib/seen.ts). Top-ups skip them, so a
+   * returning user is not topped up with films they already judged. Read at
+   * top-up time, so pass a stable getter rather than a snapshot.
+   */
+  seenIds?: () => Iterable<number>;
 }
 
 export interface SwipeDeckRef {
@@ -109,13 +136,12 @@ const DETAILS_SWIPE_MAX_DRIFT = 60;
 const COLD_TASTE: TasteVector = {};
 
 /**
- * Unseen cards left before we ask #13 for more. Low enough that a full deck
- * never triggers a network call, high enough that the request has several
- * swipes to land first: seedCandidates() can take up to 8s on venue Wi-Fi, and
- * if the deck empties before it returns the user sees "DECK COMPLETED" flash
- * and then get replaced — which would be a bad beat to hit in front of judges.
+ * Unseen cards left before we ask #13 for more. High enough that the request
+ * has many swipes to land first: a top-up hydrates ~36 related titles and can
+ * take up to 8s on venue Wi-Fi, and at 5 a quick thumb emptied the deck before
+ * it came back. With #97's 20-card deck this asks after the 10th swipe.
  */
-const LOW_WATER = 5;
+const LOW_WATER = 10;
 
 export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function SwipeDeck(
   {
@@ -124,6 +150,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     onTasteChange,
     onSwipeLeft,
     onSwipeRight,
+    onWatchLater,
     onSwipedAll,
     renderCard,
     whyFor,
@@ -131,6 +158,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     expectWhyLine = false,
     vibeFor,
     autoSeed = true,
+    maxCards = Infinity,
+    seenIds,
   },
   ref
 ) {
@@ -138,9 +167,15 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const cardW = width;
   const cardH = height;
 
+  // This session's random tie-break (#96). Without it the same saved taste
+  // vector deals the same order on every launch. One per deck session, so
+  // re-ranks after each swipe stay stable and nextCandidates predicts right.
+  const jitter = useRef<RankJitter | null>(null);
+  if (!jitter.current) jitter.current = makeJitter();
+
   // Ranked up front, not after mount: a deck that re-sorts itself once the
   // stored vector lands would shuffle under the judge's thumb (#18).
-  const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies));
+  const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies, jitter.current!));
   const taste = useRef<TasteVector>(initialTaste);
 
   // The onboarding genre pin (src/lib/genre-pin.ts): forces the deck to keep
@@ -163,6 +198,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // by the current taste vector, so the order here is not load-bearing.
   const likedRef = useRef<Movie[]>([]);
   const seedingRef = useRef(false);
+  /** Mirrors seedingRef for render: the end of the deck waits on a top-up in flight. */
+  const [toppingUp, setToppingUp] = useState(false);
   /**
    * Likes at the last seeding attempt. An attempt that came back empty (every
    * suggestion already in the deck, or the Wi-Fi is down) would otherwise retry
@@ -208,7 +245,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     const seen = new Set<number>();
     const out: Movie[] = [];
     for (const direction of ['right', 'left'] as const) {
-      const head = rank(applySwipe(taste.current, topMovie, direction), rest)[0];
+      const head = rank(applySwipe(taste.current, topMovie, direction), rest, jitter.current!)[0];
       if (head && !seen.has(head.id)) {
         seen.add(head.id);
         out.push(head);
@@ -257,7 +294,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // under the Reanimated Jest mock they are not, which would make this reset
   // the deck every render).
   useEffect(() => {
-    setDeck(rank(initialTaste, movies));
+    setDeck(rank(initialTaste, movies, jitter.current!));
     taste.current = initialTaste;
     likedRef.current = [];
     seededAtLikeCount.current = -1;
@@ -289,18 +326,22 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     (currentDeck: Movie[], nextIndex: number) => {
       const liked = likedRef.current;
       if (!autoSeed || liked.length === 0) return;
+      if (currentDeck.length >= maxCards) return;
       if (currentDeck.length - nextIndex > LOW_WATER) return;
       if (seedingRef.current || seededAtLikeCount.current === liked.length) return;
 
       seedingRef.current = true;
+      setToppingUp(true);
       seededAtLikeCount.current = liked.length;
+      const previouslySeen = [...(seenIds?.() ?? [])];
 
       seedCandidates(taste.current, liked, {
         deck: currentDeck.map((m) => m.id),
         // The consumed prefix. SwipeDeck keeps swiped cards in `deck` and moves
         // an index instead of shifting, so #13 has to be told which of those
         // ids are behind the user or its pool cap counts them as live cards.
-        swiped: currentDeck.slice(0, nextIndex).map((m) => m.id),
+        // Earlier sessions' swipes ride along so they are never returned.
+        swiped: [...currentDeck.slice(0, nextIndex).map((m) => m.id), ...previouslySeen],
       })
         // #13 came back empty: the related-title pool is dry, which is the one
         // case #23's Gemini recommender is for. Every title it returns has
@@ -311,13 +352,16 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           // request plus eight TMDB searches on it.
           fresh.length > 0 || !mounted.current
             ? fresh
-            : rankedCandidates(taste.current, liked, { exclude: currentDeck.map((m) => m.id) })
+            : rankedCandidates(taste.current, liked, {
+                exclude: [...currentDeck.map((m) => m.id), ...previouslySeen],
+              })
         )
         .then((fresh) => {
           if (fresh.length === 0 || !mounted.current) return;
           setDeck((d) => {
             const have = new Set(d.map((m) => m.id));
-            return [...d, ...fresh.filter((m) => !have.has(m.id))];
+            const room = Math.max(0, maxCards - d.length);
+            return [...d, ...fresh.filter((m) => !have.has(m.id)).slice(0, room)];
           });
         })
         .catch(() => {
@@ -326,9 +370,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         })
         .finally(() => {
           seedingRef.current = false;
+          if (mounted.current) setToppingUp(false);
         });
     },
-    [autoSeed]
+    [autoSeed, maxCards, seenIds]
   );
 
   // Sequence: Old Deck Out -> gif backdrop -> Next Deck In
@@ -347,11 +392,14 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // to the front regardless of what the taste vector just did to it —
         // that's the whole point: a dislike must not be able to push it out
         // before GENRE_PIN_LIMIT titles from it have actually been shown.
+        // Either way jitter.current carries this session's tie-break (#96)
+        // through, so a pinned reorder isn't any more deterministic than a
+        // normal one.
         const remaining = deck.slice(nextIndex);
         const reordered =
           genrePin && genrePin.count < GENRE_PIN_LIMIT
-            ? pinnedRank(genrePin, taste.current, remaining)
-            : exploreRank(taste.current, remaining);
+            ? pinnedRank(genrePin, taste.current, remaining, jitter.current!)
+            : exploreRank(taste.current, remaining, undefined, undefined, jitter.current!);
         const nextDeck = [...deck.slice(0, nextIndex), ...reordered];
         setDeck(nextDeck);
         maybeSeedMore(nextDeck, nextIndex);
@@ -385,6 +433,10 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       if (nextIndex >= deck.length) {
         setIsTransitioning(false);
         isAnimating.value = false;
+        // No card to fade in now, but a top-up still in flight can append
+        // some. Left at 0, those cards would arrive invisible and the deck
+        // would look finished while it has cards.
+        nextCardOpacity.value = 1;
         onSwipedAll?.();
         return;
       }
@@ -404,9 +456,13 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   // Programmatic swipe (Like / Pass buttons): the same off-screen throw a
   // flick produces — rotation follows translateX, plus a small lift.
+  /**
+   * @returns false when the press was swallowed by the guard — nothing moved,
+   *   so a caller with a side effect (the Watch Later button) must not run it.
+   */
   const triggerProgrammaticSwipe = useCallback(
-    (direction: 'left' | 'right') => {
-      if (isDone || isAnimating.value || isTransitioning) return;
+    (direction: 'left' | 'right'): boolean => {
+      if (isDone || isAnimating.value || isTransitioning) return false;
 
       isAnimating.value = true;
       const targetX = direction === 'right' ? width * 1.55 : -width * 1.55;
@@ -427,6 +483,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         duration: THROW_DURATION,
         easing: Easing.out(Easing.quad),
       });
+
+      return true;
     },
     [isDone, isAnimating, isTransitioning, width, translateX, translateY, handleSwipeComplete]
   );
@@ -440,7 +498,9 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     // the deck, so the next like should be free to ask for more.
     likedRef.current = [];
     seededAtLikeCount.current = -1;
-    setDeck(rank(taste.current, movies));
+    // A replay deals a new order too (#96).
+    jitter.current = makeJitter();
+    setDeck(rank(taste.current, movies, jitter.current));
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
@@ -650,7 +710,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       {/* Full-Screen Deck Viewport */}
       <View style={[styles.deckArea, { width: cardW, height: cardH }]}>
-        {isDone ? (
+        {isDone && toppingUp ? (
+          <View style={[styles.emptyCard, { width: cardW - 32, height: cardH * 0.6 }]}>
+            <ActivityIndicator color={currentAccent} />
+            <Text style={[styles.emptySubtitle, { marginTop: 16 }]}>Finding more movies for you…</Text>
+          </View>
+        ) : isDone ? (
           <View style={[styles.emptyCard, { width: cardW - 32, height: cardH * 0.6 }]}>
             <Text style={styles.emptyEmoji}>🎉</Text>
             <Text style={styles.emptyTitle}>DECK COMPLETED</Text>
@@ -743,41 +808,70 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       {/* Floating Bottom Action Buttons (Scaled down 30%, bottom: 98 above floating tab bar) */}
       {!isDone && (
-        <View style={styles.actions} pointerEvents="box-none">
-          {/* Pass / Nope button */}
-          <Pressable
-            onPress={() => triggerProgrammaticSwipe('left')}
-            accessibilityLabel="Pass"
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.passButton,
-              { transform: [{ scale: pressed ? 0.9 : 1 }] },
-            ]}
-          >
-            <Text style={styles.passButtonText}>✕</Text>
-          </Pressable>
+        <>
+          <View style={styles.actions} pointerEvents="box-none">
+            {/* Pass / Nope button */}
+            <Pressable
+              onPress={() => triggerProgrammaticSwipe('left')}
+              accessibilityLabel="Pass"
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.passButton,
+                { transform: [{ scale: pressed ? 0.9 : 1 }] },
+              ]}
+            >
+              <Text style={styles.passButtonText}>✕</Text>
+            </Pressable>
 
-          {/* Like button with local project asset & negative glow */}
-          <Pressable
-            onPress={() => triggerProgrammaticSwipe('right')}
-            accessibilityLabel="Like"
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.likeButton,
-              {
-                borderColor: currentAccent,
-                shadowColor: currentAccent,
-                transform: [{ scale: pressed ? 0.92 : 1 }],
-              },
-            ]}
-          >
-            <Image
-              source={require('@/assets/logo-symbol-removebg-preview1.png')}
-              style={styles.likeLogoImage}
-              resizeMode="contain"
-            />
-          </Pressable>
-        </View>
+            {/* Like button with local project asset & negative glow */}
+            <Pressable
+              onPress={() => triggerProgrammaticSwipe('right')}
+              accessibilityLabel="Like"
+              style={({ pressed }) => [
+                styles.actionButton,
+                styles.likeButton,
+                {
+                  borderColor: currentAccent,
+                  shadowColor: currentAccent,
+                  transform: [{ scale: pressed ? 0.92 : 1 }],
+                },
+              ]}
+            >
+              <Image
+                source={require('@/assets/logo-symbol-removebg-preview1.png')}
+                style={styles.likeLogoImage}
+                resizeMode="contain"
+              />
+            </Pressable>
+          </View>
+
+          {/* Watch Later (#87) — its own dock at right: 20, mirroring MoodInput's
+              on the left, because styles.actions is a centered row and a third
+              child there would push Pass/Like off-centre. Same bottom: 98 band,
+              so it clears MovieCard's CHROME_BOTTOM and never covers the
+              YouTube player. */}
+          <View style={styles.watchLaterDock} pointerEvents="box-none">
+            <Pressable
+              onPress={() => {
+                // Captured, not re-read: handleSwipeComplete() recomputes
+                // deck[currentIndex] from this same render's closure, so this is
+                // the exact object onSwipeRight will report. Only save if the
+                // throw actually started — otherwise the card never moves and
+                // nothing else in the swipe path runs.
+                const movie = topMovie;
+                if (movie && triggerProgrammaticSwipe('right')) onWatchLater?.(movie);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Watch later"
+              style={({ pressed }) => [
+                styles.watchLaterButton,
+                { transform: [{ scale: pressed ? 0.92 : 1 }] },
+              ]}
+            >
+              <Ionicons name="bookmark" size={20} color={currentAccent} />
+            </Pressable>
+          </View>
+        </>
       )}
     </View>
   );
@@ -792,7 +886,12 @@ const styles = StyleSheet.create({
   },
   topBar: {
     position: 'absolute',
-    top: 50,
+    // The Dynamic Island's bottom edge sits ~48pt down on the Pro phones, so
+    // the old 50 left the wordmark grazing it. The app carries no safe-area
+    // provider to read a real inset from (see app/(tabs)/index.tsx's footer),
+    // so this is a fixed offset: ~20pt of air below the island, and still
+    // clear of the 47pt status bar on the non-island phones.
+    top: 68,
     left: 20,
     right: 20,
     flexDirection: 'row',
@@ -862,6 +961,30 @@ const styles = StyleSheet.create({
   likeLogoImage: {
     width: 26,
     height: 26,
+  },
+  watchLaterDock: {
+    position: 'absolute',
+    right: 20,
+    // Same band as the action buttons above. They never overlap: this sits at
+    // right 20–68, that row is 120pt wide and centered. Card chrome's lowest
+    // pixel is MovieCard's CHROME_BOTTOM (160), clear of this button's top (146).
+    bottom: 98,
+    zIndex: 40,
+  },
+  watchLaterButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20, 20, 30, 0.85)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 5,
   },
   emptyCard: {
     alignSelf: 'center',

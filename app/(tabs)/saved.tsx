@@ -1,12 +1,14 @@
-// app/(tabs)/saved.tsx — watch-later tab (issue #41).
+// app/(tabs)/saved.tsx — watch-later tab (issue #41, reworked by #87).
 //
 // Step "closing beat" of the demo path: after the match reveal, a tap to this
-// tab shows the pick already sitting there on both phones. Likes (#18) and
-// group matches (#17) land in the same list — merged reads better than two
-// sections when the demo only has a few seconds here.
+// tab shows the pick already sitting there on both phones. Watch Later saves
+// (#87) and group matches (#17) land in the same list — merged reads better
+// than two sections when the demo only has a few seconds here.
 //
-// A like IS a save: there is no separate "save" swipe direction, so a right
-// swipe on the Swipe tab is the only way something lands here as a like.
+// A like is NOT a save. #41 originally made every right swipe land here, but a
+// like is a cheap, high-volume taste signal and this tab is a shortlist: the
+// two filled it at completely different rates. Only the Watch Later button on
+// the deck puts something here now; likes keep feeding the taste vector.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -31,7 +33,12 @@ import { getMovie } from '@/lib/tmdb';
 import { setGenrePin } from '@/src/lib/genre-pin';
 import { clearOnboardedFlag } from '@/src/lib/onboarding';
 import { removeUserMatch, subscribeUserMatches } from '@/src/lib/match';
-import { removeLike, resetPreferences, subscribeLikes, type LikedMovie } from '@/src/lib/persist';
+import {
+  removeWatchLater,
+  resetPreferences,
+  subscribeWatchLater,
+  type WatchLaterMovie,
+} from '@/src/lib/persist';
 import { getUsername, setUsername as saveUsername } from '@/src/lib/username';
 import type { Match, Movie } from '@/types';
 
@@ -66,9 +73,9 @@ function randomGradientPair(): [string, string] {
 
 interface SavedEntry {
   key: string;
-  kind: 'like' | 'match';
+  kind: 'watchLater' | 'match';
   movieId: number;
-  /** Epoch ms — likedAt or matchedAt. Sort key for the merged list. */
+  /** Epoch ms — addedAt or matchedAt. Sort key for the merged list. */
   at: number;
   match?: Match;
 }
@@ -77,7 +84,7 @@ export default function SavedScreen() {
   const router = useRouter();
   const { uid, isSigningIn, error: authError } = useAnonymousAuth();
 
-  const [likes, setLikes] = useState<LikedMovie[]>([]);
+  const [saved, setSaved] = useState<WatchLaterMovie[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
 
   const [username, setUsernameState] = useState<string | null>(null);
@@ -131,7 +138,7 @@ export default function SavedScreen() {
   // local cache — that is what makes the two ACs true rather than assumed.
   useEffect(() => {
     if (!uid) return;
-    return subscribeLikes(uid, setLikes);
+    return subscribeWatchLater(uid, setSaved);
   }, [uid]);
 
   useEffect(() => {
@@ -140,11 +147,11 @@ export default function SavedScreen() {
   }, [uid]);
 
   const entries = useMemo<SavedEntry[]>(() => {
-    const likeEntries: SavedEntry[] = likes.map((like) => ({
-      key: `like-${like.movieId}`,
-      kind: 'like',
-      movieId: like.movieId,
-      at: like.likedAt,
+    const savedEntries: SavedEntry[] = saved.map((movie) => ({
+      key: `watch-${movie.movieId}`,
+      kind: 'watchLater',
+      movieId: movie.movieId,
+      at: movie.addedAt,
     }));
     const matchEntries: SavedEntry[] = matches.map((match) => ({
       key: `match-${match.sessionCode}-${match.tmdbId}`,
@@ -153,8 +160,8 @@ export default function SavedScreen() {
       at: match.matchedAt,
       match,
     }));
-    return [...likeEntries, ...matchEntries].sort((a, b) => b.at - a.at);
-  }, [likes, matches]);
+    return [...savedEntries, ...matchEntries].sort((a, b) => b.at - a.at);
+  }, [saved, matches]);
 
   // Resolved lazily and cached here for the life of the screen — getMovie()
   // already caches by id (seed or a session's own TMDB hydration), so this is
@@ -177,7 +184,7 @@ export default function SavedScreen() {
   const handleRemove = useCallback(
     (entry: SavedEntry) => {
       if (!uid) return;
-      if (entry.kind === 'like') void removeLike(uid, entry.movieId);
+      if (entry.kind === 'watchLater') void removeWatchLater(uid, entry.movieId);
       else if (entry.match) void removeUserMatch(uid, entry.match.sessionCode, entry.match.tmdbId);
     },
     [uid],
@@ -216,7 +223,8 @@ export default function SavedScreen() {
           </View>
           <Text style={styles.title}>SAVED WATCHLIST</Text>
           <Text style={styles.subtitle}>
-            Liked movies and group matches from your sessions will appear here.
+            Tap the bookmark beside the deck to save a movie for later. Those and your group
+            matches appear here.
           </Text>
         </Centered>
         <ProfileActionsBar onEditUsername={() => setEditingUsername(true)} onReset={handleResetPress} />
@@ -346,20 +354,20 @@ function SavedRow({
 
       <View style={styles.rowBody}>
         <View
-          style={[styles.kindBadge, entry.kind === 'match' ? styles.matchBadge : styles.likeBadge]}
+          style={[styles.kindBadge, entry.kind === 'match' ? styles.matchBadge : styles.watchBadge]}
         >
           <Ionicons
-            name={entry.kind === 'match' ? 'sparkles' : 'heart'}
+            name={entry.kind === 'match' ? 'sparkles' : 'bookmark'}
             size={11}
             color={entry.kind === 'match' ? '#fbbf24' : '#f59e0b'}
           />
           <Text
             style={[
               styles.kindBadgeText,
-              entry.kind === 'match' ? styles.matchBadgeText : styles.likeBadgeText,
+              entry.kind === 'match' ? styles.matchBadgeText : styles.watchBadgeText,
             ]}
           >
-            {entry.kind === 'match' ? "IT'S A MATCH" : 'LIKED'}
+            {entry.kind === 'match' ? "IT'S A MATCH" : 'WATCH LATER'}
           </Text>
         </View>
 
@@ -501,7 +509,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
-  likeBadge: {
+  watchBadge: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
   },
   matchBadge: {
@@ -512,7 +520,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.8,
   },
-  likeBadgeText: {
+  watchBadgeText: {
     color: '#f59e0b',
   },
   matchBadgeText: {

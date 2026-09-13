@@ -12,7 +12,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { Movie, TasteVector } from '../types';
-import { rank } from './taste';
+import { rank, type RankJitter } from './taste';
 
 const GENRE_PIN_KEY = 'moviematch.genrePin';
 
@@ -76,14 +76,19 @@ function matchesPin(movie: Movie, genreIds: number[]): boolean {
  * nothing left from that genre — from there the caller's own ranking (e.g.
  * exploreRank) is what decides what's next.
  */
-export function pinnedRank(pin: GenrePin | null, v: TasteVector, deck: Movie[]): Movie[] {
-  if (!pin || pin.count >= GENRE_PIN_LIMIT) return rank(v, deck);
+export function pinnedRank(
+  pin: GenrePin | null,
+  v: TasteVector,
+  deck: Movie[],
+  jitter?: RankJitter,
+): Movie[] {
+  if (!pin || pin.count >= GENRE_PIN_LIMIT) return rank(v, deck, jitter);
 
   const pinnedUnseen = deck.filter((movie) => matchesPin(movie, pin.genreIds));
-  if (pinnedUnseen.length === 0) return rank(v, deck);
+  if (pinnedUnseen.length === 0) return rank(v, deck, jitter);
 
-  const [best] = rank(v, pinnedUnseen);
-  return [best, ...rank(v, deck.filter((movie) => movie !== best))];
+  const [best] = rank(v, pinnedUnseen, jitter);
+  return [best, ...rank(v, deck.filter((movie) => movie !== best), jitter)];
 }
 
 /** True when swiping `movie` should count against the pin's budget. */

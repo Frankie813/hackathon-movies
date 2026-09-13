@@ -6,7 +6,7 @@
 //
 // Data model
 //   sessions/{code}                  { code, hostUid, createdAt }
-//   sessions/{code}/members/{uid}    { likes[], dislikes[], joinedAt, name? }
+//   sessions/{code}/members/{uid}    { likes[], dislikes[], joinedAt, name?, left? }
 //
 // The member doc is keyed by the anonymous uid (#2), which is what makes rejoin
 // idempotent: the same guest coming back writes the same document instead of
@@ -17,6 +17,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -192,8 +193,12 @@ export async function joinSession(code: string, name?: string): Promise<void> {
 
     const member = await tx.get(memberRef(normalized, user.uid));
     if (member.exists()) {
-      // Rejoin: leave likes/dislikes/joinedAt exactly as they are.
-      if (name) tx.update(memberRef(normalized, user.uid), { name });
+      // Rejoin: leave likes/dislikes/joinedAt exactly as they are. A member
+      // who left (#101) is back in the list for everyone once `left` goes.
+      const update: DocumentData = {};
+      if (name) update.name = name;
+      if (member.data().left) update.left = deleteField();
+      if (Object.keys(update).length > 0) tx.update(memberRef(normalized, user.uid), update);
       return;
     }
 
@@ -254,8 +259,30 @@ function isNotFound(error: unknown): boolean {
 }
 
 /**
+ * Leaves a session for everyone, not just this device (#101): the member doc
+ * is flagged `left`, which drops it from every other phone's subscribe() list
+ * and from #17's ranking on the next snapshot.
+ *
+ * Flagged, not deleted, so the swipes survive: joining the same code again is
+ * still a rejoin that picks up where the member left off (see joinSession).
+ * A member doc that is already gone is not an error — there is nothing left
+ * to leave.
+ */
+export async function leaveSession(code: string): Promise<void> {
+  const user = await ensureAnonymousUser();
+  const normalized = normalizeCode(code);
+  try {
+    await updateDoc(memberRef(normalized, user.uid), { left: true });
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+  }
+  console.log('[session] left', normalized, 'as', user.uid);
+}
+
+/**
  * Live member list for a session. #17 consumes this to rank the group; the
- * group screen renders it so both phones can see each other.
+ * group screen renders it so both phones can see each other. Members who left
+ * (#101) are not in it.
  *
  * Members arrive sorted by join time so the list doesn't reshuffle under the
  * judge's eyes on every snapshot.
@@ -270,6 +297,7 @@ export function subscribe(code: string, cb: (members: Member[]) => void): Unsubs
     membersRef(normalized),
     (snapshot) => {
       const members = snapshot.docs
+        .filter((docSnap) => docSnap.data().left !== true)
         .map((docSnap) => toMember(docSnap.id, docSnap.data()))
         .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0) || a.uid.localeCompare(b.uid));
       cb(members);

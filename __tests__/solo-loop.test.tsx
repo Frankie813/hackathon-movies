@@ -67,13 +67,25 @@ jest.mock('@/components/DynamicHueBackdrop', () => {
  */
 let mockGetDoc: () => Promise<unknown> = () => Promise.resolve({ exists: () => false, data: () => ({}) });
 let mockSetDoc: () => Promise<void> = () => Promise.resolve();
+/**
+ * Every document path written this test, in order. The behaviour of a write is
+ * swapped per test above; this records *what* was written regardless, so a test
+ * can tell a watchlist row from a like row (#87).
+ */
+const mockWrittenPaths: string[] = [];
 
 jest.mock('firebase/firestore', () => ({
   doc: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
   collection: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
   getDoc: () => mockGetDoc(),
-  setDoc: () => mockSetDoc(),
-  deleteDoc: () => mockSetDoc(),
+  setDoc: (ref: { path: string }) => {
+    mockWrittenPaths.push(ref.path);
+    return mockSetDoc();
+  },
+  deleteDoc: (ref: { path: string }) => {
+    mockWrittenPaths.push(ref.path);
+    return mockSetDoc();
+  },
   getDocs: async () => ({ docs: [] }),
   query: (ref: unknown) => ref,
   orderBy: jest.fn(),
@@ -158,18 +170,19 @@ const DRAMA = { id: 18, name: 'Drama' };
  * with lib/seed.json would inherit its pre-validated video key and its
  * keywords, and the ranking assertions below would stop meaning anything.
  *
- * Enough of them (22 > MIN_DECK) that getDeck() does not pad the deck from
- * seed — this test is about the live path, and a padded deck would mix the two.
+ * Exactly DECK_START of them, so getDeck() neither pads the deck from seed —
+ * this test is about the live path, and a padded deck would mix the two — nor
+ * randomly samples it (#97), which would make the ranking below a coin flip.
  */
 const FIRST_ID = 900001;
-const DECK_IDS = Array.from({ length: 22 }, (_, i) => FIRST_ID + i);
-const PAGE_SIZE = 11;
+const DECK_IDS = Array.from({ length: 20 }, (_, i) => FIRST_ID + i);
+const PAGE_SIZE = 10;
 
 /**
- * One action title first, then ten dramas, then eleven more action titles.
+ * One action title first, then nine dramas, then ten more action titles.
  * Cold start ranks on a zero vector, so ties keep this order and the first
  * card is 900001; one right swipe on it should pull the *action* block to the
- * front, past ten dramas that would otherwise have come next. That gap is what
+ * front, past nine dramas that would otherwise have come next. That gap is what
  * makes "the deck re-ranked" observable rather than a coin flip.
  */
 function genreFor(id: number) {
@@ -182,7 +195,7 @@ const RERANKED_TOP_ID = FIRST_ID + PAGE_SIZE;
 const UNRANKED_TOP_ID = FIRST_ID + 1;
 
 /**
- * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (5), which is
+ * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (10), which is
  * what makes #13's top-up fire. Anything shorter never calls fetch() again
  * after the deck has landed, so a test that only swipes a handful of cards
  * would report on a dead network without ever touching one. Four short of the
@@ -268,6 +281,10 @@ const SwipeScreen = require('@/app/(tabs)/swipe').default as React.ComponentType
 const { MovieCard } = require('@/components/MovieCard') as {
   MovieCard: React.ComponentType;
 };
+// The screen records every swipe as seen and the next deck skips those titles.
+// Each test here is a fresh user, so the history must not carry over from the
+// test before, or the deck would open on the second fixture instead of the first.
+const { __resetSeen } = require('@/lib/seen') as { __resetSeen: () => void };
 
 let tree: ReactTestRenderer | null = null;
 
@@ -296,8 +313,8 @@ function topMovieId(): number {
   return topCard().props.movie.id as number;
 }
 
-/** Like / Pass, pressed the way a user presses them. */
-async function press(label: 'Like' | 'Pass'): Promise<void> {
+/** Like / Pass / Watch later, pressed the way a user presses them. */
+async function press(label: 'Like' | 'Pass' | 'Watch later'): Promise<void> {
   const button = tree!.root
     .findAllByProps({ accessibilityLabel: label })
     .find((node) => typeof node.props.onPress === 'function');
@@ -335,6 +352,9 @@ beforeEach(() => {
   mockAuth = { uid: 'solo-uid', isSigningIn: false, error: null };
   mockGetDoc = () => Promise.resolve({ exists: () => false, data: () => ({}) });
   mockSetDoc = () => Promise.resolve();
+  mockWrittenPaths.length = 0;
+  __resetSeen();
+  mockLineCache.delete('moviematch.seenMovies.v1');
 });
 
 afterEach(() => {
@@ -392,6 +412,45 @@ describe('the solo loop, online', () => {
     // physically next in the deck. This is the demo beat in step 2.
     expect(topMovieId()).toBe(RERANKED_TOP_ID);
     expect(topMovieId()).not.toBe(UNRANKED_TOP_ID);
+  });
+
+  // #87. The Watch Later button is a save *and* a like: the watchlist is what
+  // the Saved tab shows, the like is what the taste vector learns from. Both
+  // rows, one tap, and the card still moves on.
+  it('writes a watchlist row and a like row on one Watch Later tap', async () => {
+    setFetch(onlineFetch);
+
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+    const saved = topMovieId();
+    expect(saved).toBe(FIRST_ID);
+
+    await press('Watch later');
+
+    // Order is deliberately not asserted: Reanimated's Jest mock runs the
+    // throw's callback synchronously, so onSwipeRight lands before the press
+    // handler returns here and ~340ms after it on a device.
+    expect(mockWrittenPaths).toContain(`users/solo-uid/watchlist/${saved}`);
+    expect(mockWrittenPaths).toContain(`users/solo-uid/likes/${saved}`);
+    expect(topMovieId()).not.toBe(saved);
+  });
+
+  it('leaves a plain right swipe out of the watchlist', async () => {
+    setFetch(onlineFetch);
+
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+    const liked = topMovieId();
+
+    await press('Like');
+
+    // The whole point of #87: the Saved tab is a shortlist, not a swipe log.
+    expect(mockWrittenPaths).toContain(`users/solo-uid/likes/${liked}`);
+    expect(mockWrittenPaths.some((path) => path.includes('/watchlist/'))).toBe(false);
   });
 
   it('keeps advancing when the Wi-Fi dies mid-deck, without a restart', async () => {

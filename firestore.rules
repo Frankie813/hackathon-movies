@@ -10,6 +10,7 @@ rules_version = '2';
 //   users/{uid}/matches/{code}-{tmdbId}  the same verdict, for #41's Saved tab
 //   users/{uid}/taste/current      { vector, updatedAt } (#18)
 //   users/{uid}/likes/{movieId}    { movieId, likedAt } (#18)
+//   users/{uid}/watchlist/{movieId} { movieId, addedAt } (#87)
 //
 // Join codes are guessable by design — four letters is the point — so the
 // protection that matters is that nobody can rewrite somebody else's swipes or
@@ -91,6 +92,12 @@ service cloud.firestore {
     }
 
     match /users/{uid}/likes/{movieId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // The titles the user explicitly saved for later (#87) — the only thing
+    // the Saved tab shows apart from group matches. Private like the two above.
+    match /users/{uid}/watchlist/{movieId} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 

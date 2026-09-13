@@ -14,7 +14,7 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 //   - Math.random is stubbed above EPSILON so exploreRank() takes its greedy
 //     branch (#14). Left live, roughly one run in eight promotes a random card
 //     that was deliberately never pre-mounted.
-//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 5, so the first
+//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 10, so the first
 //     swipe would otherwise fire the TMDB top-up (#13), which resolves on its
 //     own schedule and appends to the deck mid-assertion.
 
@@ -174,6 +174,96 @@ describe('SwipeDeck next-card preloading', () => {
   });
 });
 
+describe('SwipeDeck watch later button', () => {
+  /** The dock button, pressed the way a user presses it. */
+  function watchLaterButton(root: renderer.ReactTestInstance) {
+    return root
+      .findAllByProps({ accessibilityLabel: 'Watch later' })
+      .find((node) => typeof node.props.onPress === 'function');
+  }
+
+  it('saves the card on screen and throws it right, so it is a save and a like', () => {
+    const onWatchLater = jest.fn();
+    const onSwipeRight = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck
+          movies={SEED_MOVIES}
+          autoSeed={false}
+          onWatchLater={onWatchLater}
+          onSwipeRight={onSwipeRight}
+        />
+      );
+    });
+
+    act(() => {
+      watchLaterButton(tree!.root)!.props.onPress();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onWatchLater).toHaveBeenCalledTimes(1);
+    expect(onSwipeRight).toHaveBeenCalledTimes(1);
+    // The same object, not merely the same id: the screen writes the watchlist
+    // row from one and the like row from the other, and they must agree.
+    expect(onWatchLater.mock.calls[0][0]).toBe(onSwipeRight.mock.calls[0][1]);
+    expect(onWatchLater.mock.calls[0][0].id).toBe(SEED_MOVIES[0].id);
+
+    // And the deck actually moved on.
+    expect(cardsByActive(tree!.root).top[0].props.movie.id).not.toBe(SEED_MOVIES[0].id);
+  });
+
+  it('saves once when the button is hit twice inside one frame', () => {
+    const onWatchLater = jest.fn();
+    const onSwipeRight = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck
+          movies={SEED_MOVIES}
+          autoSeed={false}
+          onWatchLater={onWatchLater}
+          onSwipeRight={onSwipeRight}
+        />
+      );
+    });
+
+    // Both presses in one act(): a re-render between them would hand the second
+    // one a fresh isAnimating shared value under Reanimated's Jest mock, and
+    // the guard being tested here would never be the one that fires.
+    act(() => {
+      const button = watchLaterButton(tree!.root)!;
+      button.props.onPress();
+      button.props.onPress();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onWatchLater).toHaveBeenCalledTimes(1);
+    expect(onSwipeRight).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes away with the action buttons once the deck is done', () => {
+    const ref = React.createRef<SwipeDeckRef>();
+    act(() => {
+      tree = renderer.create(<SwipeDeck ref={ref} movies={[SEED_MOVIES[0]]} autoSeed={false} />);
+    });
+    expect(watchLaterButton(tree!.root)).toBeDefined();
+
+    act(() => {
+      ref.current!.swipeRight();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // triggerProgrammaticSwipe() bails while isDone, so leaving it up would be
+    // dead chrome next to "DECK COMPLETED".
+    expect(watchLaterButton(tree!.root)).toBeUndefined();
+  });
+});
+
 describe('SwipeDeck unplayable cards', () => {
   it('drops a pre-mounted card whose trailer cannot be embedded', () => {
     act(() => {
@@ -207,6 +297,131 @@ describe('SwipeDeck unplayable cards', () => {
     // Removing it would swap the card out from under a finger that may already
     // be dragging it.
     expect(cardsByActive(tree!.root).top[0].props.movie.id).toBe(SEED_MOVIES[0].id);
+  });
+});
+
+describe('SwipeDeck session order (#96)', () => {
+  /** The deck order a fresh mount deals, with `random` behind makeJitter(). */
+  function dealtOrder(random: () => number): number[] {
+    jest.spyOn(Math, 'random').mockImplementation(random);
+    const onUpcoming = jest.fn<void, [typeof SEED_MOVIES]>();
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} onUpcoming={onUpcoming} />);
+    });
+    const top = cardsByActive(tree!.root).top[0].props.movie.id as number;
+    act(() => tree!.unmount());
+    tree = null;
+    return [top];
+  }
+
+  it('does not open on the same card every session', () => {
+    const tops = new Set<number>();
+    for (let seed = 1; seed <= 12; seed += 1) {
+      let state = seed;
+      tops.add(dealtOrder(() => ((state = (state * 1664525 + 1013904223) % 4294967296) / 4294967296))[0]);
+    }
+    expect(tops.size).toBeGreaterThan(1);
+  });
+});
+
+describe('SwipeDeck deck cap (#97)', () => {
+  const { seedCandidates } = jest.requireMock('@/src/lib/candidates') as {
+    seedCandidates: jest.Mock;
+  };
+  const extra = Array.from({ length: 10 }, (_, i) => ({
+    ...SEED_MOVIES[0],
+    id: 800000 + i,
+    title: `Extra ${i}`,
+  }));
+
+  /** Like every card until the deck reports it is done; returns how many were swiped. */
+  async function swipeToEnd(ref: React.RefObject<SwipeDeckRef | null>, onSwipedAll: jest.Mock) {
+    let swipes = 0;
+    while (!onSwipedAll.mock.calls.length && swipes < 50) {
+      await act(async () => {
+        ref.current!.swipeRight();
+        jest.advanceTimersByTime(150);
+        for (let i = 0; i < 10; i += 1) await Promise.resolve();
+      });
+      swipes += 1;
+    }
+    return swipes;
+  }
+
+  it('tops the deck up but never past maxCards', async () => {
+    seedCandidates.mockResolvedValue(extra);
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={9} onSwipedAll={onSwipedAll} />
+      );
+    });
+
+    // 6 dealt + top-ups, trimmed to 9 in total.
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(9);
+    expect(seedCandidates).toHaveBeenCalled();
+    seedCandidates.mockReset();
+    seedCandidates.mockImplementation(async () => []);
+  });
+
+  it('waits on a top-up that lands after the last card, then shows the new cards', async () => {
+    let land!: (movies: typeof extra) => void;
+    seedCandidates.mockImplementationOnce(() => new Promise((resolve) => { land = resolve; }));
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={30} onSwipedAll={onSwipedAll} />
+      );
+    });
+    const text = () =>
+      tree!.root.findAll((n) => typeof n.props.children === 'string').map((n) => n.props.children);
+
+    // Swipe the whole deck faster than the top-up answers.
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(SEED_MOVIES.length);
+    expect(text()).toContain('Finding more movies for you…');
+    expect(text()).not.toContain('DECK COMPLETED');
+
+    await act(async () => {
+      land(extra);
+      for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    });
+    const top = cardsByActive(tree!.root).top;
+    expect(top).toHaveLength(1);
+    expect(top[0].props.movie.id).toBeGreaterThanOrEqual(800000);
+    seedCandidates.mockImplementation(async () => []);
+  });
+
+  it('never tops up with movies swiped in earlier sessions', async () => {
+    seedCandidates.mockClear();
+    const ref = React.createRef<SwipeDeckRef>();
+    const seen = () => [111, 222];
+    act(() => {
+      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} seenIds={seen} />);
+    });
+    await act(async () => {
+      ref.current!.swipeRight();
+      jest.advanceTimersByTime(150);
+      for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    });
+    expect(seedCandidates).toHaveBeenCalled();
+    const [, , opts] = seedCandidates.mock.calls[0];
+    expect(opts.swiped).toEqual(expect.arrayContaining([111, 222]));
+  });
+
+  it('does not ask for more once the deck already holds maxCards', async () => {
+    seedCandidates.mockClear();
+    const ref = React.createRef<SwipeDeckRef>();
+    const onSwipedAll = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} maxCards={SEED_MOVIES.length} onSwipedAll={onSwipedAll} />
+      );
+    });
+
+    expect(await swipeToEnd(ref, onSwipedAll)).toBe(SEED_MOVIES.length);
+    expect(seedCandidates).not.toHaveBeenCalled();
   });
 });
 
