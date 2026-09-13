@@ -130,6 +130,14 @@ interface MovieCardProps {
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
+  /** Tap-to-pause (#98): the deck freezes the trailer while this is true. */
+  userPaused?: boolean;
+  /**
+   * Where the card's text block starts, in card coordinates, whenever it is
+   * measured (#98). Above it is the video; a tap there pauses or resumes, so a
+   * tap on the mute button or the title below it never does.
+   */
+  onVideoAreaBottom?: (y: number) => void;
 }
 
 export function MovieCard({
@@ -144,6 +152,8 @@ export function MovieCard({
   onToggleMute,
   isMuted,
   onCardFailed,
+  userPaused = false,
+  onVideoAreaBottom,
 }: MovieCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -191,6 +201,10 @@ export function MovieCard({
   const frameHeight = usingShort
     ? height
     : Math.max(MIN_FRAME_HEIGHT, Math.round(chromeY - FRAME_GAP - HEADER_INSET));
+
+  useEffect(() => {
+    onVideoAreaBottom?.(chromeY);
+  }, [chromeY, onVideoAreaBottom]);
 
   // Loop the chosen segment instead of showing the YouTube end screen.
   // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
@@ -324,6 +338,7 @@ export function MovieCard({
             aspect={usingShort ? SHORT_ASPECT : LANDSCAPE_ASPECT}
             zoom={usingShort ? 1 : undefined}
             play={active}
+            userPaused={userPaused}
             muted={muted}
             onReady={handleVideoReady}
             onEnded={onVideoEnded}

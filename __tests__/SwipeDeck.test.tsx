@@ -300,6 +300,56 @@ describe('SwipeDeck unplayable cards', () => {
   });
 });
 
+describe('SwipeDeck tap to pause (#98)', () => {
+  const { fireGestureHandler, getByGestureTestId } = jest.requireActual(
+    'react-native-gesture-handler/jest-utils'
+  ) as typeof import('react-native-gesture-handler/jest-utils');
+  const topCard = () => cardsByActive(tree!.root).top[0];
+  const tapAt = (y: number) => act(() => fireGestureHandler(getByGestureTestId('card-tap'), [{ y }]));
+
+  it('freezes the trailer on a tap on the video and plays it again on the next tap', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    expect(topCard().props.userPaused).toBe(false);
+
+    tapAt(10);
+    expect(topCard().props.userPaused).toBe(true);
+    // Only the card on screen: the pre-mounted ones are not paused.
+    for (const card of cardsByActive(tree!.root).hidden) expect(card.props.userPaused).toBe(false);
+
+    tapAt(10);
+    expect(topCard().props.userPaused).toBe(false);
+  });
+
+  it('ignores taps below the video, where the title, mute and action buttons are', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    const { height } = require('react-native').Dimensions.get('window');
+    tapAt(height - 5);
+    expect(topCard().props.userPaused).toBe(false);
+  });
+
+  it('plays the next card after a swipe even if the last one was paused', () => {
+    const ref = React.createRef<SwipeDeckRef>();
+    act(() => {
+      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    tapAt(10);
+    expect(topCard().props.userPaused).toBe(true);
+
+    act(() => {
+      ref.current!.swipeLeft();
+    });
+    act(() => {
+      jest.advanceTimersByTime(600);
+    });
+    expect(topCard().props.movie.id).not.toBe(SEED_MOVIES[0].id);
+    expect(topCard().props.userPaused).toBe(false);
+  });
+});
+
 describe('SwipeDeck off screen (#100)', () => {
   it('stops the top trailer while paused and plays it again on return, same card', () => {
     act(() => {
