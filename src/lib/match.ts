@@ -16,8 +16,12 @@
 // reach a verdict offline.
 
 import {
+  collection,
+  deleteDoc,
   doc,
   onSnapshot,
+  orderBy,
+  query,
   runTransaction,
   setDoc,
   type DocumentData,
@@ -185,6 +189,10 @@ function userMatchRef(uid: string, code: string, tmdbId: number) {
   return doc(db, USERS, uid, MATCHES, `${code}-${tmdbId}`);
 }
 
+function userMatchesRef(uid: string) {
+  return collection(db, USERS, uid, MATCHES);
+}
+
 /** Defensive read — a remote document is untrusted input, not a Match. */
 function toMatch(data: DocumentData | undefined): Match | null {
   if (!data || typeof data.tmdbId !== 'number' || typeof data.sessionCode !== 'string') return null;
@@ -321,6 +329,57 @@ export function subscribeMatch(code: string, cb: (match: Match | null) => void):
       console.warn('[match] match listener failed:', error.message);
     },
   );
+}
+
+/**
+ * Live view of every group match written to this user — #41's Saved tab.
+ *
+ * Every member's users/{uid}/matches row is written by writeMemberMatches()
+ * (best effort, from whichever device claims the match) and backstopped by
+ * subscribeMatch()'s own save on each viewing device, so this fires for every
+ * member after the reveal, which is the second AC.
+ *
+ * Fires with `[]` and returns a no-op unsubscribe when there is no uid yet.
+ *
+ * @returns the Firestore unsubscribe — call it on unmount or listeners leak.
+ */
+export function subscribeUserMatches(uid: string, cb: (matches: Match[]) => void): Unsubscribe {
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    query(userMatchesRef(uid), orderBy('matchedAt', 'desc')),
+    (snapshot) => {
+      cb(
+        snapshot.docs
+          .map((docSnap) => toMatch(docSnap.data()))
+          .filter((match): match is Match => match !== null),
+      );
+    },
+    (error) => {
+      console.warn('[match] user matches listener failed:', error.message);
+    },
+  );
+}
+
+/**
+ * Drops one match from this user's own Saved tab — long-press to remove
+ * (#41). Only this user's row; the session's shared match document and the
+ * other members' Saved tabs are untouched. Never throws.
+ */
+export async function removeUserMatch(
+  uid: string,
+  sessionCode: string,
+  tmdbId: number,
+): Promise<void> {
+  if (!uid) return;
+  try {
+    await deleteDoc(userMatchRef(uid, normalizeCode(sessionCode), tmdbId));
+  } catch (error) {
+    console.warn('[match] could not remove match:', error);
+  }
 }
 
 export interface WatchMatchOptions extends MatchOptions {
