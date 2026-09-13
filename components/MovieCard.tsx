@@ -20,11 +20,14 @@ import {
 } from './TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
-/** Card chrome the letterboxed video must never sit under: status bar, deck header, top gradient. */
-const HEADER_INSET = 120;
+/** Top of the sharp video window: clears the status bar and the deck header. */
+const HEADER_INSET = 104;
+/** Gap between the bottom of the video window and the title block. */
+const FRAME_GAP = 12;
+/** Never let the window collapse below this on short screens, even if it then meets the title. */
+const MIN_FRAME_HEIGHT = 180;
 /** Where the bottom chrome starts before its layout has been measured (matches bottomGradient). */
 const DEFAULT_CHROME_TOP_FROM_BOTTOM = 420;
-const VIDEO_ASPECT = 16 / 9;
 
 /**
  * Backdrop candidates for a trailer, tried in order. YouTube serves every
@@ -90,17 +93,14 @@ export function MovieCard({
     setBackdropIndex(0);
   }, [movie.id, hasVideo]);
 
-  // The full 16:9 frame is shown letterboxed at card width (nothing cropped),
-  // vertically centered in the space between the header and the title block.
-  // The title block's top is measured, so the video never sits under text.
+  // The sharp video fills a full-width window from just below the header to
+  // just above the title block (the block's top is measured, so a two-line
+  // title shrinks the window rather than sitting under the video). The player
+  // zooms the 16:9 frame inside that window; the sides overspill.
   const [chromeTop, setChromeTop] = useState<number | null>(null);
-  const playerWidth = width;
-  const playerHeight = Math.round(width / VIDEO_ASPECT);
   const chromeY = chromeTop ?? height - DEFAULT_CHROME_TOP_FROM_BOTTOM;
-  const playerTop = Math.max(
-    HEADER_INSET,
-    Math.round(HEADER_INSET + (chromeY - HEADER_INSET - playerHeight) / 2)
-  );
+  const frameTop = HEADER_INSET;
+  const frameHeight = Math.max(MIN_FRAME_HEIGHT, Math.round(chromeY - FRAME_GAP - HEADER_INSET));
 
   // Loop the chosen segment instead of showing the YouTube end screen.
   // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
@@ -192,12 +192,15 @@ export function MovieCard({
       {showVideo && (
         // pointerEvents="none": taps/drags go to the swipe gesture, not the
         // player. Only the blurred backdrop extends under the card chrome;
-        // the player itself is placed above the title block, so no UI is
+        // the sharp video window sits above the title block, so no UI is
         // drawn over the video (AGENTS.md §3).
         <Animated.View
           pointerEvents="none"
           style={[StyleSheet.absoluteFill, { width, height, overflow: 'hidden' }, videoAnimatedStyle]}
         >
+          {/* Blurred trailer still: shows through the transparent player until
+              its live backdrop renders, and is all there is on web. The player
+              draws its own dim layer over it. */}
           {backdropUrl && (
             <Image
               testID="trailer-backdrop"
@@ -208,31 +211,21 @@ export function MovieCard({
               onError={() => setBackdropIndex((i) => i + 1)}
             />
           )}
-          <View style={[StyleSheet.absoluteFill, styles.videoBackdropDim]} />
-          <View
-            testID="trailer-frame"
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: playerTop,
-              width: playerWidth,
-              height: playerHeight,
-            }}
-          >
-            <TrailerVideoPlayer
-              ref={playerRef}
-              videoId={movie.video!.key}
-              start={start}
-              end={end}
-              width={playerWidth}
-              height={playerHeight}
-              play={active}
-              muted={muted}
-              onReady={handleVideoReady}
-              onEnded={onVideoEnded}
-              onError={onVideoError}
-            />
-          </View>
+          <TrailerVideoPlayer
+            ref={playerRef}
+            videoId={movie.video!.key}
+            start={start}
+            end={end}
+            width={width}
+            height={height}
+            frameTop={frameTop}
+            frameHeight={frameHeight}
+            play={active}
+            muted={muted}
+            onReady={handleVideoReady}
+            onEnded={onVideoEnded}
+            onError={onVideoError}
+          />
         </Animated.View>
       )}
 
@@ -258,6 +251,7 @@ export function MovieCard({
 
       {/* Floating Info Overlay (Clean with NO background box, spaced for floating buttons & tab bar) */}
       <View
+        testID="card-chrome"
         style={styles.floatingContent}
         onLayout={(e) => setChromeTop(e.nativeEvent.layout.y)}
       >
@@ -374,9 +368,6 @@ const styles = StyleSheet.create({
   videoBackdrop: {
     // Slight overscale hides the blur's soft edges at the card border.
     transform: [{ scale: 1.1 }],
-  },
-  videoBackdropDim: {
-    backgroundColor: 'rgba(4, 7, 14, 0.45)',
   },
   loadingGif: {
     width: 135,

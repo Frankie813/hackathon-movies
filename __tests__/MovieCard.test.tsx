@@ -1,6 +1,7 @@
 import React from 'react';
 import renderer, { act } from 'react-test-renderer';
 import { MovieCard } from '@/components/MovieCard';
+import { WARM_MS } from '@/components/TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
 // Mock react-native-webview: the native TrailerVideoPlayer drives the YouTube
@@ -128,23 +129,86 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     expect(webview.props.allowsInlineMediaPlayback).toBe(true);
   });
 
-  it('letterboxes the full 16:9 frame at card width, clear of the header and title block', () => {
-    // 852pt tall like an iPhone 16: 312pt of room between header and chrome.
+  it('covers the card and windows the zoomed frame between header and title block', () => {
+    // 852pt tall like an iPhone 16. Before the title block is measured the
+    // chrome is assumed to start 420pt from the bottom: window = 104 .. 420.
     const root = render(
       <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />
     );
 
-    const frame = root.findByProps({ testID: 'trailer-frame' });
-    expect(frame.props.style.width).toBe(360);
-    expect(frame.props.style.height).toBe(203); // 360 / (16/9), rounded
-    expect(frame.props.style.top).toBeGreaterThanOrEqual(120);
-    expect(frame.props.style.top + 203).toBeLessThanOrEqual(852 - 420);
-    // Centered in that room: 120 + (312 - 203) / 2, rounded.
-    expect(frame.props.style.top).toBe(175);
-
     const webview = root.findByProps({ testID: 'trailer-webview' });
     expect(webview.props.style.width).toBe(360);
-    expect(webview.props.style.height).toBe(203);
+    expect(webview.props.style.height).toBe(852);
+
+    const { html } = webview.props.source;
+    expect(html).toContain('"cardWidth":360');
+    expect(html).toContain('"cardHeight":852');
+    expect(html).toContain('"frameTop":104');
+    expect(html).toContain('"frameHeight":316'); // (852 - 420) - 12 - 104
+    expect(html).toContain('"zoom":1.34');
+    expect(html).toContain("new YT.Player('player'");
+  });
+
+  it('warms a hidden (inactive) card muted, parks it at start, and resumes on promotion', () => {
+    jest.useFakeTimers();
+    try {
+      let tree2: renderer.ReactTestRenderer | null = null;
+      act(() => {
+        tree2 = renderer.create(
+          <MovieCard movie={mockMovieWithVideo} width={360} height={852} active={false} />
+        );
+      });
+      const root = tree2!.root;
+      const webview = root.findByProps({ testID: 'trailer-webview' });
+      // Hidden cards load cued, not autoplaying.
+      expect(webview.props.source.html).toContain('"autoplay":0');
+
+      mockInjectJavaScript.mockClear();
+      postShellMessage(webview, 'ready');
+      let js = mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(js).toContain('player.mute(); player.playVideo();');
+      expect(js).not.toContain('seekTo');
+
+      mockInjectJavaScript.mockClear();
+      act(() => {
+        jest.advanceTimersByTime(WARM_MS);
+      });
+      js = mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(js).toContain('player.pauseVideo(); player.seekTo(5, true);');
+
+      // Promotion: real mute state, then resume from `start`.
+      mockInjectJavaScript.mockClear();
+      act(() => {
+        tree2!.update(
+          <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />
+        );
+      });
+      js = mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(js).toContain('player.mute();');
+      expect(js).toContain('player.seekTo(5, true); player.playVideo();');
+
+      act(() => {
+        tree2!.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('re-sends the window geometry once the title block has been measured', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />
+    );
+    mockInjectJavaScript.mockClear();
+
+    const titleBlock = root.findByProps({ testID: 'card-chrome' });
+    act(() => {
+      titleBlock.props.onLayout({ nativeEvent: { layout: { x: 20, y: 500, width: 320, height: 192 } } });
+    });
+
+    const calls = mockInjectJavaScript.mock.calls.map((c) => c[0] as string);
+    // window = 104 .. (500 - 12)
+    expect(calls.some((js) => js.includes('setLayout({"frameTop":104,"frameHeight":384})'))).toBe(true);
   });
 
   it('shows the trailer thumbnail as a blurred backdrop and falls back on load error', () => {
@@ -184,12 +248,18 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     );
 
     const webview = root.findByProps({ testID: 'trailer-webview' });
-    expect(mockInjectJavaScript).not.toHaveBeenCalled();
+    // Only the window geometry is sent before ready; no playback commands.
+    for (const [js] of mockInjectJavaScript.mock.calls) {
+      expect(js).not.toContain('playVideo');
+      expect(js).not.toContain('player.mute');
+    }
+    mockInjectJavaScript.mockClear();
 
     postShellMessage(webview, 'ready');
 
-    expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
-    const js = mockInjectJavaScript.mock.calls[0][0] as string;
+    // Layout is re-sent, then playback is reconciled.
+    const js = mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
+    expect(js).toContain('setLayout(');
     expect(js).toContain('player.mute();');
     expect(js).toContain('player.playVideo();');
     // Mute is applied before play so a mobile UA never sees an unmuted autoplay.

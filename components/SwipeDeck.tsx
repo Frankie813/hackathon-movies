@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -80,6 +81,30 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   const topMovie = deck[currentIndex];
 
+  // Cards to keep mounted underneath the top card so their trailers are
+  // already buffered (see TrailerVideoPlayer warm-up) by the time they are
+  // promoted. The rest of the deck is re-ranked after every swipe, so the
+  // next card depends on the direction: predict both outcomes (usually the
+  // same movie) and pre-mount each. Promotion keeps the instance because
+  // cards are keyed by movie id within one parent.
+  const nextCandidates = useMemo(() => {
+    if (!topMovie) return [];
+    const rest = deck.slice(currentIndex + 1);
+    if (rest.length === 0) return [];
+    const seen = new Set<number>();
+    const out: Movie[] = [];
+    for (const direction of ['right', 'left'] as const) {
+      const head = rank(applySwipe(taste.current, topMovie, direction), rest)[0];
+      if (head && !seen.has(head.id)) {
+        seen.add(head.id);
+        out.push(head);
+      }
+    }
+    return out;
+    // taste.current changes together with deck/currentIndex in handleSwipeComplete.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck, currentIndex, topMovie]);
+
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
   const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
 
@@ -88,15 +113,19 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     const preloadPool = deck.slice(currentIndex, currentIndex + 5);
     preloadPool.forEach((m) => {
       if (m.poster) {
-        Image.prefetch(m.poster).catch(() => {});
+        Promise.resolve(Image.prefetch(m.poster)).catch(() => {});
       }
       if (m.video?.key) {
-        Image.prefetch(`https://i.ytimg.com/vi/${m.video.key}/maxresdefault.jpg`).catch(() => {});
+        Promise.resolve(
+          Image.prefetch(`https://i.ytimg.com/vi/${m.video.key}/maxresdefault.jpg`)
+        ).catch(() => {});
       }
     });
   }, [deck, currentIndex]);
 
-  // Sync internal deck when movies prop changes
+  // Sync internal deck when movies prop changes. Only `movies` is a real
+  // dependency: shared values are stable refs (and under the Reanimated Jest
+  // mock they are not, which would make this reset the deck every render).
   useEffect(() => {
     setDeck(movies);
     taste.current = {};
@@ -107,7 +136,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movies]);
 
   // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In
   const handleSwipeComplete = useCallback(
@@ -368,51 +398,73 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
             </Pressable>
           </View>
         ) : (
-          <View style={[styles.stackContainer, { width: cardW, height: cardH }]}>
-            {/* Top Active Card (Interactive Pan Gestures + Clean Off-Screen Exit) */}
-            {topMovie && !isTransitioning && (
-              <GestureDetector gesture={panGesture}>
-                <Animated.View
-                  key={`top-card-${topMovie.id}-${currentIndex}`}
-                  style={[
-                    styles.cardWrapper,
-                    { width: cardW, height: cardH, zIndex: 2 },
-                    topCardAnimatedStyle,
-                  ]}
-                >
-                  {renderMovieContent(topMovie, currentIndex, true)}
-
-                  {/* Dynamic Match Stamp */}
+          <GestureDetector gesture={panGesture}>
+            <View style={[styles.stackContainer, { width: cardW, height: cardH }]}>
+              {/* One flat list: pre-mounted next cards first (hidden under the
+                  top card, and hidden outright during the transition so only
+                  the hue shift shows), then the top card. React matches keys
+                  within a single sibling list, so keying every card by movie
+                  id here is what lets a promoted card keep its instance and
+                  its buffered trailer. The top card stays mounted through the
+                  transition; nextCardOpacity keeps it invisible until the hue
+                  shift hands off. */}
+              {[
+                ...nextCandidates.map((movie) => ({ movie, isTop: false })),
+                ...(topMovie ? [{ movie: topMovie, isTop: true }] : []),
+              ].map(({ movie, isTop }) =>
+                isTop ? (
                   <Animated.View
-                    style={[StyleSheet.absoluteFill, likeStampStyle]}
-                    pointerEvents="none"
+                    key={`card-${movie.id}`}
+                    style={[
+                      styles.cardWrapper,
+                      { width: cardW, height: cardH, zIndex: 2 },
+                      topCardAnimatedStyle,
+                    ]}
                   >
-                    <Stamp
-                      text="MATCH"
-                      tint={currentAccent}
-                      bg="rgba(0, 0, 0, 0.8)"
-                      fg={currentAccent}
-                      side="right"
-                    />
-                  </Animated.View>
+                    {renderMovieContent(movie, currentIndex, true)}
 
-                  {/* Nope Stamp */}
-                  <Animated.View
-                    style={[StyleSheet.absoluteFill, nopeStampStyle]}
-                    pointerEvents="none"
-                  >
-                    <Stamp
-                      text="PASS"
-                      tint="#f43f5e"
-                      bg="rgba(0, 0, 0, 0.8)"
-                      fg="#fb7185"
-                      side="left"
-                    />
+                    {/* Dynamic Match Stamp */}
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, likeStampStyle]}
+                      pointerEvents="none"
+                    >
+                      <Stamp
+                        text="MATCH"
+                        tint={currentAccent}
+                        bg="rgba(0, 0, 0, 0.8)"
+                        fg={currentAccent}
+                        side="right"
+                      />
+                    </Animated.View>
+
+                    {/* Nope Stamp */}
+                    <Animated.View
+                      style={[StyleSheet.absoluteFill, nopeStampStyle]}
+                      pointerEvents="none"
+                    >
+                      <Stamp
+                        text="PASS"
+                        tint="#f43f5e"
+                        bg="rgba(0, 0, 0, 0.8)"
+                        fg="#fb7185"
+                        side="left"
+                      />
+                    </Animated.View>
                   </Animated.View>
-                </Animated.View>
-              </GestureDetector>
-            )}
-          </View>
+                ) : (
+                  <Animated.View
+                    key={`card-${movie.id}`}
+                    style={[
+                      styles.cardWrapper,
+                      { width: cardW, height: cardH, zIndex: 1, opacity: isTransitioning ? 0 : 1 },
+                    ]}
+                  >
+                    {renderMovieContent(movie, currentIndex + 1, false)}
+                  </Animated.View>
+                )
+              )}
+            </View>
+          </GestureDetector>
         )}
       </View>
 

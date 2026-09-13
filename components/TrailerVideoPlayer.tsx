@@ -15,8 +15,19 @@
 //     is reliable on both platforms;
 //   - receives ready/state/error via window.ReactNativeWebView.postMessage.
 //
-// The WebView fills exactly the `width` × `height` box the parent gives it;
-// MovieCard sizes that box to a 16:9 letterbox and positions it.
+// Layout: the WebView covers the whole card with a transparent page, so the
+// card's blurred still shows through. A dim layer sits over that, and the
+// sharp video is clipped to a full-width window starting at `frameTop`,
+// `frameHeight` tall, with the 16:9 frame zoomed by FRAME_ZOOM so cinematic
+// letterbox bands land outside the window and the sides overspill. Nothing of
+// the card's own chrome is drawn over this window.
+//
+// Warm-up: a card mounted with `play={false}` (the deck's hidden next card)
+// plays muted for WARM_MS so YouTube's adaptive streaming steps up from its
+// low starting rung, then parks paused at `start`. When `play` flips to true
+// it resumes from that buffer at the ramped quality — no ramp on screen.
+// (A tried-and-dead alternative: YouTube's `vq` hint and setPlaybackQuality()
+// no longer influence the starting quality at all.)
 
 import React, {
   forwardRef,
@@ -38,6 +49,16 @@ export const EMBED_REFERRER = 'https://movienight.tech/';
 
 /** How long YouTube gets to report ready before the card falls back to the poster. */
 export const READY_TIMEOUT_MS = 20_000;
+
+/** How long a hidden card plays muted to let YouTube ramp quality before parking. */
+export const WARM_MS = 4_000;
+
+/**
+ * Zoom applied to the 16:9 frame inside its window. A 2.39:1 film fills 74.4%
+ * of a 16:9 trailer frame; 1.34x pushes those black bands out of the window.
+ * A natively 16:9 trailer loses ~13% top and bottom instead.
+ */
+export const FRAME_ZOOM = 1.34;
 
 /** YouTube IFrame API onError codes → the strings MovieCard logs and handles. */
 const PLAYER_ERRORS: Record<number, string> = {
@@ -65,14 +86,26 @@ export interface TrailerVideoPlayerProps {
   videoId: string;
   start: number;
   end?: number;
-  /** Box the player fills; the parent decides aspect ratio and placement. */
+  /** Card size; the player covers all of it. */
   width: number;
   height: number;
+  /** Window for the sharp video: full card width, from `frameTop`, `frameHeight` tall. */
+  frameTop: number;
+  frameHeight: number;
   muted: boolean;
+  /** false = mounted hidden as the deck's next card: warm the buffer, stay muted, don't show. */
   play: boolean;
   onReady: () => void;
   onEnded: () => void;
   onError: (error: string) => void;
+}
+
+export interface ShellLayout {
+  cardWidth: number;
+  cardHeight: number;
+  frameTop: number;
+  frameHeight: number;
+  zoom: number;
 }
 
 interface ShellOptions {
@@ -81,6 +114,7 @@ interface ShellOptions {
   end?: number;
   autoplay: boolean;
   muted: boolean;
+  layout: ShellLayout;
 }
 
 /** Serialize for embedding inside a <script>; `<` is escaped so `</script>` can't break out. */
@@ -88,7 +122,7 @@ function jsLiteral(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
-export function buildShellHtml({ videoId, start, end, autoplay, muted }: ShellOptions): string {
+export function buildShellHtml({ videoId, start, end, autoplay, muted, layout }: ShellOptions): string {
   const playerVars: Record<string, number> = {
     autoplay: autoplay ? 1 : 0,
     mute: muted ? 1 : 0,
@@ -108,14 +142,43 @@ export function buildShellHtml({ videoId, start, end, autoplay, muted }: ShellOp
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-  #player, iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  #dim { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(4, 7, 14, 0.45); }
+  #fg { position: absolute; left: 0; overflow: hidden; background: #000; }
+  #fgplayer { position: absolute; }
+  #fgplayer iframe { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; }
 </style>
 </head>
 <body>
-<div id="player"></div>
+<div id="dim"></div>
+<div id="fg"><div id="fgplayer"><div id="player"></div></div></div>
 <script>
   var player = null;
+  var layout = ${jsLiteral(layout)};
+
+  function applyLayout() {
+    var W = layout.cardWidth;
+    var fg = document.getElementById('fg');
+    fg.style.top = layout.frameTop + 'px';
+    fg.style.width = W + 'px';
+    fg.style.height = layout.frameHeight + 'px';
+    // Zoomed 16:9 frame centered in the window; never narrower than the window.
+    var frameH = layout.frameHeight * layout.zoom;
+    var frameW = frameH * 16 / 9;
+    if (frameW < W) { frameW = W; frameH = W * 9 / 16; }
+    var fgp = document.getElementById('fgplayer');
+    fgp.style.left = ((W - frameW) / 2) + 'px';
+    fgp.style.top = ((layout.frameHeight - frameH) / 2) + 'px';
+    fgp.style.width = frameW + 'px';
+    fgp.style.height = frameH + 'px';
+  }
+  function setLayout(next) {
+    layout.frameTop = next.frameTop;
+    layout.frameHeight = next.frameHeight;
+    applyLayout();
+  }
+  applyLayout();
+
   function send(eventType, data) {
     if (window.ReactNativeWebView) {
       window.ReactNativeWebView.postMessage(JSON.stringify({ eventType: eventType, data: data }));
@@ -151,19 +214,35 @@ export function buildShellHtml({ videoId, start, end, autoplay, muted }: ShellOp
 
 export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideoPlayerProps>(
   function TrailerVideoPlayer(
-    { videoId, start, end, width, height, muted, play, onReady, onEnded, onError },
+    {
+      videoId,
+      start,
+      end,
+      width,
+      height,
+      frameTop,
+      frameHeight,
+      muted,
+      play,
+      onReady,
+      onEnded,
+      onError,
+    },
     ref
   ) {
     const webViewRef = useRef<WebView>(null);
     const readyRef = useRef(false);
+    const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Latest props/callbacks, readable from handlers without re-binding them.
-    const latest = useRef({ play, muted, onReady, onEnded, onError });
-    latest.current = { play, muted, onReady, onEnded, onError };
+    const latest = useRef({ play, muted, start, frameTop, frameHeight, onReady, onEnded, onError });
+    latest.current = { play, muted, start, frameTop, frameHeight, onReady, onEnded, onError };
 
-    // Player vars are baked into the page at load; later prop changes are
-    // applied with injectJavaScript, so the source must not change on them.
-    const initial = useRef({ play, muted });
+    // Player vars and the first layout are baked into the page at load; later
+    // prop changes are applied with injectJavaScript, so the source must not
+    // change on them. A hidden card loads cued (no autoplay) and is warmed
+    // from the ready handler instead.
+    const initial = useRef({ play, muted, frameTop, frameHeight });
     const source = useMemo(
       () => ({
         html: buildShellHtml({
@@ -172,15 +251,30 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           end,
           autoplay: initial.current.play,
           muted: initial.current.muted,
+          layout: {
+            cardWidth: width,
+            cardHeight: height,
+            frameTop: initial.current.frameTop,
+            frameHeight: initial.current.frameHeight,
+            zoom: FRAME_ZOOM,
+          },
         }),
         baseUrl: EMBED_REFERRER,
       }),
-      [videoId, start, end]
+      [videoId, start, end, width, height]
     );
 
     const inject = useCallback((js: string) => {
       webViewRef.current?.injectJavaScript(`try { ${js} } catch (e) {} true;`);
     }, []);
+
+    const clearWarm = useCallback(() => {
+      if (warmTimer.current) {
+        clearTimeout(warmTimer.current);
+        warmTimer.current = null;
+      }
+    }, []);
+    useEffect(() => clearWarm, [clearWarm]);
 
     useImperativeHandle(
       ref,
@@ -194,15 +288,35 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       [inject]
     );
 
-    // Mute/unmute and play/pause after load. Skipped until the player is
-    // ready; the ready handler applies whatever the props are at that moment.
+    // Mute/unmute after load, only while showing: a hidden card stays muted
+    // no matter what the card's mute state is, and gets the real state when
+    // it is promoted.
     useEffect(() => {
-      if (readyRef.current) inject(muted ? 'player.mute();' : 'player.unMute();');
-    }, [muted, inject]);
+      if (readyRef.current && play) inject(muted ? 'player.mute();' : 'player.unMute();');
+    }, [muted, play, inject]);
 
+    // Promotion (play: false → true): apply the real mute state, then resume
+    // from `start`, which the warm-up left buffered. Demotion just pauses.
     useEffect(() => {
-      if (readyRef.current) inject(play ? 'player.playVideo();' : 'player.pauseVideo();');
-    }, [play, inject]);
+      if (!readyRef.current) return;
+      if (play) {
+        clearWarm();
+        inject(
+          `${muted ? 'player.mute();' : 'player.unMute();'} ` +
+            `player.seekTo(${latest.current.start}, true); player.playVideo();`
+        );
+      } else {
+        inject('player.pauseVideo();');
+      }
+      // `muted` is applied by the effect above when it changes on its own.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [play, clearWarm, inject]);
+
+    // Window geometry can change after mount (the card measures its title
+    // block). Harmless before the page has loaded; re-sent on ready.
+    useEffect(() => {
+      inject(`setLayout(${JSON.stringify({ frameTop, frameHeight })});`);
+    }, [frameTop, frameHeight, inject]);
 
     // Offline venue Wi-Fi: if YouTube never reports ready, fall back to the poster.
     useEffect(() => {
@@ -224,19 +338,28 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
         switch (message.eventType) {
           case 'ready': {
             readyRef.current = true;
-            const { play: shouldPlay, muted: isMuted } = latest.current;
-            // Reconcile with the props as they are now, in case they changed
-            // during load. Only issue commands that change something: a
-            // redundant playVideo() on an already-autoplaying video makes
-            // YouTube flash its play/pause bezel. Mute before play so a mobile
-            // UA never sees an unmuted autoplay. 1 = PLAYING, 3 = BUFFERING.
-            inject(
-              `${isMuted ? 'if (!player.isMuted()) player.mute();' : 'if (player.isMuted()) player.unMute();'} ` +
-                `var s = player.getPlayerState(); ` +
-                (shouldPlay
-                  ? 'if (s !== 1 && s !== 3) player.playVideo();'
-                  : 'if (s === 1 || s === 3) player.pauseVideo();')
-            );
+            const { play: shouldPlay, muted: isMuted, start: from, frameTop: top, frameHeight: h } =
+              latest.current;
+            inject(`setLayout(${JSON.stringify({ frameTop: top, frameHeight: h })});`);
+            if (shouldPlay) {
+              // Reconcile with the props as they are now, in case they changed
+              // during load. Only issue commands that change something: a
+              // redundant playVideo() on an already-autoplaying video makes
+              // YouTube flash its play/pause bezel. Mute before play so a
+              // mobile UA never sees an unmuted autoplay. 1 = PLAYING, 3 = BUFFERING.
+              inject(
+                `${isMuted ? 'if (!player.isMuted()) player.mute();' : 'if (player.isMuted()) player.unMute();'} ` +
+                  `var s = player.getPlayerState(); if (s !== 1 && s !== 3) player.playVideo();`
+              );
+            } else {
+              // Hidden: warm the buffer muted, then park at `start`.
+              inject('player.mute(); player.playVideo();');
+              clearWarm();
+              warmTimer.current = setTimeout(() => {
+                warmTimer.current = null;
+                if (!latest.current.play) inject(`player.pauseVideo(); player.seekTo(${from}, true);`);
+              }, WARM_MS);
+            }
             latest.current.onReady();
             break;
           }
@@ -254,7 +377,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           }
         }
       },
-      [inject]
+      [inject, clearWarm]
     );
 
     return (
@@ -263,7 +386,8 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
         testID="trailer-webview"
         source={source}
         originWhitelist={['*']}
-        style={{ width, height, backgroundColor: '#000' }}
+        // Transparent so the card's blurred still shows through outside the window.
+        style={{ width, height, backgroundColor: 'transparent' }}
         onMessage={handleMessage}
         onError={() => latest.current.onError('webview_error')}
         javaScriptEnabled
