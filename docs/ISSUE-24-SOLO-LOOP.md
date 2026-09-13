@@ -80,9 +80,9 @@ warm. `handleSwipeComplete` then picks the next card with `exploreRank()`,
 which is ε-greedy: with probability `EPSILON` (0.2) it serves an off-profile
 card that nothing predicted, so that card mounts cold and starts from the
 poster. It also made `__tests__/SwipeDeck.test.tsx` flaky — its "promoted card
-keeps its instance" assertion failed 4 of 20 isolated runs, which matches ε —
-so that suite now pins `Math.random` to the exploit branch the same way this
-one does. That is a de-flake of CI, **not** a fix: the product gap is still
+keeps its instance" assertion failed 4 of 20 isolated runs, which matches ε.
+That suite pins `Math.random` to the exploit branch as of #8, the same way this
+one does, which de-flakes CI but is **not** a fix: the product gap is still
 there, and it is what a judge sees as one card in five starting from its
 poster. Owner: #6 / #7. Cheapest fix is to have `handleSwipeComplete` and
 `nextCandidates` share one pick rather than each making their own.

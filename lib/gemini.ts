@@ -138,6 +138,16 @@ function cacheWhyLine(tmdbId: number, line: string): void {
   }
 }
 
+/**
+ * A one-line, key-free summary of a failure, safe to print in a dev log. The
+ * SDK quotes the request URL in its message, so anything that looks like a
+ * Google API key is masked before it can reach a terminal or a screen share.
+ */
+function scrubbed(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/AIza[0-9A-Za-z_-]{10,}/g, 'AIza…').slice(0, 300);
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -238,7 +248,14 @@ async function requestWhy(candidate: Movie, likes: Movie[]): Promise<string | nu
       }
       if (attempt === MAX_RETRIES) {
         openQuotaCooldown();
-        log(`whyLine(${candidate.id}) rate limited — pausing for ${QUOTA_COOLDOWN_MS}ms`);
+        // The reason matters and the three cases look identical from here: a
+        // 15 RPM burst clears in a minute, the 1,500/day cap does not clear
+        // until tomorrow, and depleted billing credits never clear at all.
+        // Scrubbed: the message can quote the request URL.
+        log(
+          `whyLine(${candidate.id}) rate limited — pausing for ${QUOTA_COOLDOWN_MS}ms: ` +
+            scrubbed(error),
+        );
         return null;
       }
       // Full jitter, so two cards retrying at once don't collide again.

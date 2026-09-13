@@ -8,6 +8,15 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 // trailers are buffered before they are shown. These tests pin down that the
 // promoted card keeps its component instance (and so its WebView) across a
 // swipe.
+//
+// Both sources of nondeterminism are pinned down here, or the assertions fail
+// intermittently:
+//   - Math.random is stubbed above EPSILON so exploreRank() takes its greedy
+//     branch (#14). Left live, roughly one run in eight promotes a random card
+//     that was deliberately never pre-mounted.
+//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 5, so the first
+//     swipe would otherwise fire the TMDB top-up (#13), which resolves on its
+//     own schedule and appends to the deck mid-assertion.
 
 jest.mock('react-native-webview', () => {
   const React = require('react');
@@ -63,7 +72,7 @@ function cardsByActive(root: renderer.ReactTestInstance) {
 describe('SwipeDeck next-card preloading', () => {
   it('mounts the top card active and the predicted next card(s) inactive underneath', () => {
     act(() => {
-      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} />);
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
     });
     const { top, hidden } = cardsByActive(tree!.root);
 
@@ -75,10 +84,56 @@ describe('SwipeDeck next-card preloading', () => {
     for (const card of hidden) expect(card.props.movie.id).not.toBe(SEED_MOVIES[0].id);
   });
 
+  it('passes the screen\'s why-slot decision down to every card', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    for (const card of tree!.root.findAllByType(MovieCard)) {
+      expect(card.props.expectWhyLine).toBe(false);
+    }
+
+    act(() => {
+      tree!.update(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} expectWhyLine />);
+    });
+    for (const card of tree!.root.findAllByType(MovieCard)) {
+      expect(card.props.expectWhyLine).toBe(true);
+    }
+  });
+
+  it('announces the card on screen plus the pre-mounted ones, and again after a swipe', () => {
+    const onUpcoming = jest.fn<void, [typeof SEED_MOVIES]>();
+    const ref = React.createRef<SwipeDeckRef>();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} onUpcoming={onUpcoming} />
+      );
+    });
+
+    // The top card first, then whatever is warming behind it — never the whole
+    // deck: #20 runs on 15 requests a minute.
+    expect(onUpcoming).toHaveBeenCalledTimes(1);
+    const first = onUpcoming.mock.calls[0][0];
+    expect(first[0].id).toBe(SEED_MOVIES[0].id);
+    expect(first.length).toBeGreaterThanOrEqual(2);
+    expect(first.length).toBeLessThanOrEqual(3);
+    expect(new Set(first.map((m) => m.id)).size).toBe(first.length);
+
+    act(() => {
+      ref.current!.swipeRight();
+    });
+    act(() => {
+      jest.advanceTimersByTime(150);
+    });
+
+    // The promoted card is now the one worth spending a request on.
+    const latest = onUpcoming.mock.calls[onUpcoming.mock.calls.length - 1][0];
+    expect(latest[0].id).not.toBe(SEED_MOVIES[0].id);
+  });
+
   it('keeps the promoted card instance (same WebView source object) across a swipe', () => {
     const ref = React.createRef<SwipeDeckRef>();
     act(() => {
-      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} />);
+      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} />);
     });
     const root = tree!.root;
 
@@ -108,14 +163,10 @@ describe('SwipeDeck next-card preloading', () => {
 
 beforeEach(() => {
   jest.useFakeTimers();
-  // exploreRank() picks an off-profile card with probability EPSILON (0.2), and
-  // nothing pre-mounts that card — so without pinning the draw to the exploit
-  // branch the promotion test below fails about one run in five. The gap is
-  // real and logged as break point 1 in docs/ISSUE-24-SOLO-LOOP.md; what this
-  // pins is the claim the test is actually making, about the other four runs.
+  // >= EPSILON: exploreRank() promotes the top-ranked card rather than exploring.
   jest.spyOn(Math, 'random').mockReturnValue(0.99);
 });
 afterEach(() => {
-  jest.restoreAllMocks();
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });

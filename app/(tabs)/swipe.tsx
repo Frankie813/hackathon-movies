@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { SwipeDeck } from '@/components/SwipeDeck';
@@ -7,6 +7,7 @@ import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
 import { getDeck } from '@/lib/tmdb';
+import { useWhyLines } from '@/lib/use-why-lines';
 import {
   flushTaste,
   loadTaste,
@@ -138,9 +139,23 @@ export default function SwipeScreen() {
     [uid, recordInSession],
   );
 
+  // Reel's one-liner under the card (#20). The lines are warmed from the deck's
+  // own view of what is coming up, because only it knows the ranking.
+  const { whyFor, expectWhyLine, prefetch } = useWhyLines();
+  // What the prompt is built from. A ref, not state: this is read when a card
+  // changes, never rendered, and re-rendering the deck on every like would
+  // remount the pre-warmed trailers.
+  const likesRef = useRef<Movie[]>([]);
+
+  const handleUpcoming = useCallback(
+    (movies: Movie[]) => prefetch(movies, likesRef.current),
+    [prefetch],
+  );
+
   const handleSwipeRight = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped RIGHT (Like) on #${index}: ${movie.title}`);
+      likesRef.current = [...likesRef.current, movie];
       // Undebounced: one small write per right swipe, and #41 reads these.
       if (uid) void saveLike(uid, movie.id);
       recordInSession(movie, 'right');
@@ -168,6 +183,9 @@ export default function SwipeScreen() {
       onSwipeLeft={handleSwipeLeft}
       onSwipeRight={handleSwipeRight}
       onSwipedAll={handleSwipedAll}
+      onUpcoming={handleUpcoming}
+      whyFor={whyFor}
+      expectWhyLine={expectWhyLine}
     />
   );
 }
