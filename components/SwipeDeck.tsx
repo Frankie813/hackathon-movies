@@ -31,7 +31,7 @@ import { MovieCard } from './MovieCard';
 import { Stamp } from './Stamp';
 import { DynamicHueBackdrop } from './DynamicHueBackdrop';
 import type { Movie, TasteVector } from '@/types';
-import { applySwipe, rank } from '@/src/lib/taste';
+import { applySwipe, makeJitter, rank, type RankJitter } from '@/src/lib/taste';
 import { seedCandidates } from '@/src/lib/candidates';
 import { exploreRank } from '@/src/lib/explore';
 import { rankedCandidates } from '@/src/lib/gemini';
@@ -132,9 +132,15 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const cardW = width;
   const cardH = height;
 
+  // This session's random tie-break (#96). Without it the same saved taste
+  // vector deals the same order on every launch. One per deck session, so
+  // re-ranks after each swipe stay stable and nextCandidates predicts right.
+  const jitter = useRef<RankJitter | null>(null);
+  if (!jitter.current) jitter.current = makeJitter();
+
   // Ranked up front, not after mount: a deck that re-sorts itself once the
   // stored vector lands would shuffle under the judge's thumb (#18).
-  const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies));
+  const [deck, setDeck] = useState<Movie[]>(() => rank(initialTaste, movies, jitter.current!));
   const taste = useRef<TasteVector>(initialTaste);
 
   // #13's inputs. Liked movies in swipe order — seedCandidates re-ranks them
@@ -188,7 +194,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     const seen = new Set<number>();
     const out: Movie[] = [];
     for (const direction of ['right', 'left'] as const) {
-      const head = rank(applySwipe(taste.current, topMovie, direction), rest)[0];
+      const head = rank(applySwipe(taste.current, topMovie, direction), rest, jitter.current!)[0];
       if (head && !seen.has(head.id)) {
         seen.add(head.id);
         out.push(head);
@@ -238,7 +244,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   // under the Reanimated Jest mock they are not, which would make this reset
   // the deck every render).
   useEffect(() => {
-    setDeck(rank(initialTaste, movies));
+    setDeck(rank(initialTaste, movies, jitter.current!));
     taste.current = initialTaste;
     likedRef.current = [];
     seededAtLikeCount.current = -1;
@@ -330,7 +336,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         // behavior stay intact. Only unseen cards may move.
         const nextDeck = [
           ...deck.slice(0, nextIndex),
-          ...exploreRank(taste.current, deck.slice(nextIndex)),
+          ...exploreRank(taste.current, deck.slice(nextIndex), undefined, undefined, jitter.current!),
         ];
         setDeck(nextDeck);
         maybeSeedMore(nextDeck, nextIndex);
@@ -416,7 +422,9 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     // the deck, so the next like should be free to ask for more.
     likedRef.current = [];
     seededAtLikeCount.current = -1;
-    setDeck(rank(taste.current, movies));
+    // A replay deals a new order too (#96).
+    jitter.current = makeJitter();
+    setDeck(rank(taste.current, movies, jitter.current));
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);

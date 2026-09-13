@@ -35,8 +35,9 @@ const withColors = (m: Movie): Movie => {
  * curated seed catalog (lib/seed.json, 68 titles) when the token is unset or
  * the network is down — the caller can't tell which. Titles with a vertical
  * Short come first so the full-screen cards lead; the rest play their 16:9
- * clip. (The taste vector re-ranks all of this anyway; the order here only
- * decides ties, i.e. the cold start.)
+ * clip. (The taste vector re-ranks all of this anyway, and since #96 a
+ * per-session random tie-break in SwipeDeck decides near-ties, so this order
+ * rarely survives past the deal.)
  */
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
