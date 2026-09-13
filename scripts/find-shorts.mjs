@@ -21,12 +21,16 @@
  *     -> write `video.short`           back into the seed file
  *
  * "Official" means the uploader's channel name matches one of the film's TMDB
- * production companies (Warner Bros., Sony Pictures, Studio Ghibli…). Studios
- * only post vertical trailers for recent releases, so back-catalog titles
- * mostly get a fan Short; pass --official-only to refuse those. Everything is
- * validated the same way curate.mjs validates the landscape clip (public,
- * embeddable, not age-restricted, not US-blocked), and the player falls back
- * to the landscape clip if a Short still fails to embed.
+ * production companies (Warner Bros., Sony Pictures, Studio Ghibli…) or a
+ * licensed distributor channel (Universal, Netflix, Prime Video, GKIDS…).
+ * Only official uploads are taken by default — a fan recap or meme standing
+ * in for a trailer is worse than the zoomed landscape clip the card falls
+ * back to. Pass --allow-fan to accept fan uploads as a last resort. Studios
+ * only post vertical trailers for recent releases, so most back-catalog
+ * titles end up without one. Everything is validated the same way
+ * curate.mjs validates the landscape clip (public, embeddable, not
+ * age-restricted, not US-blocked), and the player falls back to the
+ * landscape clip if a Short still fails to embed.
  *
  * We store YouTube *keys* only. Never download, rehost, clip or proxy a video
  * file — that is the legal decision the whole project rests on (AGENTS.md §3).
@@ -35,7 +39,7 @@
  *   node scripts/find-shorts.mjs lib/seed.json          # annotate in place
  *   node scripts/find-shorts.mjs data/seedMovies.ts     # annotate in place
  *   node scripts/find-shorts.mjs lib/seed.json --dry-run
- *   node scripts/find-shorts.mjs lib/seed.json --limit 5 --official-only
+ *   node scripts/find-shorts.mjs lib/seed.json --limit 5 --allow-fan
  *   node scripts/find-shorts.mjs lib/seed.json --refresh   # re-search titles
  *                                                          # that already have one
  *
@@ -64,17 +68,18 @@ const MAX_SECONDS = 180;
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = { file: null, limit: Infinity, dryRun: false, officialOnly: false, refresh: false };
+  const args = { file: null, limit: Infinity, dryRun: false, officialOnly: true, refresh: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') args.dryRun = true;
-    else if (a === '--official-only') args.officialOnly = true;
+    else if (a === '--allow-fan') args.officialOnly = false;
+    else if (a === '--official-only') args.officialOnly = true; // the default; kept for clarity
     else if (a === '--refresh') args.refresh = true;
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a.startsWith('--')) die(`Unknown flag ${a}`);
     else args.file = a;
   }
-  if (!args.file) die('Usage: node scripts/find-shorts.mjs <lib/seed.json | data/seedMovies.ts> [--dry-run] [--limit N] [--official-only] [--refresh]');
+  if (!args.file) die('Usage: node scripts/find-shorts.mjs <lib/seed.json | data/seedMovies.ts> [--dry-run] [--limit N] [--allow-fan] [--refresh]');
   return args;
 }
 

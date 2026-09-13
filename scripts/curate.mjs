@@ -525,6 +525,7 @@ function buildMovie(detail, video) {
       ...new Set((detail.keywords?.keywords ?? []).map((k) => k.name.toLowerCase())),
     ],
     poster: POSTER_BASE + detail.poster_path,
+    overview: detail.overview ?? '',
     providers: [...new Set(providers)],
     video,
   };

@@ -44,6 +44,7 @@ const mockMovieWithVideo: Movie = {
   genreNames: ['Action', 'Sci-Fi', 'Adventure'],
   keywords: ['dream', 'heist', 'subconscious'],
   poster: 'https://image.tmdb.org/t/p/w780/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg',
+  overview: 'Cobb, a skilled thief who commits corporate espionage by infiltrating the subconscious of his targets.',
   providers: ['Netflix', 'Max'],
   video: {
     key: 'YoHD9XEInc0',
@@ -177,6 +178,20 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     expect(html).toContain('"aspect":1.7777777777777777');
     expect(html).toContain('"frameTop":104');
     expect(onCardFailedMock).not.toHaveBeenCalled();
+  });
+
+  it('swaps the title block for the TMDB synopsis when showDetails is set', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={852} active showDetails />
+    );
+
+    expect(() => root.findByProps({ testID: 'card-chrome' })).toThrow();
+    expect(() => root.findByProps({ accessibilityLabel: 'Unmute trailer' })).toThrow();
+    const details = root.findByProps({ testID: 'card-details' });
+    expect(details.findByProps({ children: mockMovieWithVideo.overview })).toBeTruthy();
+    // The video window is untouched: same shell, same geometry.
+    const webview = root.findByProps({ testID: 'trailer-webview' });
+    expect(webview.props.source.html).toContain('"frameTop":104');
   });
 
   it('warms a hidden (inactive) card muted, parks it at start, and resumes on promotion', () => {

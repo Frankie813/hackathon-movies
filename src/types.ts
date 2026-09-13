@@ -32,6 +32,8 @@ export interface Movie {
   /** TMDB person IDs in billing order; scoring uses the first three. */
   castIds?: number[];
   poster: string;       // https://image.tmdb.org/t/p/w780/...
+  /** TMDB synopsis, shown when the card is swiped up. */
+  overview?: string;
   providers: string[];  // from /watch/providers (JustWatch data), region US
   video: MovieVideo | null; // null → card shows poster only
   /** Optional poster colors used by the swipe UI. */

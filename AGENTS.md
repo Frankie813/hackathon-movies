@@ -259,7 +259,8 @@ Configured in `.mcp.json`. Setup instructions: `docs/AI-SETUP.md`.
 | `scripts/create-issues.mjs` | Creates labels, milestones, issues. `DRY_RUN=1` to preview. |
 | `scripts/add-to-project.sh` | Optional kanban board via `gh`. |
 | `scripts/setup-codex.sh` | Mirrors `.mcp.json` into `~/.codex/config.toml`. |
-| `scripts/find-shorts.mjs` | Annotates a seed file with a vertical YouTube Short per movie (`video.short`), official channels first, fan uploads as fallback (`--official-only` to refuse those). Uses YOUTUBE_API_KEY locally; output is committed. |
+| `scripts/find-shorts.mjs` | Annotates a seed file with a vertical YouTube Short per movie (`video.short`) from official studio/distributor channels only (`--allow-fan` to accept fan uploads). Uses YOUTUBE_API_KEY locally; output is committed. |
+| `scripts/add-overviews.mjs` | Backfills the TMDB synopsis (`overview`) into an existing seed JSON without re-curating. |
 | `examples/types.ts` | Shared `Movie` / `MovieVideo` shape. Move to the app in #5. |
 | `examples/TrailerCard.tsx`, `SwipeDeck.tsx` | Starting points for #6, #7. |
 | `examples/seed.sample.json` | Shape of the offline seed catalog built in #4. |

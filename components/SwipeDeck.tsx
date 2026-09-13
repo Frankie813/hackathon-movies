@@ -50,6 +50,12 @@ export interface SwipeDeckRef {
 
 const VELOCITY_THRESHOLD = 380;
 const EXIT_DURATION = 200;
+/** Like/Pass buttons throw the card the way a flick does: a touch slower, with a little lift. */
+const THROW_DURATION = 340;
+const THROW_LIFT = -28;
+/** Vertical drag (with little sideways drift) that opens or closes the description. */
+const DETAILS_SWIPE_DISTANCE = 80;
+const DETAILS_SWIPE_MAX_DRIFT = 60;
 
 export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function SwipeDeck(
   {
@@ -71,6 +77,17 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
   const [currentIndex, setCurrentIndex] = useState(0);
   const [previousMovie, setPreviousMovie] = useState<Movie | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  // Swipe up on the card: the title block gives way to the TMDB synopsis.
+  // Mirrored into a shared value so the gesture worklets can read it.
+  const [showDetails, setShowDetails] = useState(false);
+  const detailsOpen = useSharedValue(false);
+  const setDetails = useCallback(
+    (open: boolean) => {
+      detailsOpen.value = open;
+      setShowDetails(open);
+    },
+    [detailsOpen]
+  );
 
   const isDone = currentIndex >= deck.length;
 
@@ -132,6 +149,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
+    setDetails(false);
     translateX.value = 0;
     translateY.value = 0;
     nextCardOpacity.value = 1;
@@ -164,6 +182,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
       // 1. Enter intermediate transition state
       setIsTransitioning(true);
+      setDetails(false);
 
       // 2. Advance index and reset gesture position
       translateX.value = 0;
@@ -189,10 +208,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         });
       }, 100);
     },
-    [currentIndex, deck, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating]
+    [currentIndex, deck, onSwipeLeft, onSwipeRight, onSwipedAll, translateX, translateY, nextCardOpacity, isAnimating, setDetails]
   );
 
-  // Programmatic swipe (Like / Pass buttons)
+  // Programmatic swipe (Like / Pass buttons): the same off-screen throw a
+  // flick produces — rotation follows translateX, plus a small lift.
   const triggerProgrammaticSwipe = useCallback(
     (direction: 'left' | 'right') => {
       if (isDone || isAnimating.value || isTransitioning) return;
@@ -203,7 +223,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       translateX.value = withTiming(
         targetX,
         {
-          duration: EXIT_DURATION,
+          duration: THROW_DURATION,
           easing: Easing.bezier(0.18, 0.9, 0.22, 1),
         },
         (finished) => {
@@ -212,8 +232,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           }
         }
       );
+      translateY.value = withTiming(THROW_LIFT, {
+        duration: THROW_DURATION,
+        easing: Easing.out(Easing.quad),
+      });
     },
-    [isDone, isAnimating, isTransitioning, width, translateX, handleSwipeComplete]
+    [isDone, isAnimating, isTransitioning, width, translateX, translateY, handleSwipeComplete]
   );
 
   const handleReset = useCallback(() => {
@@ -222,11 +246,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     setCurrentIndex(0);
     setPreviousMovie(null);
     setIsTransitioning(false);
+    setDetails(false);
     translateX.value = 0;
     translateY.value = 0;
     nextCardOpacity.value = 1;
     isAnimating.value = false;
-  }, [movies, translateX, translateY, nextCardOpacity, isAnimating]);
+  }, [movies, translateX, translateY, nextCardOpacity, isAnimating, setDetails]);
 
   useImperativeHandle(
     ref,
@@ -256,6 +281,23 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     .onEnd((event) => {
       'worklet';
       if (isAnimating.value) return;
+
+      // Mostly-vertical drags toggle the description instead of deciding.
+      const drift = Math.abs(event.translationX);
+      if (drift < DETAILS_SWIPE_MAX_DRIFT) {
+        if (event.translationY < -DETAILS_SWIPE_DISTANCE && !detailsOpen.value) {
+          runOnJS(setDetails)(true);
+          translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+          translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+          return;
+        }
+        if (event.translationY > DETAILS_SWIPE_DISTANCE && detailsOpen.value) {
+          runOnJS(setDetails)(false);
+          translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+          translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+          return;
+        }
+      }
 
       const swipeThreshold = width * 0.22;
       const isSwipeRight =
@@ -308,6 +350,14 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       }
     });
 
+  // A plain tap closes the description. Exclusive with the pan: the tap only
+  // wins when the finger never moved enough for the pan to activate.
+  const tapGesture = Gesture.Tap().onEnd(() => {
+    'worklet';
+    if (detailsOpen.value) runOnJS(setDetails)(false);
+  });
+  const cardGesture = Gesture.Exclusive(panGesture, tapGesture);
+
   // Top card gesture animation
   const topCardAnimatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(
@@ -359,11 +409,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           width={cardW}
           height={cardH}
           active={active}
+          showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor]
+    [renderCard, cardW, cardH, whyFor, showDetails]
   );
 
   return (
@@ -398,11 +449,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
             </Pressable>
           </View>
         ) : (
-          <GestureDetector gesture={panGesture}>
+          <GestureDetector gesture={cardGesture}>
             <View style={[styles.stackContainer, { width: cardW, height: cardH }]}>
-              {/* One flat list: pre-mounted next cards first (hidden under the
-                  top card, and hidden outright during the transition so only
-                  the hue shift shows), then the top card. React matches keys
+              {/* One flat list: pre-mounted next cards first (always invisible:
+                  they exist only to buffer their trailer, and must never peek
+                  out while the top card is dragged or thrown), then the top
+                  card. React matches keys
                   within a single sibling list, so keying every card by movie
                   id here is what lets a promoted card keep its instance and
                   its buffered trailer. The top card stays mounted through the
@@ -454,10 +506,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
                 ) : (
                   <Animated.View
                     key={`card-${movie.id}`}
-                    style={[
-                      styles.cardWrapper,
-                      { width: cardW, height: cardH, zIndex: 1, opacity: isTransitioning ? 0 : 1 },
-                    ]}
+                    style={[styles.cardWrapper, { width: cardW, height: cardH, zIndex: 1, opacity: 0 }]}
                   >
                     {renderMovieContent(movie, currentIndex + 1, false)}
                   </Animated.View>

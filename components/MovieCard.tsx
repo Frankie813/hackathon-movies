@@ -30,6 +30,9 @@ const FRAME_GAP = 12;
 const MIN_FRAME_HEIGHT = 180;
 /** Where the bottom chrome starts before its layout has been measured (matches bottomGradient). */
 const DEFAULT_CHROME_TOP_FROM_BOTTOM = 420;
+/** Bottom inset of the floating content: clears the action buttons and the tab bar. */
+const CHROME_BOTTOM = 160;
+const OVERVIEW_LINE_HEIGHT = 21;
 
 /**
  * Backdrop candidates for a trailer, tried in order. YouTube serves every
@@ -51,6 +54,8 @@ interface MovieCardProps {
   width: number;
   height: number;
   active?: boolean;
+  /** Swipe-up state: replace the title block with the TMDB synopsis. */
+  showDetails?: boolean;
   whyLine?: string;
   onPressSpeaker?: (movie: Movie) => void;
   onToggleMute?: () => void;
@@ -63,6 +68,7 @@ export function MovieCard({
   width,
   height,
   active = false,
+  showDetails = false,
   whyLine,
   onPressSpeaker,
   onToggleMute,
@@ -271,7 +277,43 @@ export function MovieCard({
         pointerEvents="none"
       />
 
+      {/* Swipe-up view: the synopsis in place of the title block. In the
+          landscape layout it starts under the video window; over a
+          full-screen Short it sits where the title block was. The video
+          window keeps the geometry measured from the title block, so it
+          doesn't jump when the block is swapped out. */}
+      {showDetails && (
+        <View
+          testID="card-details"
+          style={[
+            styles.floatingContent,
+            usingShort ? null : { top: frameTop + frameHeight + FRAME_GAP },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.overviewBadge}>ABOUT THIS MOVIE</Text>
+          <Text
+            style={styles.overviewText}
+            numberOfLines={
+              usingShort
+                ? 9
+                : Math.max(
+                    3,
+                    Math.floor(
+                      (height - CHROME_BOTTOM - (frameTop + frameHeight + FRAME_GAP) - 48) /
+                        OVERVIEW_LINE_HEIGHT
+                    )
+                  )
+            }
+          >
+            {movie.overview?.trim() || 'No description available for this title.'}
+          </Text>
+          <Text style={styles.overviewHint}>Swipe down or tap to go back</Text>
+        </View>
+      )}
+
       {/* Floating Info Overlay (Clean with NO background box, spaced for floating buttons & tab bar) */}
+      {!showDetails && (
       <View
         testID="card-chrome"
         style={styles.floatingContent}
@@ -354,6 +396,7 @@ export function MovieCard({
           </View>
         )}
       </View>
+      )}
     </View>
   );
 }
@@ -422,11 +465,34 @@ const styles = StyleSheet.create({
   },
   floatingContent: {
     position: 'absolute',
-    bottom: 160, // Clear space for action buttons (bottom: 100) & tab bar (bottom: 24)
+    bottom: CHROME_BOTTOM, // Clear space for action buttons (bottom: 100) & tab bar (bottom: 24)
     left: 20,
     right: 20,
     zIndex: 20,
     backgroundColor: 'transparent',
+  },
+  overviewBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(255, 255, 255, 0.65)',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  overviewText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#f3f4f6',
+    lineHeight: OVERVIEW_LINE_HEIGHT,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  overviewHint: {
+    marginTop: 10,
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.45)',
+    letterSpacing: 0.8,
   },
   titleRow: {
     flexDirection: 'row',

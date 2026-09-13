@@ -65,8 +65,16 @@ export function FloatingBubbleTabBar({
 
         {/* Tab Items */}
         <View style={styles.tabBarInner}>
-          {state.routes.map((route, index) => {
-            const isFocused = state.index === index;
+          {state.routes
+            // expo-router turns a screen's `href: null` into
+            // tabBarItemStyle { display: 'none' } before the options reach a
+            // custom tab bar, so that is the signal to leave it out.
+            .filter(
+              (route) =>
+                StyleSheet.flatten(descriptors[route.key]?.options?.tabBarItemStyle)?.display !== 'none'
+            )
+            .map((route) => {
+            const isFocused = state.routes[state.index]?.key === route.key;
             const config = TAB_CONFIG[route.name] || {
               label: route.name,
               activeIcon: 'film',
