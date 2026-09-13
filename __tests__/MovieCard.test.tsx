@@ -95,6 +95,16 @@ afterEach(() => {
 });
 
 describe('MovieCard trailer playback (Issue #7)', () => {
+  it('renders Gemini vibe tags as chips when given, and no chip row otherwise (#39)', () => {
+    const root = render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={720} vibeTags={['neon-noir', 'slow burn', 'dreamlike']} />
+    );
+    const row = root.findByProps({ testID: 'vibe-tags' });
+    expect(row.findByProps({ children: 'slow burn' })).toBeTruthy();
+    act(() => tree!.update(<MovieCard movie={mockMovieWithVideo} width={360} height={720} />));
+    expect(root.findAllByProps({ testID: 'vibe-tags' })).toHaveLength(0);
+  });
+
   it('renders title, year, genres, and providers', () => {
     const root = render(
       <MovieCard

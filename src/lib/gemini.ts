@@ -1,6 +1,8 @@
 import type { Member, Movie } from '../types';
 import { createMoodToFilters } from './mood';
 import { createRankedCandidates } from './ranked';
+import { createVibeTags } from './vibe';
+import pregeneratedVibeTags from '../../lib/vibe-tags.json';
 
 export interface Compromise {
   pick: string;
@@ -223,6 +225,19 @@ export type { RankedOptions } from './ranked';
 export const rankedCandidates = createRankedCandidates({
   generate: async (prompt) => (await import('./ranked-model')).generateRankedText(prompt),
   resolve: async (title, year) => (await import('../../lib/tmdb')).searchMovie(title, year),
+});
+
+// Issue #39: three vibe tags read from the poster image. The seed catalog's are
+// pre-generated (scripts/vibe-tags.mjs) so the card never spends an image
+// request mid-demo; vibeTags() covers anything else and caches per movie.
+export const { vibeTags, cachedVibeTags } = createVibeTags({
+  generate: async (image, title) => (await import('./vibe-model')).generateVibeText(image, title),
+  fetchImage: async (url) => (await import('./vibe-model')).fetchPosterImage(url),
+  pregenerated: pregeneratedVibeTags,
+  storage: {
+    getItem: async (key) => (await import('@react-native-async-storage/async-storage')).default.getItem(key),
+    setItem: async (key, value) => (await import('@react-native-async-storage/async-storage')).default.setItem(key, value),
+  },
 });
 
 // Issue #22: natural-language mood → TMDB /discover filters. Firebase and

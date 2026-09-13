@@ -125,6 +125,8 @@ interface MovieCardProps {
    * the genres, since without a line there is nothing to jump.
    */
   expectWhyLine?: boolean;
+  /** Three vibe tags Gemini read off the poster (#39). Absent: no chip row. */
+  vibeTags?: string[];
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
@@ -138,6 +140,7 @@ export function MovieCard({
   showDetails = false,
   whyLine,
   expectWhyLine = false,
+  vibeTags,
   onToggleMute,
   isMuted,
   onCardFailed,
@@ -450,6 +453,20 @@ export function MovieCard({
           ))}
         </View>
 
+        {/* Vibe chips (#39): Gemini's read of the poster. One line, clipped
+            rather than wrapped, so they never add a second row of height. */}
+        {vibeTags && vibeTags.length > 0 && (
+          <View testID="vibe-tags" style={styles.vibeRow}>
+            {vibeTags.map((tag) => (
+              <View key={tag} style={styles.vibePill}>
+                <Text style={styles.vibeText} numberOfLines={1}>
+                  {tag}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Where-to-watch badges. Always a single row: TMDB hands back up to
             nine providers per title, and a wrapping row would change the
             chrome's height from card to card — which moves the video window
@@ -651,6 +668,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  vibeRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    overflow: 'hidden',
+    gap: 6,
+    marginBottom: 6,
+  },
+  vibePill: {
+    flexShrink: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  vibeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    fontStyle: 'italic',
+    color: 'rgba(255, 255, 255, 0.8)',
   },
   providersSection: {
     marginTop: 4,

@@ -68,6 +68,8 @@ export interface SwipeDeckProps {
    * for a line that will never come is just a gap above the genres.
    */
   expectWhyLine?: boolean;
+  /** Pre-generated vibe tags for a card (#39). Must be a synchronous cache read. */
+  vibeFor?: (movie: Movie) => string[] | undefined;
   /**
    * Pull related titles from TMDB (#13) as the deck runs low, so it does not
    * dead-end on "DECK COMPLETED" mid-demo. Off makes the deck exactly `movies`
@@ -115,6 +117,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     whyFor,
     onUpcoming,
     expectWhyLine = false,
+    vibeFor,
     autoSeed = true,
   },
   ref
@@ -592,11 +595,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
           expectWhyLine={expectWhyLine}
+          vibeTags={vibeFor?.(movie)}
           onCardFailed={handleCardFailed}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, expectWhyLine, showDetails, handleCardFailed]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed]
   );
 
   return (

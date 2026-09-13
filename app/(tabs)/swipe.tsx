@@ -10,7 +10,8 @@ import { recordSwipe } from '@/lib/session';
 import { seedMoviesWithVideo } from '@/lib/seed';
 import { getDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
-import type { MoodFilters } from '@/src/lib/gemini';
+// Bundled tags only (#39): the swipe loop never spends an image request.
+import { cachedVibeTags, type MoodFilters } from '@/src/lib/gemini';
 import {
   flushTaste,
   loadTaste,
@@ -266,6 +267,7 @@ export default function SwipeScreen() {
         onUpcoming={handleUpcoming}
         whyFor={whyFor}
         expectWhyLine={expectWhyLine}
+        vibeFor={cachedVibeTags}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
           nothing here is ever composited over the card's YouTube player. */}
