@@ -748,8 +748,16 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   return (
     <View style={styles.container}>
-      {/* Full-screen loader.gif backdrop, scaled to fill the deck viewport */}
-      <DynamicHueBackdrop width={cardW} height={cardH} />
+      {/* Full-screen loader.gif backdrop, scaled to fill the deck viewport.
+          Swapped for a plain black fill on the top picks screen (#97) —
+          the round is over, so there's no card left for the gif to hue-shift
+          behind, and leaving it running just burns cycles decoding an
+          animated GIF nobody sees move. */}
+      {isDone && renderEmpty ? (
+        <View style={[styles.blackBackdrop, { width: cardW, height: cardH }]} />
+      ) : (
+        <DynamicHueBackdrop width={cardW} height={cardH} />
+      )}
 
       {/* Full-Screen Deck Viewport */}
       <View style={[styles.deckArea, { width: cardW, height: cardH }]}>
@@ -954,6 +962,12 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
     overflow: 'hidden',
+  },
+  blackBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: '#000',
   },
   stackContainer: {
     flex: 1,
