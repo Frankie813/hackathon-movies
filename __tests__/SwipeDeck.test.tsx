@@ -43,6 +43,16 @@ jest.mock('@/components/DynamicHueBackdrop', () => {
   return { DynamicHueBackdrop: () => <View /> };
 });
 
+// `autoSeed` defaults to true, so swiping right on a short deck runs the real
+// top-up path. Unmocked, #13's seedCandidates and then #23's rankedCandidates
+// both fire; the latter dynamically imports the Firebase model, whose module
+// scope throws without EXPO_PUBLIC_FIREBASE_* set. The rejection is swallowed
+// inside rankedCandidates, so it never fails a test — it just leaves async work
+// running after the test body returns, which is what makes this suite flaky.
+// These tests are about card identity across a swipe, not about seeding.
+jest.mock('@/src/lib/candidates', () => ({ seedCandidates: jest.fn(async () => []) }));
+jest.mock('@/src/lib/gemini', () => ({ rankedCandidates: jest.fn(async () => []) }));
+
 let tree: renderer.ReactTestRenderer | null = null;
 afterEach(() => {
   act(() => {

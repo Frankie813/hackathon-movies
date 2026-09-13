@@ -1,5 +1,6 @@
 import type { Member, Movie } from '../types';
 import { createMoodToFilters } from './mood';
+import { createRankedCandidates } from './ranked';
 
 export interface Compromise {
   pick: string;
@@ -197,6 +198,14 @@ export function createExplainPick({ generate }: Pick<CompromiseDependencies, 'ge
 }
 
 export const explainPick = createExplainPick({ generate: generateCompromiseText });
+
+// Issue #23: Gemini's ranked next titles, for when #13's pool runs dry. Every
+// title is resolved through TMDB /search/movie before it can reach the deck.
+export type { RankedOptions } from './ranked';
+export const rankedCandidates = createRankedCandidates({
+  generate: async (prompt) => (await import('./ranked-model')).generateRankedText(prompt),
+  resolve: async (title, year) => (await import('../../lib/tmdb')).searchMovie(title, year),
+});
 
 // Issue #22: natural-language mood → TMDB /discover filters. Firebase and
 // TMDB load lazily, as with the compromise, so importing this costs nothing.
