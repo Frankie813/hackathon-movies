@@ -170,3 +170,58 @@ describe('isOffline', () => {
     expect(tmdb.isOffline()).toBe(expected);
   });
 });
+
+describe('searchMovie (#23 title validation)', () => {
+  type Search = { searchMovie: (title: string, year?: number) => Promise<Movie | null>; isOffline: () => boolean };
+  const loadSearch = () => loadTmdb() as unknown as Search;
+
+  /** /search/movie answers with `results`; /movie/{id} hydrates from detail(). */
+  function searchFetch(results: { id: number; title: string; original_title?: string; release_date: string }[]) {
+    return jest.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        if (String(url).includes('/search/movie')) return { results };
+        const id = Number(String(url).match(/\/movie\/(\d+)/)?.[1]);
+        const hit = results.find((result) => result.id === id);
+        return detail(id, hit ? { title: hit.title, release_date: hit.release_date } : {});
+      },
+    }));
+  }
+
+  it('resolves an exact title match to the hydrated TMDB movie, ignoring fuzzy hits', async () => {
+    const tmdb = loadSearch();
+    setFetch(searchFetch([
+      { id: 900001, title: 'Arrival of the Dead', release_date: '2016-01-01' },
+      { id: 900002, title: 'Arrival', release_date: '2016-11-10' },
+    ]));
+    const movie = await tmdb.searchMovie('arrival', 2016);
+    expect(movie?.id).toBe(900002);
+    expect(movie?.title).toBe('Arrival');
+  });
+
+  it('rejects an invented title and a same-name film from another era', async () => {
+    const tmdb = loadSearch();
+    setFetch(searchFetch([{ id: 900003, title: 'Dune', release_date: '1984-12-14' }]));
+    await expect(tmdb.searchMovie('The Quantum Heist of Neptune', 2019)).resolves.toBeNull();
+    await expect(tmdb.searchMovie('Dune', 2021)).resolves.toBeNull();
+    await expect(tmdb.searchMovie('Dune', 1985)).resolves.toMatchObject({ id: 900003 });
+  });
+
+  it('matches through punctuation, accents, a leading article, and original_title', async () => {
+    const tmdb = loadSearch();
+    setFetch(searchFetch([
+      { id: 900004, title: 'Amélie', original_title: "Le Fabuleux Destin d'Amélie Poulain", release_date: '2001-04-25' },
+    ]));
+    await expect(tmdb.searchMovie('amelie')).resolves.toMatchObject({ id: 900004 });
+    await expect(tmdb.searchMovie("Le fabuleux destin d'Amelie Poulain", 2001)).resolves.toMatchObject({ id: 900004 });
+  });
+
+  it('falls back to the seed catalog offline, and never marks the deck offline', async () => {
+    const tmdb = loadSearch();
+    setFetch(jest.fn(async () => { throw new TypeError('Network request failed'); }));
+    await expect(tmdb.searchMovie('the matrix', 1999)).resolves.toMatchObject({ id: 603 });
+    await expect(tmdb.searchMovie('Not A Real Film')).resolves.toBeNull();
+    expect(tmdb.isOffline()).toBe(false);
+  });
+});
