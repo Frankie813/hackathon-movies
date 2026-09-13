@@ -8,6 +8,15 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 // trailers are buffered before they are shown. These tests pin down that the
 // promoted card keeps its component instance (and so its WebView) across a
 // swipe.
+//
+// Both sources of nondeterminism are pinned down here, or the assertions fail
+// intermittently:
+//   - Math.random is stubbed above EPSILON so exploreRank() takes its greedy
+//     branch (#14). Left live, roughly one run in eight promotes a random card
+//     that was deliberately never pre-mounted.
+//   - autoSeed={false}: SEED_MOVIES is 6 long and LOW_WATER is 5, so the first
+//     swipe would otherwise fire the TMDB top-up (#13), which resolves on its
+//     own schedule and appends to the deck mid-assertion.
 
 jest.mock('react-native-webview', () => {
   const React = require('react');
@@ -53,7 +62,7 @@ function cardsByActive(root: renderer.ReactTestInstance) {
 describe('SwipeDeck next-card preloading', () => {
   it('mounts the top card active and the predicted next card(s) inactive underneath', () => {
     act(() => {
-      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} />);
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
     });
     const { top, hidden } = cardsByActive(tree!.root);
 
@@ -68,7 +77,7 @@ describe('SwipeDeck next-card preloading', () => {
   it('keeps the promoted card instance (same WebView source object) across a swipe', () => {
     const ref = React.createRef<SwipeDeckRef>();
     act(() => {
-      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} />);
+      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} />);
     });
     const root = tree!.root;
 
@@ -98,7 +107,10 @@ describe('SwipeDeck next-card preloading', () => {
 
 beforeEach(() => {
   jest.useFakeTimers();
+  // >= EPSILON: exploreRank() promotes the top-ranked card rather than exploring.
+  jest.spyOn(Math, 'random').mockReturnValue(0.99);
 });
 afterEach(() => {
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });

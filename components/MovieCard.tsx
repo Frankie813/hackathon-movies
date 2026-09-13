@@ -33,6 +33,18 @@ const DEFAULT_CHROME_TOP_FROM_BOTTOM = 420;
 /** Bottom inset of the floating content: clears the action buttons and the tab bar. */
 const CHROME_BOTTOM = 160;
 const OVERVIEW_LINE_HEIGHT = 21;
+/**
+ * The Gemini "why" line (#20) arrives long after the card has been laid out, so
+ * its slot is reserved up front at a fixed height: badge line + two lines of
+ * quote. An absent slot would grow the chrome when the line lands, and the
+ * chrome's measured top is what sizes the video window above it.
+ */
+const WHY_BADGE_LINE_HEIGHT = 13;
+const WHY_BADGE_GAP = 2;
+const WHY_LINE_HEIGHT = 18;
+const WHY_SLOT_HEIGHT = WHY_BADGE_LINE_HEIGHT + WHY_BADGE_GAP + WHY_LINE_HEIGHT * 2;
+/** Named provider badges shown before the rest collapse into a "+N" badge. */
+const MAX_PROVIDER_BADGES = 3;
 
 /**
  * Backdrop candidates for a trailer, tried in order. YouTube serves every
@@ -57,7 +69,6 @@ interface MovieCardProps {
   /** Swipe-up state: replace the title block with the TMDB synopsis. */
   showDetails?: boolean;
   whyLine?: string;
-  onPressSpeaker?: (movie: Movie) => void;
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
@@ -70,7 +81,6 @@ export function MovieCard({
   active = false,
   showDetails = false,
   whyLine,
-  onPressSpeaker,
   onToggleMute,
   isMuted,
   onCardFailed,
@@ -346,24 +356,18 @@ export function MovieCard({
           )}
         </View>
 
-        {/* Gemini "Why you'll like this" slot + ElevenLabs Voice Read-Aloud Placeholder */}
-        {whyLine ? (
-          <View style={styles.whyWrapper}>
-            <View style={styles.whyHeaderRow}>
+        {/* Gemini "Why you'll like this" slot (#20). Rendered empty rather
+            than absent — see WHY_SLOT_HEIGHT. */}
+        <View testID="why-slot" style={styles.whySlot}>
+          {whyLine ? (
+            <>
               <Text style={styles.whyBadge}>WHY YOU'LL LIKE THIS</Text>
-              <Pressable
-                onPress={() => onPressSpeaker?.(movie)}
-                style={styles.speakerButton}
-                accessibilityLabel="Listen to Reel AI"
-              >
-                <Ionicons name="volume-medium" size={14} color={accentColor} />
-              </Pressable>
-            </View>
-            <Text style={styles.whyText} numberOfLines={2}>
-              "{whyLine}"
-            </Text>
-          </View>
-        ) : null}
+              <Text style={styles.whyText} numberOfLines={2}>
+                "{whyLine}"
+              </Text>
+            </>
+          ) : null}
+        </View>
 
         {/* Tag pills: genres */}
         <View style={styles.tagRow}>
@@ -382,16 +386,29 @@ export function MovieCard({
           ))}
         </View>
 
-        {/* Where-to-watch badges */}
+        {/* Where-to-watch badges. Always a single row: TMDB hands back up to
+            nine providers with names as long as "Paramount+ Roku Premium
+            Channel", and a wrapping row would change the chrome's height from
+            card to card. The first three share the row and ellipsize; the rest
+            collapse into "+N". */}
         {movie.providers && movie.providers.length > 0 && (
           <View style={styles.providersSection}>
             <Text style={styles.providersLabel}>STREAMING ON</Text>
-            <View style={styles.providerRow}>
-              {movie.providers.slice(0, 4).map((prov) => (
-                <View key={prov} style={styles.providerBadge}>
-                  <Text style={styles.providerName}>{prov}</Text>
+            <View testID="provider-row" style={styles.providerRow}>
+              {movie.providers.slice(0, MAX_PROVIDER_BADGES).map((prov) => (
+                <View key={prov} style={[styles.providerBadge, styles.providerBadgeShrink]}>
+                  <Text style={styles.providerName} numberOfLines={1}>
+                    {prov}
+                  </Text>
                 </View>
               ))}
+              {movie.providers.length > MAX_PROVIDER_BADGES && (
+                <View testID="provider-overflow" style={styles.providerBadge}>
+                  <Text style={styles.providerName}>
+                    {`+${movie.providers.length - MAX_PROVIDER_BADGES}`}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -533,33 +550,26 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  whyWrapper: {
+  whySlot: {
+    height: WHY_SLOT_HEIGHT,
     marginVertical: 4,
+    overflow: 'hidden',
     backgroundColor: 'transparent',
-  },
-  whyHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
   },
   whyBadge: {
     fontSize: 10,
+    lineHeight: WHY_BADGE_LINE_HEIGHT,
+    marginBottom: WHY_BADGE_GAP,
     fontWeight: '800',
     color: 'rgba(255, 255, 255, 0.65)',
     letterSpacing: 1.5,
-  },
-  speakerButton: {
-    padding: 3,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   whyText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#f3f4f6',
     fontStyle: 'italic',
-    lineHeight: 18,
+    lineHeight: WHY_LINE_HEIGHT,
     textShadowColor: 'rgba(0, 0, 0, 0.9)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 6,
@@ -593,7 +603,8 @@ const styles = StyleSheet.create({
   },
   providerRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
     gap: 6,
   },
   providerBadge: {
@@ -603,6 +614,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  providerBadgeShrink: {
+    // Long names ellipsize to share one row instead of wrapping onto a second.
+    flexShrink: 1,
   },
   providerName: {
     fontSize: 10,
