@@ -15,7 +15,6 @@ import { useRouter } from 'expo-router';
 
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
-import { subscribe as subscribeMembers } from '@/lib/session';
 import { getMovie, knownMovies } from '@/lib/tmdb';
 import { explainPick } from '@/src/lib/gemini';
 import { clearMatch, watchForMatch } from '@/src/lib/match';
@@ -41,8 +40,7 @@ export function MatchOverlay() {
   const [movie, setMovie] = useState<Movie | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
-  // clearMatch() needs the member list to work out the next swipe floor, and
-  // watchForMatch keeps its own copy internally rather than handing one out.
+  // Fed by watchForMatch's own member subscription — see the effect below.
   const [members, setMembers] = useState<Member[]>([]);
 
   useEffect(() => {
@@ -53,15 +51,17 @@ export function MatchOverlay() {
     }
     // knownMovies is passed as a function: the live deck and #13's seeding
     // keep growing the catalog after this subscribes.
-    const stopWatching = watchForMatch(code, knownMovies, setMatch, {
+    // The member list comes from this subscription rather than a second one of
+    // our own: clearMatch() needs it to work out the next swipe floor, and a
+    // separate listener would race this one — a device that joins a session
+    // which has already matched gets the match document before its own first
+    // member snapshot, and a "Keep swiping" in that window would compute the
+    // floor from an empty list.
+    return watchForMatch(code, knownMovies, setMatch, {
       onDetect: async (winner, groupMembers) =>
         (await explainPick(groupMembers, knownMovies(), winner)) ?? undefined,
+      onMembers: setMembers,
     });
-    const stopMembers = subscribeMembers(code, setMembers);
-    return () => {
-      stopWatching();
-      stopMembers();
-    };
   }, [code, uid]);
 
   const tmdbId = match?.tmdbId ?? null;

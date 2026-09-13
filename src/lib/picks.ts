@@ -86,20 +86,28 @@ export async function buildNextRound(
   ]);
 
   const pool: Movie[] = [];
+  /** The same titles without the `seen` filter — the re-deal of last resort. */
+  const everything: Movie[] = [];
   const have = new Set<number>();
   for (const movie of [...related, ...discovered]) {
+    if (have.has(movie.id)) continue;
+    have.add(movie.id);
+    everything.push(movie);
     // getDeck() only falls back to already-seen titles when it cannot find
     // enough new ones, so this is a filter of last resort rather than the
     // common path — but a round that re-deals a card the user just swiped is
     // the one thing that makes the loop look broken.
-    if (have.has(movie.id) || seen.has(movie.id)) continue;
-    have.add(movie.id);
+    if (seen.has(movie.id)) continue;
     pool.push(movie);
   }
 
   // Everything the user has already judged is exhausted. Better to re-deal
-  // than to hand back an empty round and dead-end the demo.
-  const ranked = rank(taste, pool.length > 0 ? pool : discovered, opts.jitter);
+  // than to hand back an empty round and dead-end the demo. Both sources feed
+  // the re-deal, not just `discovered`: on the one path where /discover comes
+  // back empty, the related titles are all that is left, and a `discovered`-only
+  // fallback would build a round of nothing at all — which the Swipe tab shows
+  // as an empty picks screen whose "Keep swiping" only builds it again.
+  const ranked = rank(taste, pool.length > 0 ? pool : everything, opts.jitter);
 
   return {
     picks: ranked.slice(0, PICKS_COUNT),

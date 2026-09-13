@@ -277,6 +277,36 @@ describe('watchForMatch — rejection and the next round', () => {
     });
   });
 
+  it('never lowers a floor the group has already earned', async () => {
+    // A device that joins a session which has already matched receives the
+    // match document before its own first member snapshot. Pressing "Keep
+    // swiping" in that window used to write a floor of bare REMATCH_SWIPES,
+    // which everyone is already past — so the fallback re-fired with the
+    // runner-up immediately and the rejection bought the group nothing.
+    mockStore.set(MATCH_PATH, {
+      tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,
+      rejected: [alpha.id], cleared: false, swipeFloor: 40,
+    });
+
+    await clearMatch(CODE, 2, beta.id, []);
+
+    expect(mockStore.get(MATCH_PATH)?.swipeFloor).toBe(40);
+  });
+
+  it('hands the member list to clearMatch from the match watcher itself', async () => {
+    // The supported way to avoid the empty-list window above: watchForMatch
+    // already subscribes to members, so callers take its copy rather than
+    // racing a second listener.
+    const seen: Member[][] = [];
+    const stop = watchForMatch(CODE, catalog, () => {}, { onMembers: (m) => seen.push(m) });
+
+    emitMembers!(bothLiked);
+    await flush();
+
+    expect(seen.at(-1)).toEqual(bothLiked);
+    stop();
+  });
+
   it('does nothing when the round has already moved on', async () => {
     mockStore.set(MATCH_PATH, {
       tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,

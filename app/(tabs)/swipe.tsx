@@ -333,8 +333,35 @@ export default function SwipeScreen() {
       }
       nextDeckRef.current = round.deck;
       setPicks(round.picks);
+    }).catch((error: unknown) => {
+      // buildNextRound() is documented not to reject, but the deck is spent by
+      // the time this runs: an unhandled rejection would leave a solo user on
+      // "Working out your top picks…" with no card to swipe and no button to
+      // press. An empty picks list still renders "Keep swiping", which retries.
+      console.warn('[Swipe] could not build the next round:', error);
+      if (seq !== deckSeq.current) return;
+      nextDeckRef.current = [];
+      if (!inGroup) setPicks([]);
     });
   }, [code, swapDeck]);
+
+  /**
+   * Joining a group while the picks screen is up (#97). A group has no picks
+   * screen, so `renderEmpty` switches to the refill spinner — and nothing would
+   * ever retrigger onSwipedAll on a deck that is already spent, leaving that
+   * spinner up for good. The round already in hand goes straight into the deck
+   * instead; with nothing in hand, the build is re-run.
+   */
+  useEffect(() => {
+    if (code === null || picks === null || picks === 'loading') return;
+    const held = nextDeckRef.current;
+    nextDeckRef.current = [];
+    if (picks.length === 0 && held.length === 0) {
+      handleSwipedAll();
+      return;
+    }
+    swapDeck([...picks, ...held]);
+  }, [code, picks, handleSwipedAll, swapDeck]);
 
   /** "Keep swiping": the next round is already in hand, so this is instant. */
   const handleKeepSwiping = useCallback(() => {

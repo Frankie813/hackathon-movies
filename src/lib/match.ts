@@ -431,7 +431,14 @@ export async function clearMatch(
       tx.update(matchRef(normalized), {
         cleared: true,
         rejected,
-        swipeFloor: nextSwipeFloor(members),
+        // Never below the floor already on the document. Callers hand over
+        // their own snapshot of the member list, and an empty one would
+        // otherwise drop the floor to a bare REMATCH_SWIPES — letting the
+        // fallback re-fire with the runner-up on the next snapshot, which is
+        // the exact thing this field exists to prevent. watchForMatch's
+        // onMembers is the supported way to get a list that is never empty
+        // once a verdict exists.
+        swipeFloor: Math.max(current.swipeFloor, nextSwipeFloor(members)),
       });
     });
     console.log('[match] session', normalized, 'rejected tmdbId', tmdbId, '— round', round);
@@ -626,6 +633,18 @@ export interface WatchMatchOptions extends MatchOptions {
    * device detected — see watchForMatch below. Describe what you are handed.
    */
   onDetect?: (movie: Movie, members: Member[]) => Promise<string | undefined> | string | undefined;
+  /**
+   * Every member snapshot, as it arrives. Exists so a caller that needs the
+   * member list — clearMatch() does, to work out the next swipe floor — can
+   * have this subscription's copy instead of opening a second listener of its
+   * own and racing it.
+   *
+   * That race is not theoretical: a device that joins a session which has
+   * already matched receives the match document before its own first member
+   * snapshot, and a "Keep swiping" pressed in that window would compute the
+   * floor from an empty list.
+   */
+  onMembers?: (members: Member[]) => void;
 }
 
 /**
@@ -675,6 +694,7 @@ export function watchForMatch(
   });
 
   const stopMembers = subscribeMembers(normalized, (members) => {
+    opts.onMembers?.(members);
     if (claiming) return;
     // A live, uncleared verdict is on screen: nothing to detect.
     if (current && !current.cleared) return;
