@@ -24,9 +24,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   setDoc,
+  type Unsubscribe,
 } from 'firebase/firestore';
 
 import { db } from '../../lib/firebase';
@@ -307,6 +309,45 @@ export async function removeLike(uid: string, movieId: number): Promise<void> {
   });
 
   await settleWithin(write, WRITE_ACK_MS);
+}
+
+/**
+ * Every title the user has liked, newest first, live.
+ *
+ * #41's Saved tab mounts this instead of loadLikes(): Firestore applies
+ * saveLike()/removeLike()'s write to the local cache before the server
+ * acknowledges it, so a swipe (or a long-press removal on the tab itself)
+ * shows up here in the same tick — well inside the "within a second" AC.
+ *
+ * Fires with `[]` and returns a no-op unsubscribe when there is no uid yet,
+ * the same "cold rather than broken" stance as the rest of this file.
+ *
+ * @returns the Firestore unsubscribe — call it on unmount or listeners leak.
+ */
+export function subscribeLikes(uid: string, cb: (likes: LikedMovie[]) => void): Unsubscribe {
+  if (!uid) {
+    cb([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    query(likesRef(uid), orderBy('likedAt', 'desc')),
+    (snapshot) => {
+      cb(
+        snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const movieId = typeof data.movieId === 'number' ? data.movieId : Number(docSnap.id);
+            if (!Number.isFinite(movieId)) return null;
+            return { movieId, likedAt: typeof data.likedAt === 'number' ? data.likedAt : 0 };
+          })
+          .filter((like): like is LikedMovie => like !== null),
+      );
+    },
+    (error) => {
+      console.warn('[persist] likes listener failed:', error.message);
+    },
+  );
 }
 
 /**

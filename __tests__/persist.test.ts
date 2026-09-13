@@ -18,11 +18,16 @@ interface QuerySnapshot {
   docs: { id: string; data(): Record<string, unknown> }[];
 }
 
+type Unsubscribe = () => void;
+
 // `mock`-prefixed so jest's factory hoisting allows the reference.
 const mockSetDoc: jest.Mock<Promise<void>, [Ref, Record<string, unknown>]> = jest.fn();
 const mockGetDoc: jest.Mock<Promise<Snapshot>, [Ref]> = jest.fn();
 const mockGetDocs: jest.Mock<Promise<QuerySnapshot>, [Ref]> = jest.fn();
 const mockDeleteDoc: jest.Mock<Promise<void>, [Ref]> = jest.fn();
+type SnapshotListener = (snapshot: QuerySnapshot) => void;
+const mockOnSnapshot: jest.Mock<Unsubscribe, [Ref, SnapshotListener, (error: Error) => void]> =
+  jest.fn();
 
 // Forwarded rather than passed straight through: jest hoists this factory
 // above the consts above, so it has to reach them at call time, not now.
@@ -31,6 +36,8 @@ jest.mock('firebase/firestore', () => ({
   getDoc: (ref: Ref) => mockGetDoc(ref),
   getDocs: (ref: Ref) => mockGetDocs(ref),
   deleteDoc: (ref: Ref) => mockDeleteDoc(ref),
+  onSnapshot: (ref: Ref, onNext: SnapshotListener, onError: (error: Error) => void) =>
+    mockOnSnapshot(ref, onNext, onError),
   // Path builders: return the path so assertions can read it back.
   doc: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
   collection: (_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }),
@@ -47,6 +54,7 @@ import {
   removeLike,
   saveLike,
   saveTaste,
+  subscribeLikes,
   TASTE_DEBOUNCE_MS,
   TASTE_FLUSH_EVERY,
   WRITE_ACK_MS,
@@ -65,6 +73,7 @@ beforeEach(() => {
   mockDeleteDoc.mockClear().mockResolvedValue(undefined);
   mockGetDoc.mockReset();
   mockGetDocs.mockReset();
+  mockOnSnapshot.mockReset().mockReturnValue(() => {});
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -243,5 +252,36 @@ describe('likes', () => {
   it('returns [] when the read fails', async () => {
     mockGetDocs.mockRejectedValue(new Error('offline'));
     await expect(loadLikes('u1')).resolves.toEqual([]);
+  });
+});
+
+describe('subscribeLikes', () => {
+  it('subscribes to the likes collection and maps each snapshot back, newest first', () => {
+    const cb = jest.fn();
+    subscribeLikes('u1', cb);
+
+    expect(mockOnSnapshot.mock.calls[0][0]).toEqual({ path: 'users/u1/likes' });
+    const onNext = mockOnSnapshot.mock.calls[0][1];
+    onNext({
+      docs: [
+        { id: '27205', data: () => ({ movieId: 27205, likedAt: 2 }) },
+        { id: '603', data: () => ({ likedAt: 1 }) }, // id falls back to the doc id
+        { id: 'junk', data: () => ({}) },
+      ],
+    });
+
+    expect(cb).toHaveBeenCalledWith([
+      { movieId: 27205, likedAt: 2 },
+      { movieId: 603, likedAt: 1 },
+    ]);
+  });
+
+  it('calls back with [] and skips the listener when there is no uid yet', () => {
+    const cb = jest.fn();
+    const unsubscribe = subscribeLikes('', cb);
+
+    expect(cb).toHaveBeenCalledWith([]);
+    expect(mockOnSnapshot).not.toHaveBeenCalled();
+    expect(() => unsubscribe()).not.toThrow();
   });
 });
