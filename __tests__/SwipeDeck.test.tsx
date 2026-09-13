@@ -161,6 +161,96 @@ describe('SwipeDeck next-card preloading', () => {
   });
 });
 
+describe('SwipeDeck watch later button', () => {
+  /** The dock button, pressed the way a user presses it. */
+  function watchLaterButton(root: renderer.ReactTestInstance) {
+    return root
+      .findAllByProps({ accessibilityLabel: 'Watch later' })
+      .find((node) => typeof node.props.onPress === 'function');
+  }
+
+  it('saves the card on screen and throws it right, so it is a save and a like', () => {
+    const onWatchLater = jest.fn();
+    const onSwipeRight = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck
+          movies={SEED_MOVIES}
+          autoSeed={false}
+          onWatchLater={onWatchLater}
+          onSwipeRight={onSwipeRight}
+        />
+      );
+    });
+
+    act(() => {
+      watchLaterButton(tree!.root)!.props.onPress();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onWatchLater).toHaveBeenCalledTimes(1);
+    expect(onSwipeRight).toHaveBeenCalledTimes(1);
+    // The same object, not merely the same id: the screen writes the watchlist
+    // row from one and the like row from the other, and they must agree.
+    expect(onWatchLater.mock.calls[0][0]).toBe(onSwipeRight.mock.calls[0][1]);
+    expect(onWatchLater.mock.calls[0][0].id).toBe(SEED_MOVIES[0].id);
+
+    // And the deck actually moved on.
+    expect(cardsByActive(tree!.root).top[0].props.movie.id).not.toBe(SEED_MOVIES[0].id);
+  });
+
+  it('saves once when the button is hit twice inside one frame', () => {
+    const onWatchLater = jest.fn();
+    const onSwipeRight = jest.fn();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck
+          movies={SEED_MOVIES}
+          autoSeed={false}
+          onWatchLater={onWatchLater}
+          onSwipeRight={onSwipeRight}
+        />
+      );
+    });
+
+    // Both presses in one act(): a re-render between them would hand the second
+    // one a fresh isAnimating shared value under Reanimated's Jest mock, and
+    // the guard being tested here would never be the one that fires.
+    act(() => {
+      const button = watchLaterButton(tree!.root)!;
+      button.props.onPress();
+      button.props.onPress();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(onWatchLater).toHaveBeenCalledTimes(1);
+    expect(onSwipeRight).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes away with the action buttons once the deck is done', () => {
+    const ref = React.createRef<SwipeDeckRef>();
+    act(() => {
+      tree = renderer.create(<SwipeDeck ref={ref} movies={[SEED_MOVIES[0]]} autoSeed={false} />);
+    });
+    expect(watchLaterButton(tree!.root)).toBeDefined();
+
+    act(() => {
+      ref.current!.swipeRight();
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // triggerProgrammaticSwipe() bails while isDone, so leaving it up would be
+    // dead chrome next to "DECK COMPLETED".
+    expect(watchLaterButton(tree!.root)).toBeUndefined();
+  });
+});
+
 describe('SwipeDeck unplayable cards', () => {
   it('drops a pre-mounted card whose trailer cannot be embedded', () => {
     act(() => {

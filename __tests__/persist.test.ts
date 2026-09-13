@@ -52,9 +52,12 @@ import {
   loadLikes,
   loadTaste,
   removeLike,
+  removeWatchLater,
   saveLike,
   saveTaste,
+  saveWatchLater,
   subscribeLikes,
+  subscribeWatchLater,
   TASTE_DEBOUNCE_MS,
   TASTE_FLUSH_EVERY,
   WRITE_ACK_MS,
@@ -211,7 +214,7 @@ describe('likes', () => {
     expect((mockSetDoc.mock.calls[0][1] as { likedAt: number }).likedAt).toBeGreaterThan(0);
   });
 
-  it('drops the row again on a left swipe, so a rejected title leaves Saved', async () => {
+  it('drops the row again on a left swipe, so a withdrawn signal stops counting', async () => {
     await removeLike('u1', 27205);
     expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
     expect(mockDeleteDoc.mock.calls[0][0]).toEqual({ path: 'users/u1/likes/27205' });
@@ -279,6 +282,73 @@ describe('subscribeLikes', () => {
   it('calls back with [] and skips the listener when there is no uid yet', () => {
     const cb = jest.fn();
     const unsubscribe = subscribeLikes('', cb);
+
+    expect(cb).toHaveBeenCalledWith([]);
+    expect(mockOnSnapshot).not.toHaveBeenCalled();
+    expect(() => unsubscribe()).not.toThrow();
+  });
+});
+
+// #87. A separate collection from the likes above, not a flag on them: a left
+// swipe deletes a like row, and that must not silently un-save a title the user
+// deliberately kept.
+describe('watch later', () => {
+  it('writes one row per title into its own collection, keyed by the movie id', async () => {
+    await saveWatchLater('u1', 27205);
+    expect(mockSetDoc).toHaveBeenCalledTimes(1);
+    expect(mockSetDoc.mock.calls[0][0]).toEqual({ path: 'users/u1/watchlist/27205' });
+    expect(mockSetDoc.mock.calls[0][1]).toMatchObject({ movieId: 27205 });
+    expect((mockSetDoc.mock.calls[0][1] as { addedAt: number }).addedAt).toBeGreaterThan(0);
+  });
+
+  it('removes the row on the Saved tab long-press', async () => {
+    await removeWatchLater('u1', 27205);
+    expect(mockDeleteDoc).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDoc.mock.calls[0][0]).toEqual({ path: 'users/u1/watchlist/27205' });
+  });
+
+  it('does not reject or hang when the write fails or never acknowledges', async () => {
+    mockSetDoc.mockRejectedValueOnce(new Error('offline'));
+    await expect(saveWatchLater('u1', 27205)).resolves.toBeUndefined();
+
+    mockSetDoc.mockReturnValue(new Promise(() => {}));
+    const pending = saveWatchLater('u1', 603);
+    jest.advanceTimersByTime(WRITE_ACK_MS);
+    await expect(pending).resolves.toBeUndefined();
+  });
+
+  it('skips both writes when there is no uid yet', async () => {
+    await saveWatchLater('', 27205);
+    await removeWatchLater('', 27205);
+    expect(mockSetDoc).not.toHaveBeenCalled();
+    expect(mockDeleteDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('subscribeWatchLater', () => {
+  it('subscribes to the watchlist and maps each snapshot back, newest first', () => {
+    const cb = jest.fn();
+    subscribeWatchLater('u1', cb);
+
+    expect(mockOnSnapshot.mock.calls[0][0]).toEqual({ path: 'users/u1/watchlist' });
+    const onNext = mockOnSnapshot.mock.calls[0][1];
+    onNext({
+      docs: [
+        { id: '27205', data: () => ({ movieId: 27205, addedAt: 2 }) },
+        { id: '603', data: () => ({ addedAt: 1 }) }, // id falls back to the doc id
+        { id: 'junk', data: () => ({}) },
+      ],
+    });
+
+    expect(cb).toHaveBeenCalledWith([
+      { movieId: 27205, addedAt: 2 },
+      { movieId: 603, addedAt: 1 },
+    ]);
+  });
+
+  it('calls back with [] and skips the listener when there is no uid yet', () => {
+    const cb = jest.fn();
+    const unsubscribe = subscribeWatchLater('', cb);
 
     expect(cb).toHaveBeenCalledWith([]);
     expect(mockOnSnapshot).not.toHaveBeenCalled();
