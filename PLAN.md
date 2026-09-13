@@ -217,7 +217,7 @@ score(m) = Σ tasteVector[f] for each feature f in m   (optionally normalized by
 ```
 Like → +weight on the movie's features; dislike → −weight; re-rank remaining deck.
 **Cheap collaborative substitute:** seed candidates from TMDB `/similar` + `/recommendations` for top likes.
-**Cold start:** fixed onboarding deck of 6–8 polarizing titles; usable after ~5 swipes.
+**Cold start:** genre-preference picker (multi-select over the catalog's genres) seeds the taste vector directly on Done; skippable, no swiping required.
 **Exploration:** ε-greedy, ε≈0.2, inject a trending/random title.
 
 ### Group consensus
