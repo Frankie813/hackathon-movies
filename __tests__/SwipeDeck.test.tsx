@@ -74,7 +74,7 @@ describe('SwipeDeck next-card preloading', () => {
     for (const card of hidden) expect(card.props.movie.id).not.toBe(SEED_MOVIES[0].id);
   });
 
-  it('tells the cards to hold the why slot open only when it can supply lines', () => {
+  it('passes the screen\'s why-slot decision down to every card', () => {
     act(() => {
       tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
     });
@@ -83,13 +83,41 @@ describe('SwipeDeck next-card preloading', () => {
     }
 
     act(() => {
-      tree!.update(
-        <SwipeDeck movies={SEED_MOVIES} autoSeed={false} whyFor={() => undefined} />
-      );
+      tree!.update(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} expectWhyLine />);
     });
     for (const card of tree!.root.findAllByType(MovieCard)) {
       expect(card.props.expectWhyLine).toBe(true);
     }
+  });
+
+  it('announces the card on screen plus the pre-mounted ones, and again after a swipe', () => {
+    const onUpcoming = jest.fn<void, [typeof SEED_MOVIES]>();
+    const ref = React.createRef<SwipeDeckRef>();
+    act(() => {
+      tree = renderer.create(
+        <SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} onUpcoming={onUpcoming} />
+      );
+    });
+
+    // The top card first, then whatever is warming behind it — never the whole
+    // deck: #20 runs on 15 requests a minute.
+    expect(onUpcoming).toHaveBeenCalledTimes(1);
+    const first = onUpcoming.mock.calls[0][0];
+    expect(first[0].id).toBe(SEED_MOVIES[0].id);
+    expect(first.length).toBeGreaterThanOrEqual(2);
+    expect(first.length).toBeLessThanOrEqual(3);
+    expect(new Set(first.map((m) => m.id)).size).toBe(first.length);
+
+    act(() => {
+      ref.current!.swipeRight();
+    });
+    act(() => {
+      jest.advanceTimersByTime(150);
+    });
+
+    // The promoted card is now the one worth spending a request on.
+    const latest = onUpcoming.mock.calls[onUpcoming.mock.calls.length - 1][0];
+    expect(latest[0].id).not.toBe(SEED_MOVIES[0].id);
   });
 
   it('keeps the promoted card instance (same WebView source object) across a swipe', () => {

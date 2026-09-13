@@ -53,6 +53,21 @@ export interface SwipeDeckProps {
   renderCard?: (movie: Movie, index: number, active: boolean) => React.JSX.Element;
   whyFor?: (movie: Movie) => string | undefined;
   /**
+   * The card on screen plus the one or two the deck has pre-mounted behind it,
+   * whenever that set changes. #20 warms their why lines from here rather than
+   * from the swipe handler, which runs inside the gesture (AGENTS.md §4), and
+   * from here rather than the screen, which cannot see the deck's ranking.
+   *
+   * Must be referentially stable — it drives an effect.
+   */
+  onUpcoming?: (movies: Movie[]) => void;
+  /**
+   * Hold the why slot open on every card (#8). The screen owns this: only it
+   * knows whether Gemini has answered at all this session, and reserving space
+   * for a line that will never come is just a gap above the genres.
+   */
+  expectWhyLine?: boolean;
+  /**
    * Pull related titles from TMDB (#13) as the deck runs low, so it does not
    * dead-end on "DECK COMPLETED" mid-demo. Off makes the deck exactly `movies`
    * and issues no network calls — useful for rehearsing the end-of-deck state.
@@ -97,6 +112,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     onSwipedAll,
     renderCard,
     whyFor,
+    onUpcoming,
+    expectWhyLine = false,
     autoSeed = true,
   },
   ref
@@ -169,6 +186,22 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     // taste.current changes together with deck/currentIndex in handleSwipeComplete.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deck, currentIndex, topMovie]);
+
+  // The cards a why line is worth spending a request on: the one being looked
+  // at, plus whatever is pre-mounted behind it. Deliberately not the whole deck
+  // — the free tier is 15 requests a minute (#20).
+  // Keyed by id, not by array identity: the mount-time re-rank replaces `deck`
+  // with an equal-but-new array, and the listener would otherwise be told the
+  // same three cards twice on every deck reset.
+  const announcedAhead = useRef('');
+  useEffect(() => {
+    if (!onUpcoming || !topMovie) return;
+    const ahead = [topMovie, ...nextCandidates];
+    const key = ahead.map((m) => m.id).join(',');
+    if (key === announcedAhead.current) return;
+    announcedAhead.current = key;
+    onUpcoming(ahead);
+  }, [onUpcoming, topMovie, nextCandidates]);
 
   const currentAccent = topMovie?.negativeColor || previousMovie?.negativeColor || '#fbbf24';
   const currentTheme = topMovie?.themeColor || previousMovie?.themeColor || '#1a233a';
@@ -517,14 +550,11 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           active={active}
           showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
-          // A deck with a whyFor will produce a line for this card sooner or
-          // later, so the card holds the slot open from the start rather than
-          // growing when it lands (#8, #20).
-          expectWhyLine={!!whyFor}
+          expectWhyLine={expectWhyLine}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, showDetails]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, showDetails]
   );
 
   return (
