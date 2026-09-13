@@ -8,6 +8,8 @@ import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
 import { getDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
+// Bundled tags only (#39): the swipe loop never spends an image request.
+import { cachedVibeTags } from '@/src/lib/gemini';
 import {
   flushTaste,
   loadTaste,
@@ -186,6 +188,7 @@ export default function SwipeScreen() {
       onUpcoming={handleUpcoming}
       whyFor={whyFor}
       expectWhyLine={expectWhyLine}
+      vibeFor={cachedVibeTags}
     />
   );
 }
