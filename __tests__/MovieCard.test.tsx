@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { fitProviders, MovieCard } from '@/components/MovieCard';
-import { WARM_MS } from '@/components/TrailerVideoPlayer';
+import { RESUME_CHECKS_MS, WARM_MS } from '@/components/TrailerVideoPlayer';
 import type { Movie } from '@/types';
 
 // Mock react-native-webview: the native TrailerVideoPlayer drives the YouTube
@@ -242,6 +242,58 @@ describe('MovieCard trailer playback (Issue #7)', () => {
       js = mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
       expect(js).toContain('player.mute();');
       expect(js).toContain('player.seekTo(5, true); player.playVideo();');
+
+      act(() => {
+        tree2!.unmount();
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps asking the player to play after a resume until it does, and stops once paused (#100)', () => {
+    jest.useFakeTimers();
+    try {
+      let tree2: renderer.ReactTestRenderer | null = null;
+      act(() => {
+        tree2 = renderer.create(
+          <MovieCard movie={mockMovieWithVideo} width={360} height={852} active />
+        );
+      });
+      const webview = tree2!.root.findByProps({ testID: 'trailer-webview' });
+      postShellMessage(webview, 'ready');
+      const played = () =>
+        mockInjectJavaScript.mock.calls
+          .map((c) => c[0] as string)
+          .filter((js) => js.includes('getPlayerState()') && js.includes('player.playVideo()'));
+
+      // Launch: the ready handler's play is followed up in case iOS dropped it.
+      mockInjectJavaScript.mockClear();
+      act(() => {
+        jest.advanceTimersByTime(RESUME_CHECKS_MS[RESUME_CHECKS_MS.length - 1]);
+      });
+      expect(played()).toHaveLength(RESUME_CHECKS_MS.length);
+
+      // Off to another tab: paused, and the follow-ups must not restart it.
+      act(() => {
+        tree2!.update(<MovieCard movie={mockMovieWithVideo} width={360} height={852} active={false} />);
+      });
+      mockInjectJavaScript.mockClear();
+      act(() => {
+        jest.advanceTimersByTime(5_000);
+      });
+      expect(played()).toHaveLength(0);
+
+      // Back on the tab: play, then the same follow-up checks.
+      mockInjectJavaScript.mockClear();
+      act(() => {
+        tree2!.update(<MovieCard movie={mockMovieWithVideo} width={360} height={852} active />);
+      });
+      expect(mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n')).toContain('player.playVideo();');
+      act(() => {
+        jest.advanceTimersByTime(RESUME_CHECKS_MS[RESUME_CHECKS_MS.length - 1]);
+      });
+      expect(played()).toHaveLength(RESUME_CHECKS_MS.length);
 
       act(() => {
         tree2!.unmount();

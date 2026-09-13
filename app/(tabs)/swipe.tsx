@@ -66,6 +66,9 @@ export default function SwipeScreen() {
   // deck is told directly when it is off screen: the trailer pauses there and
   // plays again on return (#100).
   const isFocused = useIsFocused();
+  useEffect(() => {
+    if (__DEV__) console.log(`[Swipe] tab ${isFocused ? 'focused: trailer plays' : 'blurred: trailer paused'}`);
+  }, [isFocused]);
   // The group this device is in, if any (#16). Every swipe below is also
   // recorded there so #17 can rank the group.
   const { code } = useActiveCode();
