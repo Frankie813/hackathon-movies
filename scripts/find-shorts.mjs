@@ -99,7 +99,12 @@ function loadEnv() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchJson(url, init = {}, { attempts = 4, label = 'request' } = {}) {
+/**
+ * YouTube rate-limits bursts with HTTP 429 (distinct from the daily quota,
+ * which is a 403 quotaExceeded and is not retried). Back off generously:
+ * 2s, 4s, 8s, 16s, 32s, 64s before giving up on a request.
+ */
+async function fetchJson(url, init = {}, { attempts = 7, label = 'request' } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -116,7 +121,7 @@ async function fetchJson(url, init = {}, { attempts = 4, label = 'request' } = {
     } catch (error) {
       if (error.fatal) throw error;
       lastError = error;
-      await sleep(400 * 2 ** (attempt - 1));
+      if (attempt < attempts) await sleep(1000 * 2 ** attempt);
     }
   }
   throw lastError;
@@ -424,7 +429,14 @@ async function main() {
       );
     } catch (error) {
       console.log(`  ✗ ${label}: ${error.message}`);
+      // The daily quota is gone: nothing else will succeed today. Keep what we have.
+      if (/quotaExceeded|quota/i.test(error.message)) {
+        console.log('\n  YouTube daily quota exhausted — re-run tomorrow; titles already annotated are skipped.');
+        break;
+      }
     }
+    // Pace the titles so a burst of searches doesn't trip the per-minute limit.
+    await sleep(1500);
   }
 
   console.log(`\n${results.size} found: ${official} official, ${fan} fan; ${todo.length - results.size} without.`);

@@ -37,7 +37,12 @@
       "key": "mpj9dL7swwk",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "016oATNWjko",
+        "official": false,
+        "seconds": 58
+      }
     }
   },
   {
@@ -80,7 +85,12 @@
       "key": "buz7P6oKvDY",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "zUGzT7JM3CY",
+        "official": false,
+        "seconds": 60
+      }
     }
   },
   {
@@ -141,7 +151,12 @@
       "key": "0srwuYOgXsk",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "HXiwCtMqsGE",
+        "official": false,
+        "seconds": 60
+      }
     }
   },
   {
@@ -197,7 +212,12 @@
       "key": "PA3Pz45lt9c",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "61Nr34mA_rI",
+        "official": false,
+        "seconds": 18
+      }
     }
   },
   {
@@ -242,7 +262,12 @@
       "key": "xJstpxWEsSQ",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "YQmx-QefLK4",
+        "official": false,
+        "seconds": 15
+      }
     }
   },
   {
@@ -296,7 +321,12 @@
       "key": "dyFa0tOwA1k",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "2IgYjaPrM58",
+        "official": false,
+        "seconds": 5
+      }
     }
   },
   {
@@ -345,7 +375,12 @@
       "key": "5MfBtSh3Mao",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "a_q_VslZplw",
+        "official": false,
+        "seconds": 47
+      }
     }
   },
   {
@@ -384,7 +419,12 @@
       "key": "qqEX2aYFutI",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "6CQ3jcml3kc",
+        "official": false,
+        "seconds": 59
+      }
     }
   },
   {
@@ -425,7 +465,12 @@
       "key": "Snk8rf0MIzw",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "GrdILe-JF_M",
+        "official": false,
+        "seconds": 28
+      }
     }
   },
   {
@@ -469,7 +514,12 @@
       "key": "f0hdxFD5Nhg",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "jDHWQbmDhrM",
+        "official": false,
+        "seconds": 16
+      }
     }
   },
   {
@@ -520,7 +570,12 @@
       "key": "eD_x93AxZak",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "c_jXJSKD0_A",
+        "official": false,
+        "seconds": 8
+      }
     }
   },
   {
@@ -573,7 +628,12 @@
       "key": "sKyS8A5BZ6U",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "48OkjEfr8wc",
+        "official": true,
+        "seconds": 59
+      }
     }
   },
   {
@@ -621,7 +681,12 @@
       "key": "bS8TNDFBAHE",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "O4p6h4_EVk0",
+        "official": false,
+        "seconds": 28
+      }
     }
   },
   {
@@ -655,7 +720,12 @@
       "key": "zzH4rV08TLI",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "Vo8dSsbIppg",
+        "official": false,
+        "seconds": 28
+      }
     }
   },
   {
@@ -711,7 +781,12 @@
       "key": "QTtUdN2k0Bo",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "vq4B9ydBT3I",
+        "official": false,
+        "seconds": 25
+      }
     }
   },
   {
@@ -745,7 +820,12 @@
       "key": "VM0IfxMGJE8",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "yH9iXSulKeg",
+        "official": false,
+        "seconds": 25
+      }
     }
   },
   {
@@ -782,7 +862,12 @@
       "key": "AvWp8zUVYVs",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "Hee7F7Q2jmE",
+        "official": false,
+        "seconds": 48
+      }
     }
   },
   {
@@ -822,7 +907,12 @@
       "key": "CCWEkf24Mew",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "3Ghanc-HYU0",
+        "official": false,
+        "seconds": 45
+      }
     }
   },
   {
@@ -891,7 +981,12 @@
       "key": "lquO3YI_ZB4",
       "start": 8,
       "end": 26,
-      "source": "trailer"
+      "source": "trailer",
+      "short": {
+        "key": "u-sSz2fJryY",
+        "official": false,
+        "seconds": 34
+      }
     }
   },
   {
@@ -953,7 +1048,12 @@
       "key": "FXkQKd94N1A",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "7EPMirS7ZK4",
+        "official": false,
+        "seconds": 43
+      }
     }
   },
   {
@@ -996,7 +1096,12 @@
       "key": "KokmzxszDow",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "oQmtsiMZVU8",
+        "official": false,
+        "seconds": 34
+      }
     }
   },
   {
@@ -1052,7 +1157,12 @@
       "key": "4Wy3EHus2W4",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "h49Qfe5mNB8",
+        "official": true,
+        "seconds": 39
+      }
     }
   },
   {
@@ -1090,7 +1200,12 @@
       "key": "tjbXXpGXDgk",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "xHJ_bfmTxII",
+        "official": false,
+        "seconds": 45
+      }
     }
   },
   {
@@ -1181,7 +1296,12 @@
       "key": "r1bm09Xxr0Q",
       "start": 5,
       "end": 23,
-      "source": "tmdb-clip"
+      "source": "tmdb-clip",
+      "short": {
+        "key": "a91uRJZkebY",
+        "official": true,
+        "seconds": 40
+      }
     }
   },
   {
