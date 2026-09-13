@@ -266,6 +266,23 @@ describe('SwipeDeck deck cap (#97)', () => {
     seedCandidates.mockImplementation(async () => []);
   });
 
+  it('never tops up with movies swiped in earlier sessions', async () => {
+    seedCandidates.mockClear();
+    const ref = React.createRef<SwipeDeckRef>();
+    const seen = () => [111, 222];
+    act(() => {
+      tree = renderer.create(<SwipeDeck ref={ref} movies={SEED_MOVIES} seenIds={seen} />);
+    });
+    await act(async () => {
+      ref.current!.swipeRight();
+      jest.advanceTimersByTime(150);
+      for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    });
+    expect(seedCandidates).toHaveBeenCalled();
+    const [, , opts] = seedCandidates.mock.calls[0];
+    expect(opts.swiped).toEqual(expect.arrayContaining([111, 222]));
+  });
+
   it('does not ask for more once the deck already holds maxCards', async () => {
     seedCandidates.mockClear();
     const ref = React.createRef<SwipeDeckRef>();

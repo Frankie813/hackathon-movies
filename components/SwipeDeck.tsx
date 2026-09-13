@@ -82,6 +82,12 @@ export interface SwipeDeckProps {
    * stop once it is reached and are trimmed to fit. Unset: no cap.
    */
   maxCards?: number;
+  /**
+   * Movies swiped in earlier sessions (lib/seen.ts). Top-ups skip them, so a
+   * returning user is not topped up with films they already judged. Read at
+   * top-up time, so pass a stable getter rather than a snapshot.
+   */
+  seenIds?: () => Iterable<number>;
 }
 
 export interface SwipeDeckRef {
@@ -125,6 +131,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     vibeFor,
     autoSeed = true,
     maxCards = Infinity,
+    seenIds,
   },
   ref
 ) {
@@ -277,13 +284,15 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       seedingRef.current = true;
       setToppingUp(true);
       seededAtLikeCount.current = liked.length;
+      const previouslySeen = [...(seenIds?.() ?? [])];
 
       seedCandidates(taste.current, liked, {
         deck: currentDeck.map((m) => m.id),
         // The consumed prefix. SwipeDeck keeps swiped cards in `deck` and moves
         // an index instead of shifting, so #13 has to be told which of those
         // ids are behind the user or its pool cap counts them as live cards.
-        swiped: currentDeck.slice(0, nextIndex).map((m) => m.id),
+        // Earlier sessions' swipes ride along so they are never returned.
+        swiped: [...currentDeck.slice(0, nextIndex).map((m) => m.id), ...previouslySeen],
       })
         // #13 came back empty: the related-title pool is dry, which is the one
         // case #23's Gemini recommender is for. Every title it returns has
@@ -294,7 +303,9 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           // request plus eight TMDB searches on it.
           fresh.length > 0 || !mounted.current
             ? fresh
-            : rankedCandidates(taste.current, liked, { exclude: currentDeck.map((m) => m.id) })
+            : rankedCandidates(taste.current, liked, {
+                exclude: [...currentDeck.map((m) => m.id), ...previouslySeen],
+              })
         )
         .then((fresh) => {
           if (fresh.length === 0 || !mounted.current) return;
@@ -313,7 +324,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           if (mounted.current) setToppingUp(false);
         });
     },
-    [autoSeed, maxCards]
+    [autoSeed, maxCards, seenIds]
   );
 
   // Sequence: Old Deck Out -> index.gif Dynamic Hue Shift & Bloom Glow -> Next Deck In

@@ -64,6 +64,16 @@ export const DECK_START = 20;
 /** The most cards one deck may hold once #13/#23 have topped it up (#97). */
 export const DECK_MAX = 30;
 
+/**
+ * Unseen titles to collect before dealing. A returning user has already swiped
+ * much of the top 40, so getDeck() keeps paging /discover until it has this
+ * many movies they haven't seen, or runs out of pages.
+ */
+const UNSEEN_POOL = 40;
+
+/** How deep getDeck() may page for unseen titles: 200 movies, 10 list calls. */
+const MAX_DISCOVER_PAGES = 10;
+
 /** Related titles to hydrate per similar() call — #13 only needs a handful. */
 const SIMILAR_LIMIT = 12;
 
@@ -132,6 +142,7 @@ interface TmdbMovieDetail {
 
 interface TmdbListResponse {
   results?: { id?: number }[];
+  total_pages?: number;
 }
 
 type QueryParams = Record<string, string | number | undefined>;
@@ -408,10 +419,19 @@ function logFallback(what: string, error: unknown): void {
  * (or throw away the movies that did land), pad from seed. Not "offline" — TMDB
  * did answer — so isOffline() stays false.
  */
-function topUpFromSeed(deck: Movie[]): Movie[] {
+function topUpFromSeed(deck: Movie[], seen: ReadonlySet<number> = new Set()): Movie[] {
   if (deck.length >= DECK_START) return deck;
   const have = new Set(deck.map((movie) => movie.id));
-  return [...deck, ...seedMoviesWithVideo.filter((movie) => !have.has(movie.id))].slice(0, DECK_START);
+  const spare = seedMoviesWithVideo.filter((movie) => !have.has(movie.id));
+  return [...deck, ...unseenFirst(spare, seen)].slice(0, DECK_START);
+}
+
+/** `movies` with the ones the user hasn't swiped yet first, order otherwise kept. */
+function unseenFirst(movies: Movie[], seen: ReadonlySet<number>): Movie[] {
+  return [
+    ...movies.filter((movie) => !seen.has(movie.id)),
+    ...movies.filter((movie) => seen.has(movie.id)),
+  ];
 }
 
 /**
@@ -496,57 +516,106 @@ function discoverParams(filters: DiscoverFilters | undefined, page: number): Que
   };
 }
 
+export interface DeckOptions {
+  /**
+   * TMDB ids the user swiped in earlier sessions (lib/seen.ts). getDeck() pages
+   * past them for new titles, and deals one again only when TMDB and the seed
+   * catalog have too few unseen ones left to fill a deck.
+   */
+  seen?: ReadonlySet<number>;
+}
+
+/**
+ * A random `count` of `movies`, drawn from the unseen ones, reaching into
+ * already-swiped titles only when there aren't enough unseen ones.
+ */
+function sampleUnseen(movies: Movie[], seen: ReadonlySet<number>, count: number): Movie[] {
+  const unseen = movies.filter((movie) => !seen.has(movie.id));
+  if (unseen.length >= count) return sample(unseen, count);
+  return [...unseen, ...sample(movies.filter((movie) => seen.has(movie.id)), count - unseen.length)];
+}
+
 /**
  * The swipe deck: DECK_START cards. Online: the top 40 from /discover/movie,
  * each hydrated with videos, watch providers and keywords, then a random
- * DECK_START of the playable ones (#97). Offline, on any error, or with no
- * token: a random DECK_START from the seed catalog — check isSeedDeck().
+ * DECK_START of the playable ones (#97). With `opts.seen`, movies the user
+ * already swiped are skipped and /discover is paged deeper for new ones.
+ * Offline, on any error, or with no token: a random DECK_START from the seed
+ * catalog, unseen titles first — check isSeedDeck().
  * Movies without a playable video are dropped — this is a clip-first app and
  * #7 would show a static poster.
  */
-export async function getDeck(filters?: DiscoverFilters): Promise<Movie[]> {
+export async function getDeck(filters?: DiscoverFilters, opts: DeckOptions = {}): Promise<Movie[]> {
   const deadline = Date.now() + OPERATION_TIMEOUT_MS;
+  const seen = opts.seen ?? new Set<number>();
 
   try {
-    // allSettled, not all: the pages go out in parallel, so a single 429 on
-    // page 2 would otherwise throw away page 1 and drop the whole live deck.
-    const pages = await Promise.allSettled(
-      Array.from({ length: DISCOVER_PAGES }, (_, index) =>
-        tmdb<TmdbListResponse>('/discover/movie', discoverParams(filters, index + 1), deadline),
-      ),
-    );
-    const landed = pages.filter(
-      (page): page is PromiseFulfilledResult<TmdbListResponse> => page.status === 'fulfilled',
-    );
-    if (landed.length === 0) {
-      throw pages.find((page): page is PromiseRejectedResult => page.status === 'rejected')?.reason;
-    }
+    const ids: number[] = [];
+    const listed = new Set<number>();
+    let unseen = 0;
+    let lastPage = MAX_DISCOVER_PAGES;
 
-    const ids = [
-      ...new Set(
-        landed
-          .flatMap((page) => page.value.results ?? [])
-          .map((result) => result.id)
-          .filter((id): id is number => typeof id === 'number'),
-      ),
-    ];
+    // Two pages at a time, the top 40 first as before, and deeper only while
+    // the user has already swiped too much of what came back.
+    for (let page = 1; page <= lastPage && unseen < UNSEEN_POOL; page += DISCOVER_PAGES) {
+      const batch = Array.from(
+        { length: Math.min(DISCOVER_PAGES, lastPage - page + 1) },
+        (_, index) => page + index,
+      );
+      // allSettled, not all: the pages go out in parallel, so a single 429 on
+      // page 2 would otherwise throw away page 1 and drop the whole live deck.
+      const pages = await Promise.allSettled(
+        batch.map((n) => tmdb<TmdbListResponse>('/discover/movie', discoverParams(filters, n), deadline)),
+      );
+      const landed = pages.filter(
+        (result): result is PromiseFulfilledResult<TmdbListResponse> => result.status === 'fulfilled',
+      );
+      if (landed.length === 0) {
+        // The first batch failing is an outage; a deeper one just stops paging.
+        if (page === 1) {
+          throw pages.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+            ?.reason;
+        }
+        break;
+      }
+
+      let exhausted = false;
+      for (const { value } of landed) {
+        if (typeof value.total_pages === 'number') lastPage = Math.min(lastPage, value.total_pages);
+        const results = value.results ?? [];
+        if (results.length === 0) exhausted = true;
+        for (const result of results) {
+          if (typeof result.id !== 'number' || listed.has(result.id)) continue;
+          listed.add(result.id);
+          ids.push(result.id);
+          if (!seen.has(result.id)) unseen += 1;
+        }
+      }
+      if (exhausted) break;
+    }
     if (ids.length === 0) throw new EmptyResultError('/discover/movie returned no results');
 
-    const playable = (await mapPool(ids, CONCURRENCY, (id) => tryHydrate(id, deadline))).filter(
+    // Hydrate the unseen titles, plus seen ones only when too few are unseen
+    // to fill a deck. Everything hydrated stays in the movie cache, where #17's
+    // match watcher and #13's top-ups can find the titles that weren't dealt.
+    const unseenIds = ids.filter((id) => !seen.has(id)).slice(0, UNSEEN_POOL);
+    const toHydrate =
+      unseenIds.length >= DECK_START
+        ? unseenIds
+        : [...unseenIds, ...ids.filter((id) => seen.has(id)).slice(0, UNSEEN_POOL - unseenIds.length)];
+    const playable = (await mapPool(toHydrate, CONCURRENCY, (id) => tryHydrate(id, deadline))).filter(
       (movie): movie is Movie => movie != null && movie.video !== null,
     );
     if (playable.length === 0) throw new EmptyResultError('no playable movies in the discover page');
 
     markOnline();
-    // All 40 are still hydrated: the ones left out stay in the movie cache,
-    // where #17's match watcher and #13's top-ups can find them.
-    return topUpFromSeed(sample(playable, DECK_START));
+    return topUpFromSeed(sampleUnseen(playable, seen, DECK_START), seen);
   } catch (error) {
     logFallback('getDeck()', error);
     if (error instanceof EmptyResultError) markOnline();
     else markOffline();
     // A fresh array either way: callers own their deck and #6 mutates it.
-    const deck = sample(seedMoviesWithVideo, DECK_START);
+    const deck = sampleUnseen(seedMoviesWithVideo, seen, DECK_START);
     seedDecks.add(deck);
     return deck;
   }

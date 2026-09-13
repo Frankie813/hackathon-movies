@@ -7,6 +7,7 @@ import { SEED_MOVIES } from '@/data/seedMovies';
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { recordSwipe } from '@/lib/session';
+import { getSeen, loadSeen, markSeen } from '@/lib/seen';
 import { DECK_MAX, getDeck, isSeedDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
 // Bundled tags only (#39): the swipe loop never spends an image request.
@@ -38,6 +39,18 @@ const withColors = (m: Movie): Movie => {
  * clip. (The taste vector re-ranks all of this anyway; the order here only
  * decides ties, i.e. the cold start.)
  */
+/**
+ * The movies this device already swiped in earlier sessions, so the first deck
+ * skips them. Bounded like the taste read: a storage read that never answers
+ * must not keep the Swipe tab on a spinner, it just means repeats are allowed.
+ */
+function seenForDeck(): Promise<ReadonlySet<number>> {
+  return Promise.race([
+    loadSeen(),
+    new Promise<ReadonlySet<number>>((resolve) => setTimeout(() => resolve(getSeen()), LOAD_TIMEOUT_MS)),
+  ]);
+}
+
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
     withColors,
@@ -64,7 +77,9 @@ export default function SwipeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    void getDeck().then((movies) => {
+    void seenForDeck()
+      .then((seen) => getDeck(undefined, { seen }))
+      .then((movies) => {
       if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
     });
     return () => {
@@ -156,7 +171,7 @@ export default function SwipeScreen() {
   const applyMood = useCallback(
     async (filters: MoodFilters, text: string) => {
       const seq = (deckSeq.current += 1);
-      const movies = await getDeck(filters);
+      const movies = await getDeck(filters, { seen: getSeen() });
       if (seq !== deckSeq.current) return true;
       // The offline catalog cannot honour /discover parameters, so a mood that
       // lands there has not been applied to anything, and #11 must say so
@@ -173,7 +188,7 @@ export default function SwipeScreen() {
 
   const clearMood = useCallback(async () => {
     const seq = (deckSeq.current += 1);
-    const movies = await getDeck();
+    const movies = await getDeck(undefined, { seen: getSeen() });
     if (seq !== deckSeq.current) return;
     swapDeck(movies);
     setMood(null);
@@ -196,6 +211,8 @@ export default function SwipeScreen() {
   const handleSwipeLeft = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
+      // Passes count as seen too: the next launch should not deal it again.
+      markSeen(movie.id);
       // A title liked in an earlier run and passed on now must leave the
       // Saved tab, or #41 shows the user a film they explicitly rejected.
       if (uid) void removeLike(uid, movie.id);
@@ -220,6 +237,7 @@ export default function SwipeScreen() {
   const handleSwipeRight = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped RIGHT (Like) on #${index}: ${movie.title}`);
+      markSeen(movie.id);
       likesRef.current = [...likesRef.current, movie];
       // Undebounced: one small write per right swipe, and #41 reads these.
       if (uid) void saveLike(uid, movie.id);
@@ -254,6 +272,7 @@ export default function SwipeScreen() {
         expectWhyLine={expectWhyLine}
         vibeFor={cachedVibeTags}
         maxCards={DECK_MAX}
+        seenIds={getSeen}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
           nothing here is ever composited over the card's YouTube player. */}
