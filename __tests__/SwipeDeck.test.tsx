@@ -161,6 +161,42 @@ describe('SwipeDeck next-card preloading', () => {
   });
 });
 
+describe('SwipeDeck unplayable cards', () => {
+  it('drops a pre-mounted card whose trailer cannot be embedded', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+
+    const doomed = cardsByActive(tree!.root).hidden[0];
+    const doomedId = doomed.props.movie.id as number;
+
+    act(() => {
+      doomed.props.onCardFailed(doomed.props.movie);
+    });
+
+    // Gone from the deck entirely, not merely shown as a poster: the counter
+    // is rendered from deck.length, so a title left in it would still be
+    // promoted on the next swipe.
+    const ids = tree!.root.findAllByType(MovieCard).map((c) => c.props.movie.id);
+    expect(ids).not.toContain(doomedId);
+  });
+
+  it('keeps the card on screen, which has its own poster fallback', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+
+    const top = cardsByActive(tree!.root).top[0];
+    act(() => {
+      top.props.onCardFailed(top.props.movie);
+    });
+
+    // Removing it would swap the card out from under a finger that may already
+    // be dragging it.
+    expect(cardsByActive(tree!.root).top[0].props.movie.id).toBe(SEED_MOVIES[0].id);
+  });
+});
+
 beforeEach(() => {
   jest.useFakeTimers();
   // >= EPSILON: exploreRank() promotes the top-ranked card rather than exploring.
