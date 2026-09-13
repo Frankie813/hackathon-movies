@@ -43,6 +43,8 @@ export interface TrailerVideoPlayerProps {
   zoom?: number;
   muted: boolean;
   play: boolean;
+  /** The card's pause button (#98). On web a resume reloads the embed from `start`. */
+  userPaused?: boolean;
   onReady: () => void;
   onEnded: () => void;
   onError: (error: string) => void;
@@ -61,6 +63,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
       aspect = LANDSCAPE_ASPECT,
       zoom = FRAME_ZOOM,
       play,
+      userPaused = false,
       onReady,
     },
     ref
@@ -73,7 +76,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     // No warm-up on web: a hidden card just sits cued, and promotion changes
     // the src (a reload) to start playback.
     const params: Record<string, string> = {
-      autoplay: play ? '1' : '0',
+      autoplay: play && !userPaused ? '1' : '0',
       mute: '1',
       loop: '1',
       playlist: videoId,
