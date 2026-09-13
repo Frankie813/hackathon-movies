@@ -43,6 +43,19 @@ jest.mock('@/components/DynamicHueBackdrop', () => {
   return { DynamicHueBackdrop: () => <View /> };
 });
 
+// No pin active in these tests — getGenrePin() resolving to null makes
+// handleSwipeComplete fall through to exploreRank exactly as before this
+// module existed, which is what the identity-across-a-swipe assertions below
+// depend on. Mocked rather than pulling in the real AsyncStorage-backed
+// module, which needs its native module mocked separately (see solo-loop.test.tsx).
+jest.mock('@/src/lib/genre-pin', () => ({
+  GENRE_PIN_LIMIT: 6,
+  getGenrePin: jest.fn(async () => null),
+  setGenrePin: jest.fn(async () => {}),
+  pinnedRank: jest.fn((_pin: unknown, _v: unknown, deck: unknown[]) => deck),
+  countsTowardPin: jest.fn(() => false),
+}));
+
 // `autoSeed` defaults to true, so swiping right on a short deck runs the real
 // top-up path. Unmocked, #13's seedCandidates and then #23's rankedCandidates
 // both fire; the latter dynamically imports the Firebase model, whose module

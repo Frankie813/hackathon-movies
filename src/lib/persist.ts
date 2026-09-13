@@ -351,6 +351,39 @@ export function subscribeLikes(uid: string, cb: (likes: LikedMovie[]) => void): 
 }
 
 /**
+ * Wipes this user's taste vector and every liked title — "reset all
+ * preferences" on the Saved tab. Deliberately leaves the username alone: that
+ * lives in src/lib/username.ts, on a separate AsyncStorage key, untouched by
+ * anything here.
+ *
+ * Cancels any debounced taste write still pending for `uid` first — a stale
+ * timer firing after the reset would silently resurrect the vector this just
+ * cleared, from whatever swipe last scheduled it.
+ */
+export async function resetPreferences(uid: string): Promise<void> {
+  if (!uid) return;
+
+  const entry = pending.get(uid);
+  if (entry?.timer) clearTimeout(entry.timer);
+  pending.delete(uid);
+
+  const likeDocs = await orFallback(getDocs(likesRef(uid)), null, 'list likes to reset');
+
+  const write = Promise.all([
+    setDoc(tasteRef(uid), { vector: {}, updatedAt: Date.now() }).catch((error: unknown) => {
+      console.warn('[persist] could not reset taste:', error);
+    }),
+    ...(likeDocs?.docs.map((docSnap) =>
+      deleteDoc(docSnap.ref).catch((error: unknown) => {
+        console.warn('[persist] could not remove a like during reset:', error);
+      }),
+    ) ?? []),
+  ]);
+
+  await settleWithin(write, WRITE_ACK_MS);
+}
+
+/**
  * Every title the user has liked, newest first. This is what #41's Saved tab
  * reads; it is here so that "the likes survived the reload" is something the
  * app can show rather than something you take on faith.

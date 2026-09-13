@@ -9,8 +9,25 @@
 // special-casing for how a vector came to be — a genre pick and a swipe are
 // indistinguishable once they land in Firestore.
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { seedMovies } from '@/lib/seed';
 import type { TasteVector } from '../types';
+
+/** Set the first time Start is shown; every later launch skips straight to Swipe. */
+export const ONBOARDED_KEY = 'moviematch.onboarded';
+
+/**
+ * Clears the "has onboarded" flag so the next visit to Start shows the genre
+ * picker again, as a preferences reset requires. Never throws.
+ */
+export async function clearOnboardedFlag(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(ONBOARDED_KEY);
+  } catch (cause) {
+    console.warn('[onboarding] could not clear the onboarded flag:', cause);
+  }
+}
 
 export interface GenreOption {
   id: number;
