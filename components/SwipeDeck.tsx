@@ -240,6 +240,23 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   const topMovie = deck[currentIndex];
 
+  // Tap-to-pause (#98): a tap on the video freezes the top card's trailer and
+  // the next tap plays it on from there. Per card, so the next one plays as
+  // usual. The bottom of the video area comes from the top card, because only
+  // it has measured where its text block (and the mute button) starts.
+  const [userPaused, setUserPaused] = useState(false);
+  const videoAreaBottom = useSharedValue(0);
+  const togglePause = useCallback(() => setUserPaused((prev) => !prev), []);
+  const handleVideoAreaBottom = useCallback(
+    (y: number) => {
+      videoAreaBottom.value = y;
+    },
+    [videoAreaBottom]
+  );
+  useEffect(() => {
+    setUserPaused(false);
+  }, [topMovie?.id]);
+
   // Cards to keep mounted underneath the top card so their trailers are
   // already buffered (see TrailerVideoPlayer warm-up) by the time they are
   // promoted. The rest of the deck is re-ranked after every swipe, so the
@@ -616,11 +633,14 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
       }
     });
 
-  // A plain tap closes the description. Exclusive with the pan: the tap only
-  // wins when the finger never moved enough for the pan to activate.
-  const tapGesture = Gesture.Tap().onEnd(() => {
+  // A plain tap closes the description; with it closed, a tap on the video
+  // pauses or resumes the trailer (#98). Taps on the text block, the mute
+  // button and the action buttons below it are left alone. Exclusive with the
+  // pan: the tap only wins when the finger never moved enough to swipe.
+  const tapGesture = Gesture.Tap().withTestId('card-tap').onEnd((event) => {
     'worklet';
     if (detailsOpen.value) runOnJS(setDetails)(false);
+    else if (event.y < videoAreaBottom.value) runOnJS(togglePause)();
   });
   const cardGesture = Gesture.Exclusive(panGesture, tapGesture);
 
@@ -708,10 +728,12 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
           expectWhyLine={expectWhyLine}
           vibeTags={vibeFor?.(movie)}
           onCardFailed={handleCardFailed}
+          userPaused={active && userPaused}
+          onVideoAreaBottom={active ? handleVideoAreaBottom : undefined}
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed, paused]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed, paused, userPaused, handleVideoAreaBottom]
   );
 
   return (

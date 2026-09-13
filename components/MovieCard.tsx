@@ -130,6 +130,14 @@ interface MovieCardProps {
   onToggleMute?: () => void;
   isMuted?: boolean;
   onCardFailed?: (movie: Movie) => void;
+  /** Tap-to-pause (#98): the deck freezes the trailer while this is true. */
+  userPaused?: boolean;
+  /**
+   * Where the card's text block starts, in card coordinates, whenever it is
+   * measured (#98). Above it is the video; a tap there pauses or resumes, so a
+   * tap on the mute button or the title below it never does.
+   */
+  onVideoAreaBottom?: (y: number) => void;
 }
 
 export function MovieCard({
@@ -144,6 +152,8 @@ export function MovieCard({
   onToggleMute,
   isMuted,
   onCardFailed,
+  userPaused = false,
+  onVideoAreaBottom,
 }: MovieCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -155,8 +165,6 @@ export function MovieCard({
   const [videoFailed, setVideoFailed] = useState(!hasVideo);
   const [internalMuted, setInternalMuted] = useState(true);
   const muted = isMuted ?? internalMuted;
-  // The pause button (#98). Per card: the next card starts playing as usual.
-  const [userPaused, setUserPaused] = useState(false);
 
   // A vertical Short (found by scripts/find-shorts.mjs) plays full-screen in
   // place of the landscape clip. If it fails to embed, drop back to the clip
@@ -179,7 +187,6 @@ export function MovieCard({
     setVideoFailed(!hasVideo);
     setShortFailed(false);
     setBackdropIndex(0);
-    setUserPaused(false);
   }, [movie.id, hasVideo]);
 
   // The sharp video fills a full-width window from just below the header to
@@ -194,6 +201,10 @@ export function MovieCard({
   const frameHeight = usingShort
     ? height
     : Math.max(MIN_FRAME_HEIGHT, Math.round(chromeY - FRAME_GAP - HEADER_INSET));
+
+  useEffect(() => {
+    onVideoAreaBottom?.(chromeY);
+  }, [chromeY, onVideoAreaBottom]);
 
   // Loop the chosen segment instead of showing the YouTube end screen.
   // (No-op on web: TrailerVideoPlayer.web.tsx has no ended event or seekTo
@@ -239,8 +250,6 @@ export function MovieCard({
       setInternalMuted((prev) => !prev);
     }
   }, [onToggleMute]);
-
-  const handleTogglePause = useCallback(() => setUserPaused((prev) => !prev), []);
 
   const providerFit = useMemo(
     () => fitProviders(movie.providers ?? [], width),
@@ -412,30 +421,18 @@ export function MovieCard({
           </View>
 
           {showVideo && (
-            <View style={styles.videoControls}>
-              {/* Pause / play (#98). Below the video window like the mute
-                  button, never drawn over the player (AGENTS.md §3). */}
-              <Pressable
-                onPress={handleTogglePause}
-                style={styles.muteButton}
-                accessibilityLabel={userPaused ? 'Play trailer' : 'Pause trailer'}
-                accessibilityRole="button"
-              >
-                <Ionicons name={userPaused ? 'play' : 'pause'} size={17} color="#ffffff" />
-              </Pressable>
-              <Pressable
-                onPress={handleToggleMute}
-                style={styles.muteButton}
-                accessibilityLabel={muted ? 'Unmute trailer' : 'Mute trailer'}
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name={muted ? 'volume-mute' : 'volume-high'}
-                  size={18}
-                  color="#ffffff"
-                />
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={handleToggleMute}
+              style={styles.muteButton}
+              accessibilityLabel={muted ? 'Unmute trailer' : 'Mute trailer'}
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name={muted ? 'volume-mute' : 'volume-high'}
+                size={18}
+                color="#ffffff"
+              />
+            </Pressable>
           )}
         </View>
 
@@ -616,10 +613,6 @@ const styles = StyleSheet.create({
   titleSection: {
     flex: 1,
     marginRight: 12,
-  },
-  videoControls: {
-    flexDirection: 'row',
-    gap: 8,
   },
   muteButton: {
     width: 34,

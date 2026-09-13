@@ -303,49 +303,42 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     }
   });
 
-  it('pauses on the pause button and continues from there, not from the clip start (#98)', () => {
+  it('freezes on userPaused and continues from there, not from the clip start (#98)', () => {
     jest.useFakeTimers();
     try {
       let tree2: renderer.ReactTestRenderer | null = null;
-      const card = (active: boolean) => (
-        <MovieCard movie={mockMovieWithVideo} width={360} height={852} active={active} />
+      const card = (active: boolean, userPaused: boolean) => (
+        <MovieCard movie={mockMovieWithVideo} width={360} height={852} active={active} userPaused={userPaused} />
       );
       act(() => {
-        tree2 = renderer.create(card(true));
+        tree2 = renderer.create(card(true, false));
       });
-      const root = tree2!.root;
-      postShellMessage(root.findByProps({ testID: 'trailer-webview' }), 'ready');
+      postShellMessage(tree2!.root.findByProps({ testID: 'trailer-webview' }), 'ready');
       const sent = () => mockInjectJavaScript.mock.calls.map((c) => c[0] as string).join('\n');
-      const button = () =>
-        root.findAll((n) => typeof n.props.onPress === 'function' && /trailer$/.test(n.props.accessibilityLabel ?? ''))
-          .find((n) => /^(Pause|Play) trailer$/.test(n.props.accessibilityLabel))!;
 
-      // Pause: the player stops, and the launch follow-ups must not restart it.
-      expect(button().props.accessibilityLabel).toBe('Pause trailer');
+      // Paused by a tap: the player stops, and #100's follow-ups must not restart it.
       mockInjectJavaScript.mockClear();
-      act(() => button().props.onPress());
+      act(() => tree2!.update(card(true, true)));
       act(() => {
         jest.advanceTimersByTime(5_000);
       });
       expect(sent()).toContain('player.pauseVideo();');
       expect(sent()).not.toContain('player.playVideo()');
-      expect(button().props.accessibilityLabel).toBe('Play trailer');
 
       // A tab switch and back while paused keeps it paused.
       mockInjectJavaScript.mockClear();
-      act(() => tree2!.update(card(false)));
-      act(() => tree2!.update(card(true)));
+      act(() => tree2!.update(card(false, true)));
+      act(() => tree2!.update(card(true, true)));
       act(() => {
         jest.advanceTimersByTime(5_000);
       });
       expect(sent()).not.toContain('player.playVideo()');
 
-      // Play: continues where it stopped, so no seek back to `start`.
+      // Tapped again: continues where it stopped, so no seek back to `start`.
       mockInjectJavaScript.mockClear();
-      act(() => button().props.onPress());
+      act(() => tree2!.update(card(true, false)));
       expect(sent()).toContain('player.playVideo();');
       expect(sent()).not.toContain('seekTo');
-      expect(button().props.accessibilityLabel).toBe('Pause trailer');
 
       act(() => {
         tree2!.unmount();
@@ -355,17 +348,18 @@ describe('MovieCard trailer playback (Issue #7)', () => {
     }
   });
 
-  it('starts the next movie playing even if the last one was paused (#98)', () => {
+  it('has no pause button: tapping the video is the control (#98)', () => {
     const root = render(<MovieCard movie={mockMovieWithVideo} width={360} height={852} active />);
-    const pause = () => root.findAll((n) => n.props.accessibilityLabel === 'Pause trailer' && typeof n.props.onPress === 'function')[0];
-    act(() => pause().props.onPress());
-    expect(root.findAll((n) => n.props.accessibilityLabel === 'Play trailer').length).toBeGreaterThan(0);
+    expect(root.findAll((n) => /^(Pause|Play) trailer$/.test(n.props.accessibilityLabel ?? ''))).toHaveLength(0);
+  });
 
-    act(() => tree!.update(
-      <MovieCard movie={{ ...mockMovieWithVideo, id: 603, title: 'The Matrix' }} width={360} height={852} active />
-    ));
-    expect(pause()).toBeTruthy();
-    expect(root.findByProps({ testID: 'trailer-webview' }).props.source.html).toContain('"autoplay":1');
+  it('reports where the text block starts, so taps below the video are ignored (#98)', () => {
+    const onVideoAreaBottom = jest.fn();
+    render(
+      <MovieCard movie={mockMovieWithVideo} width={360} height={852} active onVideoAreaBottom={onVideoAreaBottom} />
+    );
+    // Before the block is measured it is assumed to start 420pt from the bottom.
+    expect(onVideoAreaBottom).toHaveBeenLastCalledWith(852 - 420);
   });
 
   it('re-sends the window geometry once the title block has been measured', () => {
