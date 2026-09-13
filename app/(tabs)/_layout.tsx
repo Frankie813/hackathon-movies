@@ -4,11 +4,22 @@ import { Tabs } from 'expo-router';
 import { FloatingBubbleTabBar } from '@/components/FloatingBubbleTabBar';
 import { MatchOverlay } from '@/components/MatchOverlay';
 
+/**
+ * Routes in this group that render without the tab bar. `href: null` only keeps
+ * a screen out of the bar's items — the bar itself still renders over the whole
+ * group — so full-screen flows have to be named here as well (#83).
+ */
+const TAB_BAR_HIDDEN_ROUTES = new Set(['index']);
+
 export default function TabsLayout() {
   return (
     <View style={{ flex: 1 }}>
       <Tabs
-        tabBar={(props) => <FloatingBubbleTabBar {...props} />}
+        tabBar={(props) => {
+          const focused = props.state.routes[props.state.index]?.name;
+          if (focused && TAB_BAR_HIDDEN_ROUTES.has(focused)) return null;
+          return <FloatingBubbleTabBar {...props} />;
+        }}
         screenOptions={{
           headerShown: false,
         }}

@@ -259,11 +259,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 12,
-    // Cleared above the floating tab bar (bottom: 24, height: 64 —
-    // components/FloatingBubbleTabBar.tsx), same clearance SwipeDeck's own
-    // action row uses. A flex sibling below the ScrollView, not an overlay,
-    // so it never floats over scrolled rows.
-    paddingBottom: 98,
+    // The tab bar is hidden on this route (#83), so this only has to clear the
+    // home indicator — not the bar's 88pt band. A flex sibling below the
+    // ScrollView, not an overlay, so it never floats over scrolled rows.
+    paddingBottom: 32,
     gap: 12,
   },
   skip: {
