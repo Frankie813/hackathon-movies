@@ -1,4 +1,4 @@
-import { applySwipe, features, rank, score } from '../src/lib/taste';
+import { applySwipe, features, JITTER, makeJitter, rank, score } from '../src/lib/taste';
 import type { Movie } from '../src/types';
 import rawSeed from '../lib/seed.json';
 const { performance } = jest.requireActual<{ performance: { now(): number } }>('node:perf_hooks');
@@ -71,5 +71,42 @@ describe('taste scoring', () => {
     console.timeEnd('issue-12: swipe + rank 60 movies');
     console.log(`60 movies: median=${samples[50].toFixed(3)}ms, p95=${samples[95].toFixed(3)}ms`);
     expect(samples[50]).toBeLessThan(5);
+  });
+});
+
+describe('session jitter (#96)', () => {
+  const deck = Array.from({ length: 12 }, (_, i) => movie(i + 1, [i % 2 ? 28 : 35]));
+  /** A seeded LCG, so "random" orders are reproducible in the test. */
+  const seeded = (seed: number) => () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+
+  it('deals a different cold-start order per session, stable within one', () => {
+    const a = makeJitter(seeded(1));
+    const b = makeJitter(seeded(2));
+    const orderA = rank({}, deck, a).map((m) => m.id);
+    expect(rank({}, deck, a).map((m) => m.id)).toEqual(orderA);
+    expect(rank({}, deck, b).map((m) => m.id)).not.toEqual(orderA);
+    expect([...orderA].sort((x, y) => x - y)).toEqual(deck.map((m) => m.id));
+  });
+
+  it('reshuffles near-ties but never lifts a clearly off-taste title over an on-taste one', () => {
+    const vector = { 'genre:28': 4 }; // action scores 4, comedy 0
+    for (let seed = 1; seed <= 25; seed += 1) {
+      const ranked = rank(vector, deck, makeJitter(seeded(seed)));
+      // Jitter is at most JITTER of the 0..4 range, so every action title still leads.
+      expect(JITTER).toBeLessThan(1);
+      expect(ranked.slice(0, 6).every((m) => m.genreIds[0] === 28)).toBe(true);
+    }
+    const orders = new Set(
+      Array.from({ length: 10 }, (_, s) => rank(vector, deck, makeJitter(seeded(s + 1))).map((m) => m.id).join(',')),
+    );
+    expect(orders.size).toBeGreaterThan(1);
+  });
+
+  it('draws once per movie id, including ids it meets later', () => {
+    const random = jest.fn(seeded(7));
+    const jitter = makeJitter(random);
+    jitter(1); jitter(1); jitter(2);
+    expect(random).toHaveBeenCalledTimes(2);
+    expect(jitter(1)).toBe(jitter(1));
   });
 });

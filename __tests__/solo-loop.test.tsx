@@ -170,18 +170,19 @@ const DRAMA = { id: 18, name: 'Drama' };
  * with lib/seed.json would inherit its pre-validated video key and its
  * keywords, and the ranking assertions below would stop meaning anything.
  *
- * Enough of them (22 > MIN_DECK) that getDeck() does not pad the deck from
- * seed — this test is about the live path, and a padded deck would mix the two.
+ * Exactly DECK_START of them, so getDeck() neither pads the deck from seed —
+ * this test is about the live path, and a padded deck would mix the two — nor
+ * randomly samples it (#97), which would make the ranking below a coin flip.
  */
 const FIRST_ID = 900001;
-const DECK_IDS = Array.from({ length: 22 }, (_, i) => FIRST_ID + i);
-const PAGE_SIZE = 11;
+const DECK_IDS = Array.from({ length: 20 }, (_, i) => FIRST_ID + i);
+const PAGE_SIZE = 10;
 
 /**
- * One action title first, then ten dramas, then eleven more action titles.
+ * One action title first, then nine dramas, then ten more action titles.
  * Cold start ranks on a zero vector, so ties keep this order and the first
  * card is 900001; one right swipe on it should pull the *action* block to the
- * front, past ten dramas that would otherwise have come next. That gap is what
+ * front, past nine dramas that would otherwise have come next. That gap is what
  * makes "the deck re-ranked" observable rather than a coin flip.
  */
 function genreFor(id: number) {
@@ -194,7 +195,7 @@ const RERANKED_TOP_ID = FIRST_ID + PAGE_SIZE;
 const UNRANKED_TOP_ID = FIRST_ID + 1;
 
 /**
- * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (5), which is
+ * Swipes that take the unseen tail below SwipeDeck's LOW_WATER (10), which is
  * what makes #13's top-up fire. Anything shorter never calls fetch() again
  * after the deck has landed, so a test that only swipes a handful of cards
  * would report on a dead network without ever touching one. Four short of the
@@ -280,6 +281,10 @@ const SwipeScreen = require('@/app/(tabs)/swipe').default as React.ComponentType
 const { MovieCard } = require('@/components/MovieCard') as {
   MovieCard: React.ComponentType;
 };
+// The screen records every swipe as seen and the next deck skips those titles.
+// Each test here is a fresh user, so the history must not carry over from the
+// test before, or the deck would open on the second fixture instead of the first.
+const { __resetSeen } = require('@/lib/seen') as { __resetSeen: () => void };
 
 let tree: ReactTestRenderer | null = null;
 
@@ -348,6 +353,8 @@ beforeEach(() => {
   mockGetDoc = () => Promise.resolve({ exists: () => false, data: () => ({}) });
   mockSetDoc = () => Promise.resolve();
   mockWrittenPaths.length = 0;
+  __resetSeen();
+  mockLineCache.delete('moviematch.seenMovies.v1');
 });
 
 afterEach(() => {

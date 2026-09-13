@@ -1,5 +1,5 @@
 import type { Movie, TasteVector } from '../types';
-import { rank } from './taste';
+import { rank, type RankJitter } from './taste';
 
 /**
  * Share of cards served off-profile so the deck doesn't collapse into one genre.
@@ -17,9 +17,10 @@ export function nextCard(
   deck: Movie[],
   random: () => number = Math.random,
   epsilon: number = EPSILON,
+  jitter?: RankJitter,
 ): Movie {
   if (deck.length === 0) throw new Error('nextCard: empty deck');
-  const [top, ...rest] = rank(v, deck);
+  const [top, ...rest] = rank(v, deck, jitter);
   if (rest.length === 0 || random() >= epsilon) return top;
   return rest[Math.floor(random() * rest.length)];
 }
@@ -30,8 +31,9 @@ export function exploreRank(
   deck: Movie[],
   random: () => number = Math.random,
   epsilon: number = EPSILON,
+  jitter?: RankJitter,
 ): Movie[] {
   if (deck.length === 0) return [];
-  const pick = nextCard(v, deck, random, epsilon);
-  return [pick, ...rank(v, deck.filter((movie) => movie !== pick))];
+  const pick = nextCard(v, deck, random, epsilon, jitter);
+  return [pick, ...rank(v, deck.filter((movie) => movie !== pick), jitter)];
 }

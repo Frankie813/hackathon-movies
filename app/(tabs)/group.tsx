@@ -24,6 +24,7 @@ import {
   createSession,
   isValidCode,
   joinSession,
+  leaveSession,
   memberLabel,
   normalizeCode,
   SessionNotFoundError,
@@ -124,12 +125,20 @@ export default function GroupScreen() {
   }, [busy, enterSession, input]);
 
   const onLeave = useCallback(() => {
-    // Local only — the member doc stays, so coming back is a rejoin and the
-    // swipes are still there. #17 needs the history even if a phone drops.
+    // Tell the other phones (#101): the member doc is flagged `left`, so it
+    // drops out of their list and the group's ranking. Flagged rather than
+    // deleted, so coming back is still a rejoin with the swipes intact.
+    // Not awaited: leaving must work on a dead network too, and the SDK
+    // queues the write until it can send it.
+    if (code) {
+      leaveSession(code).catch((cause: unknown) => {
+        console.warn('[group] could not tell the group you left:', cause);
+      });
+    }
     setActiveCode(null);
     setMembers([]);
     setError(null);
-  }, []);
+  }, [code]);
 
   if (authError) {
     return (

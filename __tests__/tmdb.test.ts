@@ -261,3 +261,126 @@ describe('searchMovie (#23 title validation)', () => {
     expect(tmdb.isOffline()).toBe(false);
   });
 });
+
+describe('getDeck deck sizing (#97)', () => {
+  type Deck = { getDeck: () => Promise<Movie[]>; isSeedDeck: (deck: Movie[]) => boolean };
+  const loadDeck = () => loadTmdb() as unknown as Deck;
+
+  /** Two /discover pages of 20, ids 1000–1039, every one hydrating with a clip. */
+  function top40(playable: (id: number) => boolean = () => true) {
+    return jest.fn(async (url: string) => {
+      const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? '0');
+      const id = Number(/\/movie\/(\d+)/.exec(url)?.[1] ?? '0');
+      const body = url.includes('/discover/movie')
+        ? { results: Array.from({ length: 20 }, (_, i) => ({ id: 1000 + (page - 1) * 20 + i })) }
+        : detail(id, playable(id) ? {} : { videos: { results: [] } });
+      return { ok: true, status: 200, json: async () => body };
+    });
+  }
+
+  it('hydrates the top 40 and deals a random 20 of them', async () => {
+    const fetch = top40();
+    setFetch(fetch);
+    const decks = [await loadDeck().getDeck(), await loadDeck().getDeck(), await loadDeck().getDeck()];
+
+    for (const deck of decks) {
+      expect(deck).toHaveLength(20);
+      expect(new Set(deck.map((m) => m.id)).size).toBe(20);
+      for (const movie of deck) expect(movie.id).toBeGreaterThanOrEqual(1000);
+      for (const movie of deck) expect(movie.id).toBeLessThan(1040);
+    }
+    // All 40 hydrated per run, not just the 20 dealt.
+    expect(fetch.mock.calls.filter(([url]) => /\/movie\/\d+/.test(String(url)))).toHaveLength(120);
+    // Random: three runs dealing the identical 20 would be a 1-in-10^22 fluke.
+    const keys = decks.map((deck) => deck.map((m) => m.id).join(','));
+    expect(new Set(keys).size).toBeGreaterThan(1);
+  });
+
+  it('pads a short live deck from seed to exactly 20, and it is not a seed deck', async () => {
+    setFetch(top40((id) => id < 1005));
+    const tmdb = loadDeck();
+    const deck = await tmdb.getDeck();
+
+    expect(deck).toHaveLength(20);
+    expect(deck.filter((m) => m.id >= 1000 && m.id < 1040)).toHaveLength(5);
+    expect(tmdb.isSeedDeck(deck)).toBe(false);
+  });
+
+  it('offline, deals a random 20 from the seed catalog and tags it as such', async () => {
+    setFetch(jest.fn(async () => { throw new TypeError('Network request failed'); }));
+    const tmdb = loadDeck();
+    const deck = await tmdb.getDeck();
+
+    expect(deck).toHaveLength(20);
+    expect(deck.every((m) => !!m.video?.key)).toBe(true);
+    expect(tmdb.isSeedDeck(deck)).toBe(true);
+    expect(tmdb.isSeedDeck([...deck])).toBe(false);
+  });
+});
+
+describe('getDeck skips movies already seen', () => {
+  type Deck = {
+    getDeck: (filters?: unknown, opts?: { seen?: ReadonlySet<number> }) => Promise<Movie[]>;
+  };
+  const loadDeck = () => loadTmdb() as unknown as Deck;
+
+  /** /discover with `pages` pages of 20 (ids 2000+), every title playable. */
+  function catalog(pages: number) {
+    return jest.fn(async (url: string) => {
+      const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? '0');
+      const id = Number(/\/movie\/(\d+)/.exec(url)?.[1] ?? '0');
+      const body = url.includes('/discover/movie')
+        ? {
+            total_pages: pages,
+            results: page <= pages ? Array.from({ length: 20 }, (_, i) => ({ id: 2000 + (page - 1) * 20 + i })) : [],
+          }
+        : detail(id);
+      return { ok: true, status: 200, json: async () => body };
+    });
+  }
+  const discoverPages = (fetch: jest.Mock) =>
+    fetch.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/discover/movie'));
+
+  it('pages past the top 40 when the user has swiped all of it', async () => {
+    const fetch = catalog(10);
+    setFetch(fetch);
+    const seen = new Set(Array.from({ length: 40 }, (_, i) => 2000 + i));
+
+    const deck = await loadDeck().getDeck(undefined, { seen });
+
+    expect(deck).toHaveLength(20);
+    for (const movie of deck) expect(seen.has(movie.id)).toBe(false);
+    expect(discoverPages(fetch)).toHaveLength(4); // pages 1-2, then 3-4
+  });
+
+  it('asks for only the top 40 when nothing there has been seen', async () => {
+    const fetch = catalog(10);
+    setFetch(fetch);
+    await loadDeck().getDeck(undefined, { seen: new Set([999999]) });
+    expect(discoverPages(fetch)).toHaveLength(2);
+  });
+
+  it('deals seen titles again only when TMDB has too few unseen ones left', async () => {
+    const fetch = catalog(1); // 20 titles in total
+    setFetch(fetch);
+    const seen = new Set(Array.from({ length: 15 }, (_, i) => 2000 + i));
+
+    const deck = await loadDeck().getDeck(undefined, { seen });
+
+    expect(deck).toHaveLength(20);
+    const fresh = deck.filter((movie) => movie.id >= 2000 && !seen.has(movie.id));
+    expect(fresh).toHaveLength(5); // every unseen title made it in
+  });
+
+  it('offline, prefers seed titles the user has not swiped', async () => {
+    setFetch(jest.fn(async () => { throw new TypeError('Network request failed'); }));
+    const { seedMoviesWithVideo } = jest.requireActual('../lib/seed') as { seedMoviesWithVideo: Movie[] };
+    const seen = new Set(seedMoviesWithVideo.slice(0, 40).map((movie) => movie.id));
+
+    const deck = await loadDeck().getDeck(undefined, { seen });
+
+    expect(deck).toHaveLength(20);
+    const unseenAvailable = seedMoviesWithVideo.length - 40;
+    expect(deck.filter((movie) => !seen.has(movie.id))).toHaveLength(Math.min(20, unseenAvailable));
+  });
+});

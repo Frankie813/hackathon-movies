@@ -43,6 +43,13 @@ describe('ε-greedy exploration', () => {
     expect(() => nextCard(taste, [])).toThrow();
   });
 
+  it('orders the rest of the deck with the session jitter when given (#96)', () => {
+    const cold = [movie(10, [35]), movie(11, [35]), movie(12, [35]), movie(13, [35])];
+    const jitter = (id: number) => (id === 13 ? 0.9 : id === 12 ? 0.6 : id === 11 ? 0.3 : 0);
+    expect(exploreRank({}, cold, () => 0.99, 0.2, jitter).map((m) => m.id)).toEqual([13, 12, 11, 10]);
+    expect(exploreRank({}, cold, () => 0.99).map((m) => m.id)).toEqual([10, 11, 12, 13]);
+  });
+
   it('keeps every card exactly once when exploring', () => {
     const rolls = [0.1, 0.99];
     const ranked = exploreRank(taste, deck, () => rolls.shift()!);
