@@ -1,4 +1,4 @@
-import { algorithmicWinner, createGroupCompromise, COMPROMISE_SCHEMA } from '../src/lib/gemini';
+import { algorithmicWinner, createExplainPick, createGroupCompromise, COMPROMISE_SCHEMA } from '../src/lib/gemini';
 import type { Member, Movie } from '../src/types';
 
 const movies: Movie[] = [
@@ -145,5 +145,36 @@ describe('group compromise', () => {
       { uid: 'b', name: 'Sam', likes: [2], dislikes: [] }];
     expect(algorithmicWinner(fans, movies)).toEqual(movies[1]);
     expect(algorithmicWinner(members, [movies[2]])).toBeNull();
+  });
+});
+
+// The demo-path hook: #17 has already claimed the match, Gemini only explains it.
+describe('explain pick', () => {
+  it('asks Gemini to explain only the given winner and returns its why', async () => {
+    const generate = jest.fn<Promise<string>, [string]>(async () => json(valid));
+    expect(await createExplainPick({ generate })(members, movies, movies[0])).toBe(valid.why);
+    expect(generate.mock.calls[0][0]).toContain('Explain ONLY the fixed algorithmic winner');
+    expect(generate.mock.calls[0][0]).toContain('"tmdb_id":1');
+  });
+
+  it('rejects a line about a different film than the match document names', async () => {
+    const other = { pick: movies[1].title, tmdb_id: 2, why: 'Check local streaming availability.' };
+    expect(await createExplainPick({ generate: async () => json(other) })(members, movies, movies[0])).toBeNull();
+  });
+
+  it('never asks about a vetoed winner, and resolves null offline', async () => {
+    const generate = jest.fn(async () => json(valid));
+    expect(await createExplainPick({ generate })(members, movies, movies[2])).toBeNull();
+    expect(generate).not.toHaveBeenCalled();
+    const offline = createExplainPick({ generate: async () => { throw new Error('network'); } });
+    await expect(offline(members, movies, movies[0])).resolves.toBeNull();
+  });
+
+  it('serves a repeat request from cache', async () => {
+    const generate = jest.fn(async () => json(valid));
+    const explain = createExplainPick({ generate });
+    await explain(members, movies, movies[0]);
+    await explain(members, movies, movies[0]);
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,10 @@
 // app/(tabs)/group.tsx — create or join a group session (issue #16).
 //
 // Step 3 of the demo path: a second phone joins by code and both devices see
-// the member list update live. The reveal (#10) and match detection (#17)
-// mount over this screen later; for now it proves the realtime plumbing.
+// the member list update live. The active code lives in lib/active-session so
+// the Swipe tab records every swipe into it (#16) and the match overlay in the
+// tabs layout can watch the group (#17, #10).
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,29 +17,26 @@ import {
 } from 'react-native';
 
 import { JoinQR } from '@/components/JoinQR';
+import { setActiveCode, useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
 import { onJoinRequested, parseJoinLink, takeParkedJoin } from '@/lib/join-link';
-import { seedMoviesWithVideo } from '@/lib/seed';
 import {
   createSession,
   isValidCode,
   joinSession,
   memberLabel,
   normalizeCode,
-  recordSwipe,
   SessionNotFoundError,
   subscribe,
 } from '@/lib/session';
 import type { Member } from '@/types';
 
-// Survives a reload so the app comes back into the same session — which is
-// also the cheapest way to see that rejoin keeps your swipes (#16 step 5).
-const ACTIVE_CODE_KEY = 'moviematch.activeSessionCode';
-
 export default function GroupScreen() {
   const { uid, isSigningIn, error: authError } = useAnonymousAuth();
 
-  const [code, setCode] = useState<string | null>(null);
+  // Restored from the last run before anything renders a "start a group"
+  // button the user would have to press again (#16 step 5).
+  const { code, ready } = useActiveCode();
   const [input, setInput] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
   const [busy, setBusy] = useState(false);
@@ -52,29 +49,13 @@ export default function GroupScreen() {
     codeRef.current = code;
   }, [code]);
 
-  // Restore the last session before anything else renders a "start a group"
-  // button the user would have to press again.
-  useEffect(() => {
-    let cancelled = false;
-    void AsyncStorage.getItem(ACTIVE_CODE_KEY).then((stored) => {
-      // Functional update on purpose: if the user started or joined a group
-      // while this read was still in flight, the restore must not drag them
-      // back into the previous code.
-      if (!cancelled && stored) setCode((current) => current ?? stored);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // Rejoin on restore: the member doc already exists, so this only refreshes
   // presence — likes and dislikes are left alone (see joinSession).
   useEffect(() => {
     if (!code || !uid) return;
     joinSession(code).catch((cause: unknown) => {
       if (cause instanceof SessionNotFoundError) {
-        void AsyncStorage.removeItem(ACTIVE_CODE_KEY);
-        setCode(null);
+        setActiveCode(null);
         setError('That session is gone. Start a new one.');
         return;
       }
@@ -99,13 +80,8 @@ export default function GroupScreen() {
       // into (#19) — leaves the listener attached, and a rejoin writes
       // nothing, so there is no next snapshot to refill a list cleared here.
       if (codeRef.current !== joined) setMembers([]);
-      setCode(joined);
+      setActiveCode(joined);
       setInput('');
-      // Persisting the code is a convenience, not part of joining. A storage
-      // failure must not discard a session that already exists in Firestore.
-      AsyncStorage.setItem(ACTIVE_CODE_KEY, joined).catch((cause: unknown) => {
-        console.warn('[group] could not persist the active code:', cause);
-      });
     } catch (cause: unknown) {
       setError(
         cause instanceof SessionNotFoundError
@@ -150,8 +126,7 @@ export default function GroupScreen() {
   const onLeave = useCallback(() => {
     // Local only — the member doc stays, so coming back is a rejoin and the
     // swipes are still there. #17 needs the history even if a phone drops.
-    void AsyncStorage.removeItem(ACTIVE_CODE_KEY);
-    setCode(null);
+    setActiveCode(null);
     setMembers([]);
     setError(null);
   }, []);
@@ -165,7 +140,7 @@ export default function GroupScreen() {
     );
   }
 
-  if (isSigningIn || !uid) {
+  if (isSigningIn || !uid || !ready) {
     return (
       <Centered>
         <ActivityIndicator color="#e50914" />
@@ -265,7 +240,12 @@ export default function GroupScreen() {
         )}
       </View>
 
-      <SwipeProbe code={code} />
+      {/* The swipes themselves happen on the Swipe tab; every one lands on
+          this member's document, and the counts above follow within ~1s. */}
+      <Text style={styles.hint}>
+        Head to Swipe — every like and pass counts for the group. When you agree,
+        it&apos;s a match.
+      </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -277,61 +257,6 @@ export default function GroupScreen() {
         <Text style={styles.secondaryLabel}>Leave</Text>
       </Pressable>
     </ScrollView>
-  );
-}
-
-/**
- * Temporary: the swipe deck (#6/#7/#8) is what will call recordSwipe() for
- * real. Until it lands there is no other way to check the "swipes appear in
- * Firestore within ~1s" criterion on a device, so these two buttons stand in.
- * Delete them when #8 wires the deck to the session.
- */
-function SwipeProbe({ code }: { code: string }) {
-  const [pending, setPending] = useState(false);
-  const [movieIndex, setMovieIndex] = useState(0);
-  const movie = seedMoviesWithVideo[movieIndex % seedMoviesWithVideo.length];
-
-  const swipe = useCallback(
-    (dir: 'left' | 'right') => {
-      if (!movie) return;
-      // A Firestore write promise does not settle while the device is offline,
-      // so waiting for the ack before advancing would leave the probe stuck on
-      // one title with both buttons dead for the rest of the demo. Advance
-      // optimistically — arrayUnion makes a write that lands late harmless.
-      setMovieIndex((index) => index + 1);
-      setPending(true);
-      recordSwipe(code, movie.id, dir)
-        .catch((cause: unknown) => console.warn('[group] swipe failed:', cause))
-        .finally(() => setPending(false));
-    },
-    [code, movie],
-  );
-
-  if (!movie) return null;
-
-  return (
-    <View style={styles.probe}>
-      <Text style={styles.probeLabel}>
-        Test swipe · {movie.title}
-        {pending ? ' · writing…' : ''}
-      </Text>
-      <View style={styles.probeRow}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => swipe('left')}
-          style={({ pressed }) => [styles.probeButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.secondaryLabel}>✕ Nope</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => swipe('right')}
-          style={({ pressed }) => [styles.probeButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.secondaryLabel}>♥ Like</Text>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 
@@ -455,26 +380,10 @@ const styles = StyleSheet.create({
     color: '#9a9aa2',
     fontSize: 14,
   },
-  probe: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  probeLabel: {
+  hint: {
     color: '#6a6a74',
     fontSize: 13,
     textAlign: 'center',
-  },
-  probeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  probeButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#3a3a44',
-    paddingVertical: 10,
-    paddingHorizontal: 22,
+    marginTop: 12,
   },
 });

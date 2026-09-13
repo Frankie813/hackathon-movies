@@ -164,6 +164,40 @@ export const groupCompromise = createGroupCompromise({
   fallback: algorithmicWinner,
 });
 
+/**
+ * Reel's trade-off line for a winner #17 has *already* chosen.
+ *
+ * On the demo path the match document names the film before Gemini is asked
+ * (watchForMatch claims the match, then calls onDetect), so the line has to
+ * explain that film and can never propose another: validation is pinned to
+ * `winner`, and a response naming anything else comes back null. Resolves
+ * null — never rejects — offline, over quota, or for a winner the group has
+ * vetoed, and the reveal renders without a line.
+ */
+export function createExplainPick({ generate }: Pick<CompromiseDependencies, 'generate'>) {
+  const cache = new Map<string, string>();
+
+  return async function explainPick(members: Member[], catalog: Movie[], winner: Movie): Promise<string | null> {
+    if (!members.length) return null;
+    const eligible = candidates(members, catalog);
+    const fixed = eligible.find((movie) => movie.id === winner.id);
+    if (!fixed) return null;
+    let prompt: string;
+    try { prompt = promptFor(members, catalog, eligible, fixed); } catch { return null; }
+    const cached = cache.get(prompt);
+    if (cached) return cached;
+    try {
+      const result = validate(await generate(prompt), eligible, fixed);
+      if (!result) return null;
+      if (cache.size >= MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value!);
+      cache.set(prompt, result.why);
+      return result.why;
+    } catch { return null; }
+  };
+}
+
+export const explainPick = createExplainPick({ generate: generateCompromiseText });
+
 // Issue #22: natural-language mood → TMDB /discover filters. Firebase and
 // TMDB load lazily, as with the compromise, so importing this costs nothing.
 export type { MoodFilters } from './mood';

@@ -593,6 +593,19 @@ export async function similar(id: number): Promise<Movie[]> {
 }
 
 /**
+ * Every movie this device can put on screen: the seed catalog plus whatever
+ * TMDB has hydrated this session. #17's match watcher ranks the group against
+ * this — a title has to be in here to be detectable as a match, which is why
+ * the watcher reads it fresh on every member snapshot rather than once.
+ * Synchronous and cheap: a Map copy, no network.
+ */
+export function knownMovies(): Movie[] {
+  const known = new Map<number, Movie>(seedById);
+  for (const [id, movie] of movieCache) known.set(id, movie);
+  return [...known.values()];
+}
+
+/**
  * TMDB keyword id for a word, for #22's mood filters: /discover takes keyword
  * ids, not names. Prefers an exact name match over TMDB's fuzzy first hit.
  * Null when TMDB has no match or can't be reached. Never throws, and leaves

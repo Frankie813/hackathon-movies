@@ -3,8 +3,10 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { SwipeDeck } from '@/components/SwipeDeck';
 import { SEED_MOVIES } from '@/data/seedMovies';
+import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
-import { seedMoviesWithVideo } from '@/lib/seed';
+import { recordSwipe } from '@/lib/session';
+import { getDeck } from '@/lib/tmdb';
 import {
   flushTaste,
   loadTaste,
@@ -15,9 +17,6 @@ import {
 } from '@/src/lib/persist';
 import type { Movie, TasteVector } from '@/types';
 
-// The deck is the curated offline catalog (lib/seed.json, 68 titles), not
-// the hand-written six in data/seedMovies.ts. Titles with a vertical Short
-// come first so the full-screen cards lead; the rest play their 16:9 clip.
 // The catalog has no per-title theme colours yet, so the hue backdrop's
 // colours are carried over from data/seedMovies.ts where the ids overlap and
 // fall back to the deck's defaults elsewhere.
@@ -26,13 +25,40 @@ const withColors = (m: Movie): Movie => {
   const styled = colorsById.get(m.id);
   return styled ? { ...m, themeColor: styled.themeColor, negativeColor: styled.negativeColor } : m;
 };
-const DECK: Movie[] = [
-  ...seedMoviesWithVideo.filter((m) => m.video?.short),
-  ...seedMoviesWithVideo.filter((m) => !m.video?.short),
-].map(withColors);
+
+/**
+ * The deck comes from #15's fetch layer: TMDB /discover when online, the
+ * curated seed catalog (lib/seed.json, 68 titles) when the token is unset or
+ * the network is down — the caller can't tell which. Titles with a vertical
+ * Short come first so the full-screen cards lead; the rest play their 16:9
+ * clip. (The taste vector re-ranks all of this anyway; the order here only
+ * decides ties, i.e. the cold start.)
+ */
+function orderDeck(movies: Movie[]): Movie[] {
+  return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
+    withColors,
+  );
+}
 
 export default function SwipeScreen() {
   const { uid, isSigningIn } = useAnonymousAuth();
+  // The group this device is in, if any (#16). Every swipe below is also
+  // recorded there so #17 can rank the group.
+  const { code } = useActiveCode();
+
+  // null means "still loading". getDeck() never rejects and is bounded by its
+  // own 8s operation budget; offline it answers with seed in ~3s.
+  const [deck, setDeck] = useState<Movie[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void getDeck().then((movies) => {
+      if (!cancelled) setDeck(orderDeck(movies));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // null means "still hydrating" — the deck must not mount before this lands
   // or the first cards a judge sees were ranked against an empty vector (#18).
   const [taste, setTaste] = useState<TasteVector | null>(null);
@@ -87,14 +113,29 @@ export default function SwipeScreen() {
     [uid],
   );
 
+  // One small write per swipe onto this member's session document (#16).
+  // Undebounced on purpose: the other phone reacting within a second is the
+  // demo beat. Offline the SDK queues it; the promise is never awaited, so a
+  // dead network costs nothing on the gesture.
+  const recordInSession = useCallback(
+    (movie: Movie, dir: 'left' | 'right') => {
+      if (!code) return;
+      recordSwipe(code, movie.id, dir).catch((cause: unknown) => {
+        console.warn('[Swipe] could not record the swipe in the session:', cause);
+      });
+    },
+    [code],
+  );
+
   const handleSwipeLeft = useCallback(
     (index: number, movie: Movie) => {
       console.log(`[Swipe] Swiped LEFT (Nope) on #${index}: ${movie.title}`);
       // A title liked in an earlier run and passed on now must leave the
       // Saved tab, or #41 shows the user a film they explicitly rejected.
       if (uid) void removeLike(uid, movie.id);
+      recordInSession(movie, 'left');
     },
-    [uid],
+    [uid, recordInSession],
   );
 
   const handleSwipeRight = useCallback(
@@ -102,15 +143,16 @@ export default function SwipeScreen() {
       console.log(`[Swipe] Swiped RIGHT (Like) on #${index}: ${movie.title}`);
       // Undebounced: one small write per right swipe, and #41 reads these.
       if (uid) void saveLike(uid, movie.id);
+      recordInSession(movie, 'right');
     },
-    [uid],
+    [uid, recordInSession],
   );
 
   const handleSwipedAll = useCallback(() => {
     console.log('[Swipe] Swiped all cards in deck');
   }, []);
 
-  if (!taste) {
+  if (!taste || !deck) {
     return (
       <View style={styles.loading}>
         <ActivityIndicator color="#fbbf24" />
@@ -120,7 +162,7 @@ export default function SwipeScreen() {
 
   return (
     <SwipeDeck
-      movies={DECK}
+      movies={deck}
       initialTaste={taste}
       onTasteChange={handleTasteChange}
       onSwipeLeft={handleSwipeLeft}
