@@ -32,15 +32,6 @@ const withColors = (m: Movie): Movie => {
 };
 
 /**
- * The deck comes from #15's fetch layer: TMDB /discover when online, the
- * curated seed catalog (lib/seed.json, 68 titles) when the token is unset or
- * the network is down — the caller can't tell which. Titles with a vertical
- * Short come first so the full-screen cards lead; the rest play their 16:9
- * clip. (The taste vector re-ranks all of this anyway, and since #96 a
- * per-session random tie-break in SwipeDeck decides near-ties, so this order
- * rarely survives past the deal.)
- */
-/**
  * The movies this device already swiped in earlier sessions, so the first deck
  * skips them. Bounded like the taste read: a storage read that never answers
  * must not keep the Swipe tab on a spinner, it just means repeats are allowed.
@@ -52,6 +43,15 @@ function seenForDeck(): Promise<ReadonlySet<number>> {
   ]);
 }
 
+/**
+ * The deck comes from #15's fetch layer: TMDB /discover when online, the
+ * curated seed catalog (lib/seed.json, 68 titles) when the token is unset or
+ * the network is down — the caller can't tell which. Titles with a vertical
+ * Short come first so the full-screen cards lead; the rest play their 16:9
+ * clip. (The taste vector re-ranks all of this anyway, and since #96 a
+ * per-session random tie-break in SwipeDeck decides near-ties, so this order
+ * rarely survives past the deal.)
+ */
 function orderDeck(movies: Movie[]): Movie[] {
   return [...movies.filter((m) => m.video?.short), ...movies.filter((m) => !m.video?.short)].map(
     withColors,
@@ -81,8 +81,8 @@ export default function SwipeScreen() {
     void seenForDeck()
       .then((seen) => getDeck(undefined, { seen }))
       .then((movies) => {
-      if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
-    });
+        if (!cancelled && deckSeq.current === 0) setDeck(orderDeck(movies));
+      });
     return () => {
       cancelled = true;
     };
