@@ -139,6 +139,11 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 jest.mock('@/lib/firebase', () => ({ app: {}, db: {}, auth: {} }));
 
+// The screen asks the navigator whether its tab is on screen (#100). There is
+// no navigator here, and importing expo-router's real module pulls in ESM Jest
+// does not transform. The Swipe tab is the focused one throughout.
+jest.mock('expo-router', () => ({ useIsFocused: () => true }));
+
 /** Sign-in state the screen sees. The offline case sets isSigningIn forever. */
 let mockAuth: { uid: string | null; isSigningIn: boolean; error: Error | null } = {
   uid: 'solo-uid',

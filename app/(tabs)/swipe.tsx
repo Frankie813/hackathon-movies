@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
 
 import { MoodInput, type AppliedMood } from '@/components/MoodInput';
 import { SwipeDeck } from '@/components/SwipeDeck';
@@ -61,6 +62,13 @@ function orderDeck(movies: Movie[]): Movie[] {
 
 export default function SwipeScreen() {
   const { uid, isSigningIn } = useAnonymousAuth();
+  // Bottom tabs keep this screen mounted while another tab is open, so the
+  // deck is told directly when it is off screen: the trailer pauses there and
+  // plays again on return (#100).
+  const isFocused = useIsFocused();
+  useEffect(() => {
+    if (__DEV__) console.log(`[Swipe] tab ${isFocused ? 'focused: trailer plays' : 'blurred: trailer paused'}`);
+  }, [isFocused]);
   // The group this device is in, if any (#16). Every swipe below is also
   // recorded there so #17 can rank the group.
   const { code } = useActiveCode();
@@ -294,6 +302,7 @@ export default function SwipeScreen() {
         vibeFor={cachedVibeTags}
         maxCards={DECK_MAX}
         seenIds={getSeen}
+        paused={!isFocused}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
           nothing here is ever composited over the card's YouTube player. */}
