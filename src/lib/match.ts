@@ -220,13 +220,17 @@ function toMatch(data: DocumentData | undefined): Match | null {
  * server acknowledges it, and the reveal renders off that first local snapshot.
  *
  * @param why optional compromise line from #21, if it resolved before this call.
+ * @returns the verdict that is actually in the document — `movie` when this
+ *          call claimed it, the other device's title when it adopted one. A
+ *          caller that goes on to describe the match must describe *this*,
+ *          never the title it walked in with.
  */
 export async function persistMatch(
   code: string,
   movie: Movie,
   members: Member[],
   why?: string,
-): Promise<void> {
+): Promise<Match> {
   const normalized = normalizeCode(code);
 
   const claimed = await runTransaction(db, async (tx) => {
@@ -256,6 +260,8 @@ export async function persistMatch(
     claimed,
     members.map((member) => member.uid),
   );
+
+  return claimed;
 }
 
 /**
@@ -393,6 +399,9 @@ export interface WatchMatchOptions extends MatchOptions {
    * first would hold the reveal on both phones for the length of the round
    * trip; this way the verdict is on screen immediately and the `why` arrives
    * behind it, so #10 should render a placeholder for a match without one.
+   *
+   * `movie` is the title the *document* names, which is not always the one this
+   * device detected — see watchForMatch below. Describe what you are handed.
    */
   onDetect?: (movie: Movie, members: Member[]) => Promise<string | undefined> | string | undefined;
 }
@@ -438,9 +447,28 @@ export function watchForMatch(
     claiming = true;
     void (async () => {
       try {
-        await persistMatch(normalized, winner, members);
-        const why = await opts.onDetect?.(winner, members);
-        if (why) await persistMatch(normalized, winner, members, why);
+        // What the *document* ended up naming, which is not always `winner`:
+        // the transaction adopts another device's verdict when that device
+        // claimed first, and two devices a snapshot apart can detect two
+        // different titles. Everything after this point follows the document.
+        const claimed = await persistMatch(normalized, winner, members);
+
+        // Already explained by whoever claimed it — asking again would spend a
+        // request from a 15 RPM budget to produce a line the transaction will
+        // discard anyway.
+        if (claimed.why) return;
+
+        const film =
+          claimed.tmdbId === winner.id
+            ? winner
+            : catalog().find((movie) => movie.id === claimed.tmdbId);
+        // The adopted title is missing from this device's catalog, so there is
+        // nothing here to describe it with. The device that claimed it has the
+        // title and writes the line; this one reveals off the document.
+        if (!film) return;
+
+        const why = await opts.onDetect?.(film, members);
+        if (why) await persistMatch(normalized, film, members, why);
       } catch (error) {
         console.warn('[match] could not claim the match:', error);
         claiming = false; // Let the next member snapshot try again.

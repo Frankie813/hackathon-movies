@@ -1,10 +1,16 @@
 // The shared Gemini quota wall.
 //
-// Every Gemini caller — #8's why lines, #22's mood filters, #23's ranked
-// fallback — draws on the same free-tier bucket (~1,500 requests a day at
-// 15 RPM, AGENTS.md §4). So a 429 that one of them walks into is a wall all of
-// them are already behind, and each one spending its own retries to rediscover
-// that just drains the quota faster.
+// Every Gemini caller — #8's why lines, #21's group compromise, #22's mood
+// filters, #23's ranked fallback — draws on the same free-tier bucket (~1,500
+// requests a day at 15 RPM, AGENTS.md §4). So a 429 that one of them walks into
+// is a wall all of them are already behind, and each one spending its own
+// retries to rediscover that just drains the quota faster.
+//
+// All four report what they learn via openQuotaCooldown(). Three of them also
+// check isOverQuota() and give up early; #21's compromise deliberately does not,
+// because it runs once per session and carries the reveal (#10 step 5), so it is
+// worth one attempt against a 60s guess that may already have lifted. See
+// src/lib/compromise-model.ts.
 //
 // This module deliberately imports nothing. The lazy callers (src/lib/ranked.ts)
 // have to be able to ask "are we walled?" without dragging Firebase into the
