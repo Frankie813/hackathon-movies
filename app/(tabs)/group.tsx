@@ -243,7 +243,7 @@ export default function GroupScreen() {
       {/* The swipes themselves happen on the Swipe tab; every one lands on
           this member's document, and the counts above follow within ~1s. */}
       <Text style={styles.hint}>
-        Head to Swipe — every like and pass counts for the group. When you agree,
+        Head to Swipe. Every like and pass counts for the group. When you agree,
         it&apos;s a match.
       </Text>
 
