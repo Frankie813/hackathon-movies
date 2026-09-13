@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
-import renderer, { act } from 'react-test-renderer';
+import renderer, { act, type ReactTestInstance } from 'react-test-renderer';
 
 import { MatchReveal } from '@/components/MatchReveal';
 import type { Match, Movie } from '@/types';
@@ -34,29 +34,56 @@ function match(why?: string): Match {
 }
 
 let tree: renderer.ReactTestRenderer | null = null;
+let onDismiss = jest.fn();
+let onKeepSwiping = jest.fn();
+
+beforeEach(() => {
+  onDismiss = jest.fn();
+  onKeepSwiping = jest.fn();
+});
 
 /** Reanimated's entrance effects run on mount, so creation has to be in act(). */
-function render(why?: string) {
+function render(why?: string, clearing = false) {
   act(() => {
     tree = renderer.create(
-      <MatchReveal match={match(why)} movie={movie} onDismiss={() => {}} />,
+      <MatchReveal
+        match={match(why)}
+        movie={movie}
+        onDismiss={onDismiss}
+        onKeepSwiping={onKeepSwiping}
+        clearing={clearing}
+      />,
     );
   });
 }
 
 function rerender(why?: string) {
   act(() => {
-    tree!.update(<MatchReveal match={match(why)} movie={movie} onDismiss={() => {}} />);
+    tree!.update(
+      <MatchReveal
+        match={match(why)}
+        movie={movie}
+        onDismiss={onDismiss}
+        onKeepSwiping={onKeepSwiping}
+      />,
+    );
   });
+}
+
+/** The reveal's footer button whose label reads `label`. */
+function button(label: string) {
+  return tree!.root
+    .findAll((node) => node.props.accessibilityRole === 'button')
+    .find((node) => texts(node).includes(label));
 }
 
 function advance(ms: number) {
   act(() => { jest.advanceTimersByTime(ms); });
 }
 
-/** Every string rendered anywhere in the tree. */
-function texts(): string[] {
-  return tree!.root
+/** Every string rendered anywhere in `root`, or in the whole tree by default. */
+function texts(root?: ReactTestInstance): string[] {
+  return (root ?? tree!.root)
     .findAllByType(Text)
     .flatMap((node) => node.props.children)
     .filter((child: unknown): child is string => typeof child === 'string');
@@ -141,5 +168,50 @@ describe('MatchReveal — the why line', () => {
     expect(rendered).not.toContain('WHERE TO WATCH');
     // The names appear only inside the sentence, never as standalone badges.
     expect(rendered).not.toContain('Max');
+  });
+});
+
+/**
+ * The two ways out of a reveal (#97). They are deliberately not the same
+ * mechanism: "Nice" is this device saying it is done looking, "Keep swiping"
+ * is the whole group passing on the film.
+ */
+describe('MatchReveal — the footer actions', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('offers both accepting the match and rejecting it', () => {
+    render('You both win.');
+    expect(texts()).toEqual(expect.arrayContaining(['Nice', 'Keep swiping']));
+  });
+
+  it('keeps the two actions apart', () => {
+    render('You both win.');
+
+    act(() => button('Keep swiping')!.props.onPress());
+    expect(onKeepSwiping).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    act(() => button('Nice')!.props.onPress());
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onKeepSwiping).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the shared action while the clear is in flight', () => {
+    // The write takes a beat on venue Wi-Fi, and a button that looks idle
+    // gets tapped again. The transaction behind it is round-guarded, so the
+    // extra taps are harmless — this is about the reveal not looking broken.
+    render('You both win.', true);
+
+    const keep = button('Finding another…');
+    expect(keep).toBeDefined();
+    expect(keep!.props.accessibilityState).toEqual({ disabled: true });
+    expect(texts()).not.toContain('Keep swiping');
+  });
+
+  it('still lets the user accept the match while a clear is pending', () => {
+    render('You both win.', true);
+    act(() => button('Nice')!.props.onPress());
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });

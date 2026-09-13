@@ -51,6 +51,18 @@ export interface MatchRevealProps {
   match: Match;
   movie: Movie | null;
   onDismiss: () => void;
+  /**
+   * "Keep swiping" (#97): the group passes on this verdict. Shared, unlike
+   * onDismiss — it writes to the match document, so one press clears the
+   * reveal on every phone in the session and the group carries on swiping.
+   *
+   * Required rather than optional: an overlay that quietly lost the shared
+   * action would dead-end a group on a film they don't want, in front of
+   * judges, with no way back.
+   */
+  onKeepSwiping: () => void;
+  /** True while the clear is in flight, so the button can't be spammed. */
+  clearing?: boolean;
 }
 
 /**
@@ -62,7 +74,13 @@ export interface MatchRevealProps {
  * beat: it fades in about a second into the animation so it reads as the
  * payoff rather than arriving with everything else at once.
  */
-export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
+export function MatchReveal({
+  match,
+  movie,
+  onDismiss,
+  onKeepSwiping,
+  clearing = false,
+}: MatchRevealProps) {
   const [gaveUpOnWhy, setGaveUpOnWhy] = useState(false);
   const backdrop = useSharedValue(0);
   const ambient = useSharedValue(0);
@@ -177,6 +195,13 @@ export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
           {match.why ?? (gaveUpOnWhy ? WHY_FALLBACK : WHY_PLACEHOLDER)}
         </Animated.Text>
 
+        {/* Both actions share the one footer animation. Giving "Keep swiping"
+            its own shared value and delay would have the two buttons arrive on
+            different frames, on the one screen judges watch closely.
+
+            "Nice" keeps the only filled CTA: accepting the match is the happy
+            path and should read as the ending. "Keep swiping" is the quieter
+            way out, so it is a ghost button underneath. */}
         <Animated.View style={footerStyle}>
           <Pressable
             accessibilityRole="button"
@@ -184,6 +209,25 @@ export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
             style={({ pressed }) => [styles.button, pressed && styles.pressed]}
           >
             <Text style={styles.buttonLabel}>Nice</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: clearing }}
+            disabled={clearing}
+            onPress={onKeepSwiping}
+            style={({ pressed }) => [
+              styles.ghostButton,
+              pressed && styles.pressed,
+              clearing && styles.ghostButtonDisabled,
+            ]}
+          >
+            {/* The write takes a beat on venue Wi-Fi. The transaction behind
+                it is round-guarded, so extra taps are harmless — but without
+                a visible pending state it *looks* broken and gets tapped
+                anyway. */}
+            <Text style={styles.ghostButtonLabel}>
+              {clearing ? 'Finding another…' : 'Keep swiping'}
+            </Text>
           </Pressable>
         </Animated.View>
       </View>
@@ -285,7 +329,9 @@ const styles = StyleSheet.create({
     color: '#6a6a74',
   },
   button: {
-    marginTop: 20,
+    // Trimmed from 20 to make room for the second action below it: the
+    // content column is already poster + title + year + why on one screen.
+    marginTop: 14,
     backgroundColor: '#e50914',
     borderRadius: 999,
     paddingVertical: 14,
@@ -295,6 +341,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 17,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  ghostButton: {
+    marginTop: 6,
+    borderRadius: 999,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+  },
+  ghostButtonDisabled: {
+    opacity: 0.45,
+  },
+  ghostButtonLabel: {
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   pressed: {
     opacity: 0.7,

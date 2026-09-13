@@ -112,6 +112,15 @@ export interface SwipeDeckProps {
    */
   seenIds?: () => Iterable<number>;
   /**
+   * What to show once the deck is spent, in place of "DECK COMPLETED" (#91).
+   * The Swipe tab passes the end-of-round recommendations here: the deck knows
+   * when a round is over, but only the screen can fetch the next one.
+   *
+   * A top-up still in flight keeps precedence — the deck is not finished while
+   * more cards may yet arrive. Unset leaves today's built-in empty state.
+   */
+  renderEmpty?: () => React.JSX.Element;
+  /**
    * True while the deck is off screen, e.g. the user is on another tab (#100).
    * The top card's trailer pauses, and plays again when this goes back to
    * false. Bottom-tab screens stay mounted, so without it nothing tells the
@@ -167,6 +176,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     autoSeed = true,
     maxCards = Infinity,
     seenIds,
+    renderEmpty,
     paused = false,
   },
   ref
@@ -726,6 +736,8 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
             <ActivityIndicator color={currentAccent} />
             <Text style={[styles.emptySubtitle, { marginTop: 16 }]}>Finding more movies for you…</Text>
           </View>
+        ) : isDone && renderEmpty ? (
+          renderEmpty()
         ) : isDone ? (
           <View style={[styles.emptyCard, { width: cardW - 32, height: cardH * 0.6 }]}>
             <Text style={styles.emptyEmoji}>🎉</Text>

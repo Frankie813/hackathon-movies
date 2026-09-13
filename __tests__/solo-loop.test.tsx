@@ -581,3 +581,129 @@ describe('the solo loop, with the Wi-Fi off', () => {
     expect(topCard().props.movie.video?.key).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rounds — #97's cap and #91's recommendations
+// ---------------------------------------------------------------------------
+
+/**
+ * The deck stops at a round rather than running on forever, so a demo is two
+ * minutes and not twenty (AGENTS.md §2). What the user gets at the boundary is
+ * the algorithm's top few picks, and "Keep swiping" starts the next round.
+ *
+ * The whole loop runs unmocked below the screen: getDeck(), seedCandidates()
+ * and the taste vector are all real, and only the network is a fixture.
+ */
+describe('the solo loop, round by round', () => {
+  /** A second, disjoint page of fixtures, so round two is visibly new. */
+  const SECOND_IDS = Array.from({ length: 20 }, (_, i) => 910001 + i);
+
+  function secondRoundFetch(url: string) {
+    if (url.includes('/discover/movie')) {
+      const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? '1');
+      const ids = SECOND_IDS.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+      return json({ results: ids.map((id) => ({ id })) });
+    }
+    const id = Number(/\/movie\/(\d+)/.exec(url)?.[1] ?? '0');
+    return json(detail(id));
+  }
+
+  /** Press a button by the label rendered inside it, e.g. "Keep swiping". */
+  async function pressLabelled(label: string): Promise<void> {
+    const button = tree!.root
+      .findAll(
+        (node) =>
+          node.props.accessibilityRole === 'button' &&
+          typeof node.props.onPress === 'function' &&
+          visibleTextIn(node).includes(label),
+      )
+      .at(-1);
+    expect(button).toBeDefined();
+    await act(async () => {
+      button!.props.onPress();
+    });
+    await settle(500);
+  }
+
+  function visibleTextIn(node: ReactTestInstance): string {
+    return node
+      .findAllByType('Text' as never)
+      .flatMap((child) => React.Children.toArray(child.props.children))
+      .filter((child): child is string => typeof child === 'string')
+      .join(' | ');
+  }
+
+  /**
+   * Swipe the whole round, returning the ids that were on screen.
+   *
+   * `beforeLast` runs just before the final swipe, which is the only moment a
+   * test can change the network the *next* round is built from: the last press
+   * is what empties the deck, and the build goes out inside it.
+   */
+  async function swipeOutTheRound(beforeLast?: () => void): Promise<number[]> {
+    const swiped: number[] = [];
+    for (let i = 0; i < DECK_IDS.length; i += 1) {
+      swiped.push(topMovieId());
+      if (i === DECK_IDS.length - 1) beforeLast?.();
+      await press(i % 2 === 0 ? 'Like' : 'Pass');
+    }
+    return swiped;
+  }
+
+  it('ends the round with picks the user has not seen, then deals another round', async () => {
+    setFetch(onlineFetch);
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+
+    // The next round comes off a fresh page, so "unseen" is observable rather
+    // than a claim about ids the fixture never had.
+    const firstRound = await swipeOutTheRound(() => setFetch(secondRoundFetch));
+    expect(new Set(firstRound).size).toBe(DECK_IDS.length);
+
+    await settle();
+    await settle();
+
+    // The dead end this replaces.
+    expect(visibleText()).not.toMatch(/DECK COMPLETED/);
+    expect(visibleText()).toMatch(/Your top picks/);
+
+    // Three recommendations, none of them a film the user just judged.
+    const picked = SECOND_IDS.filter((id) => visibleText().includes(`Movie ${id}`));
+    expect(picked).toHaveLength(3);
+    for (const id of picked) expect(firstRound).not.toContain(id);
+
+    // Keep swiping: a real deck again, and not the titles just declined.
+    await pressLabelled('Keep swiping');
+
+    expect(cards().length).toBeGreaterThan(0);
+    const next = topMovieId();
+    expect(firstRound).not.toContain(next);
+    expect(picked).not.toContain(next);
+    expect(topCard().props.movie.video?.key).toBeTruthy();
+  }, 30_000);
+
+  it('still reaches the picks screen with the Wi-Fi off', async () => {
+    // The offline path is not optional (PLAN.md §L). getDeck() falls back to
+    // the seed catalog and seedCandidates() resolves empty, so the round
+    // boundary has to survive on the catalog alone.
+    setFetch(onlineFetch);
+    act(() => {
+      tree = renderer.create(<SwipeScreen />);
+    });
+    await settle();
+
+    await swipeOutTheRound(() => setFetch(offlineFetch));
+    await settle();
+    await settle();
+
+    expect(visibleText()).toMatch(/Your top picks/);
+    expect(tree!.root.findAllByType(ActivityIndicator)).toHaveLength(0);
+
+    // And it is still a way forward, not a dead end.
+    await pressLabelled('Keep swiping');
+    expect(cards().length).toBeGreaterThan(0);
+    expect(topCard().props.movie.video?.key).toBeTruthy();
+  }, 30_000);
+});
