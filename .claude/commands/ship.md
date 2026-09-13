@@ -17,12 +17,16 @@ confirm with me before continuing.
    being paranoid about.
 4. Commit as `#$1 <short imperative summary>`. If the change is genuinely
    several steps, several commits are better than one.
-5. Push the branch. Then open the PR with a body containing:
+5. Bring the branch up to date: `git fetch origin && git merge origin/main`.
+   `main` moves every hour with three people merging. If the merge conflicts,
+   resolve it here and re-run `npx tsc --noEmit` and `npx jest` before going
+   on — a PR that fails against current `main` is not shippable.
+6. Push the branch. Then open the PR with a body containing:
    - one line on what changed and why,
    - the acceptance-criteria checklist with honest marks (see `/issue`),
    - anything that still needs verification on a physical device,
    - `Closes #$1`.
-6. Report the PR URL.
+7. Report the PR URL.
 
 Push and PR creation both prompt for approval — that's deliberate, three people
 share this repo. Don't try to route around it.

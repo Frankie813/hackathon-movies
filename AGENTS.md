@@ -130,6 +130,23 @@ matching `PLAN.md` §K and `.github/issues.json` exactly.
   that you did it. If the issue already has a *different* assignee, stop and ask
   before taking it — someone else may already be mid-flight.
 - **Branch:** `<owner>/<issue-number>-<slug>`, e.g. `a/7-youtube-trailer-card`.
+- **Every issue starts from a fresh `origin/main`.** Fetch first, then cut the
+  branch from the remote — never from whatever HEAD happens to be, which is
+  usually a stale `main` or a sibling branch mid-flight:
+
+  ```bash
+  git fetch origin
+  git switch -c <owner>/<N>-<slug> origin/main
+  ```
+
+  Three people merge in parallel, so `main` moves every hour. A branch cut
+  from a stale base ships a PR that re-applies or silently reverts a
+  teammate's work (the two #7 PRs, #70 and #72, diverged exactly this way).
+  Before `/ship`, bring the branch up to date again
+  (`git fetch origin && git merge origin/main`) and re-run the checks in §6.
+  A worktree created with `claude -w` or `EnterWorktree` already starts from
+  `origin/main` (`worktree.baseRef: fresh`), so only the pre-ship step applies
+  there.
 - **Never commit to `main` directly.**
 - **Commit subject:** `#7 short imperative summary`.
 - **Every issue has explicit acceptance criteria.** They are the definition of

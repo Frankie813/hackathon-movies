@@ -346,15 +346,20 @@ export interface WatchMatchOptions extends MatchOptions {
  * detection — so both phones reveal the same film off the same source of truth
  * even though only one of them did the writing.
  *
+ * @param movies the catalog to rank, or a function returning it. Pass the
+ *        function form when the catalog grows during the session (the live
+ *        deck, #13's seeding): it is read on every member snapshot, so a title
+ *        that arrived after subscribing is still detectable.
  * @returns an unsubscribe that detaches both listeners. Call it on unmount.
  */
 export function watchForMatch(
   code: string,
-  movies: Movie[],
+  movies: Movie[] | (() => Movie[]),
   cb: (match: Match | null) => void,
   opts: WatchMatchOptions = {},
 ): Unsubscribe {
   const normalized = normalizeCode(code);
+  const catalog = typeof movies === 'function' ? movies : () => movies;
   // Member snapshots arrive faster than a transaction round-trips, so without
   // this the same match is claimed several times over.
   let claiming = false;
@@ -368,7 +373,7 @@ export function watchForMatch(
   const stopMembers = subscribeMembers(normalized, (members) => {
     if (matched || claiming) return;
 
-    const winner = detectMatch(members, movies, opts);
+    const winner = detectMatch(members, catalog(), opts);
     if (!winner) return;
 
     claiming = true;

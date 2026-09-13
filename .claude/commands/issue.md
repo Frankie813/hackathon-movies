@@ -28,8 +28,18 @@ Work issue #$1 end to end. If `$1` is empty, stop and ask for a number.
 
 ## Branch and build
 
-- Branch: `<owner-letter>/<number>-<slug>`, e.g. `a/7-youtube-trailer-card`.
-  Never commit to `main`.
+- Start from a fresh `origin/main`, never from the current HEAD. If there is
+  uncommitted work, stop and ask what to do with it first — never bare-stash it,
+  the stash stack is shared across worktrees (AGENTS.md §5). Then:
+
+  ```bash
+  git fetch origin
+  git switch -c <owner-letter>/<number>-<slug> origin/main
+  ```
+
+  e.g. `a/7-youtube-trailer-card`. Inside a `claude -w` / `EnterWorktree`
+  worktree the checkout is already `origin/main` — just fetch and confirm
+  `git log -1 origin/main` matches before branching. Never commit to `main`.
 - Restate the acceptance criteria as a checklist at the start, and build
   directly against it. The AC is the scope boundary — don't exceed it.
 - Honour the hard rules in AGENTS.md §3, especially: no video files ever, no
