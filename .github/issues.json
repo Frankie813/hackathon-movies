@@ -463,25 +463,24 @@
         6,
         12
       ],
-      "desc": "6–8 fixed titles spanning blockbuster/arthouse, horror/feel-good, old/new. Swipes seed the taste vector, then route to the main deck.",
+      "desc": "A genre-preference picker: multi-select checkboxes over every genre in the offline seed catalog. Selections seed the taste vector directly, then route to the main deck.",
       "ac": [
         "After onboarding the main deck is visibly personalized",
         "Skippable"
       ],
       "agent": {
-        "goal": "A cold-start deck so the very first swipe in the demo already personalises. Without it the first minute of the demo shows a random-looking deck.",
+        "goal": "A cold-start genre picker so the very first thing a guest does already personalises the deck. Without it the first minute of the demo shows a random-looking deck.",
         "files": [
-          "app/index.tsx — the onboarding route",
-          "src/lib/onboarding.ts — the fixed title list"
+          "app/(tabs)/index.tsx — the onboarding route (hidden from the tab bar)",
+          "src/lib/onboarding.ts — the genre list and the genres-to-taste-vector helper"
         ],
         "steps": [
-          "Hard-code 6–8 TMDB ids from seed.json spanning blockbuster/arthouse, horror/feel-good, old/new. Polarizing is the point — a title everyone likes teaches the taste vector nothing.",
-          "Reuse SwipeDeck (#6) rather than building a second swipe surface.",
-          "Each swipe calls the same applySwipe() from #12 that the main deck uses.",
-          "On completion route to /swipe. Provide a Skip control — the AC requires it, and you will use it constantly during rehearsals.",
+          "List every genre present in lib/seed.json (id + name), deduped — this is the fixed checkbox set, not a hardcoded guess.",
+          "Render them as toggleable chips. No swiping, no second SwipeDeck instance — this is a plain multi-select form.",
+          "On Done, turn the selected genre ids into a TasteVector (genre:<id> keys, same shape applySwipe() from #12 produces) and persist it via saveTaste()/flushTaste() (#18) before routing to /swipe. Skip routes straight there with no vector written.",
           "Persist a done flag so onboarding does not reappear on every reload."
         ],
-        "contract": "Consumes applySwipe() from src/lib/taste.ts (#12). Exports ONBOARDING_IDS: number[] so #24 can assert the deck changed.",
+        "contract": "Produces a TasteVector shaped exactly like #12's applySwipe() output (genre:<id> keys), so src/lib/taste.ts's rank()/score() need no special-casing. Exports ONBOARDING_GENRES: {id, name}[] and tasteFromGenres(genreIds).",
         "gotchas": [
           "Phase 4 (h18–20) is late for a P1 — if the deck already personalises visibly from the main flow, this is droppable.",
           "Feature freeze is hour 20 (AGENTS.md §3)."
@@ -490,7 +489,7 @@
           "PLAN.md §H (cold start)"
         ],
         "verify": [
-          "Main deck order visibly differs after onboarding vs. after skipping"
+          "Main deck order visibly differs after picking genres vs. after skipping"
         ]
       }
     },
