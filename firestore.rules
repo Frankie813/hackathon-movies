@@ -6,7 +6,10 @@ rules_version = '2';
 //
 //   sessions/{code}                { code, hostUid, createdAt }
 //   sessions/{code}/members/{uid}  { likes[], dislikes[], joinedAt, name? }
-//   sessions/{code}/match/{docId}  written by #17
+//   sessions/{code}/match/current  { tmdbId, sessionCode, matchedAt, why? } (#17)
+//   users/{uid}/matches/{code}-{tmdbId}  the same verdict, for #41's Saved tab
+//   users/{uid}/taste/current      { vector, updatedAt } (#18)
+//   users/{uid}/likes/{movieId}    { movieId, likedAt } (#18)
 //
 // Join codes are guessable by design — four letters is the point — so the
 // protection that matters is that nobody can rewrite somebody else's swipes or
@@ -18,12 +21,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function inSession(code, uid) {
+      return exists(/databases/$(database)/documents/sessions/$(code)/members/$(uid));
+    }
+
     // Codes are guessable by design — four letters is the point — so "is this
     // caller actually in the session" is the check that carries the weight.
     // Costs one document read per evaluation; sessions are tiny and rare.
     function isMember(code) {
-      return signedIn()
-             && exists(/databases/$(database)/documents/sessions/$(code)/members/$(request.auth.uid));
+      return signedIn() && inSession(code, request.auth.uid);
     }
 
     // Group sessions, keyed by the 4-letter join code.
@@ -61,6 +67,33 @@ service cloud.firestore {
       }
     }
 
+    // A member's own saved matches (#17), read by #41's Saved tab.
+    //
+    // The device that detects the match writes the row for *everyone* in the
+    // group, so this is the one place a user writes into another user's
+    // document. It is narrow: the row has to name a session, and both the
+    // writer and the owner of the document have to be members of it. A
+    // stranger who guesses a uid still cannot put anything here.
+    match /users/{uid}/matches/{matchId} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+                            && request.resource.data.sessionCode is string
+                            && inSession(request.resource.data.sessionCode, request.auth.uid)
+                            && inSession(request.resource.data.sessionCode, uid);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // A user's own taste vector and like list (#18). Strictly private: unlike
+    // matches above, nothing in the group flow needs another device to read or
+    // write these, so the owner is the only one who touches them.
+    match /users/{uid}/taste/{docId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/likes/{movieId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
     // Read-only probe used by checkFirestoreReachable(). The document does not
     // need to exist — the read resolving is the signal.
     match /health/{docId} {
@@ -68,7 +101,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Deny everything else. #18's users/{uid} rules land with that issue.
+    // Deny everything else.
     match /{document=**} {
       allow read, write: if false;
     }

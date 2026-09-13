@@ -11,7 +11,7 @@
  *
  *   TITLES (hand-picked, below)
  *     -> TMDB /search/movie            resolve title+year to a TMDB id
- *     -> TMDB /movie/{id}?append_to_response=videos,watch/providers,keywords
+ *     -> TMDB /movie/{id}?append_to_response=videos,watch/providers,keywords,credits
  *     -> rank YouTube videos           Clip > Teaser > Trailer, official first
  *     -> YouTube search (optional)     restricted to the Movieclips channel
  *     -> YouTube videos.list           VALIDATE: embeddable, public, not
@@ -156,6 +156,14 @@ const START_BY_SOURCE = { 'tmdb-clip': 5, movieclips: 3, trailer: 8 };
 
 /** Target segment length. `end` is advisory — see the note on MovieVideo below. */
 const SEGMENT_SECONDS = 18;
+
+/**
+ * Billed cast to keep per movie. #12 scores the first three. Must match
+ * CAST_LIMIT in lib/tmdb.ts, or a movie scores differently depending on whether
+ * it arrived over the network or out of this file — which would re-rank the
+ * deck the moment the Wi-Fi drops, on the one beat of the demo that tests it.
+ */
+const CAST_LIMIT = 5;
 
 /**
  * A video too short to carry a segment runs out mid-swipe and YouTube rolls its
@@ -362,7 +370,7 @@ async function resolveId(tmdb, entry) {
 async function fetchDetail(tmdb, id) {
   return tmdb(`/movie/${id}`, {
     language: 'en-US',
-    append_to_response: 'videos,watch/providers,keywords',
+    append_to_response: 'videos,watch/providers,keywords,credits',
   });
 }
 
@@ -524,6 +532,14 @@ function buildMovie(detail, video) {
     keywords: [
       ...new Set((detail.keywords?.keywords ?? []).map((k) => k.name.toLowerCase())),
     ],
+    // Billing order, which is what `cast:` weights in the taste vector assume.
+    // Kept in sync with CAST_LIMIT in lib/tmdb.ts: a movie must score the same
+    // whether it arrived from the network or from this file.
+    castIds: (detail.credits?.cast ?? [])
+      .filter((c) => Number.isInteger(c.id) && Number.isInteger(c.order))
+      .sort((a, b) => a.order - b.order)
+      .slice(0, CAST_LIMIT)
+      .map((c) => c.id),
     poster: POSTER_BASE + detail.poster_path,
     overview: detail.overview ?? '',
     providers: [...new Set(providers)],
@@ -547,6 +563,9 @@ function assertMovieShape(movie) {
     problems.push('genreIds must be an array of integers');
   }
   if (!isStringArray(movie.genreNames)) problems.push('genreNames must be an array of strings');
+  if (!Array.isArray(movie.castIds) || !movie.castIds.every(Number.isInteger)) {
+    problems.push('castIds must be an array of integers');
+  }
   if (!isStringArray(movie.keywords)) problems.push('keywords must be an array of strings');
   if (!movie.poster?.startsWith(POSTER_BASE + '/')) problems.push('poster must be a full w780 URL');
   if (!isStringArray(movie.providers)) problems.push('providers must be an array of strings');
