@@ -79,7 +79,7 @@ export default function OnboardingScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>What do you like?</Text>
         <Text style={styles.subtitle}>
-          Pick a few genres to get a head start — you can always keep swiping to fine-tune it.
+          Pick a few genres to get a head start. You can always keep swiping to fine-tune it.
         </Text>
 
         <View style={styles.genreList}>
