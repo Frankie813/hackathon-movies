@@ -54,6 +54,23 @@ export const READY_TIMEOUT_MS = 20_000;
 export const WARM_MS = 4_000;
 
 /**
+ * After every play command, when to check the video actually started and ask
+ * again if it didn't (#100). One command is not enough on iOS: coming back to
+ * the Swipe tab, the command lands while the tab's WebView is still being
+ * re-attached, and WebKit leaves the media paused; the first card on launch
+ * can be created while its tab is still becoming visible, with the same result.
+ */
+export const RESUME_CHECKS_MS = [400, 1_200, 2_500];
+
+/** Mute state first, then play only if not already playing (1) or buffering (3). */
+function ensurePlayingJs(muted: boolean): string {
+  return (
+    `${muted ? 'if (!player.isMuted()) player.mute();' : 'if (player.isMuted()) player.unMute();'} ` +
+    'var s = player.getPlayerState(); if (s !== 1 && s !== 3) player.playVideo();'
+  );
+}
+
+/**
  * Zoom applied to the 16:9 frame inside its window. A 2.39:1 film fills 74.4%
  * of a 16:9 trailer frame; 1.34x pushes those black bands out of the window.
  * A natively 16:9 trailer loses ~13% top and bottom instead.
@@ -289,6 +306,25 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
     }, []);
     useEffect(() => clearWarm, [clearWarm]);
 
+    const resumeTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const clearResume = useCallback(() => {
+      for (const timer of resumeTimers.current) clearTimeout(timer);
+      resumeTimers.current = [];
+    }, []);
+    useEffect(() => clearResume, [clearResume]);
+
+    // Follow a play command with a few state checks (#100). Each is a no-op
+    // once the video is playing, and they stop the moment `play` goes false,
+    // so a later pause is never overridden.
+    const keepPlaying = useCallback(() => {
+      clearResume();
+      resumeTimers.current = RESUME_CHECKS_MS.map((ms) =>
+        setTimeout(() => {
+          if (readyRef.current && latest.current.play) inject(ensurePlayingJs(latest.current.muted));
+        }, ms)
+      );
+    }, [clearResume, inject]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -318,12 +354,14 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           `${muted ? 'player.mute();' : 'player.unMute();'} ` +
             `player.seekTo(${latest.current.start}, true); player.playVideo();`
         );
+        keepPlaying();
       } else {
+        clearResume();
         inject('player.pauseVideo();');
       }
       // `muted` is applied by the effect above when it changes on its own.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [play, clearWarm, inject]);
+    }, [play, clearWarm, clearResume, keepPlaying, inject]);
 
     // Window geometry can change after mount (the card measures its title
     // block). Harmless before the page has loaded; re-sent on ready.
@@ -360,10 +398,8 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
               // redundant playVideo() on an already-autoplaying video makes
               // YouTube flash its play/pause bezel. Mute before play so a
               // mobile UA never sees an unmuted autoplay. 1 = PLAYING, 3 = BUFFERING.
-              inject(
-                `${isMuted ? 'if (!player.isMuted()) player.mute();' : 'if (player.isMuted()) player.unMute();'} ` +
-                  `var s = player.getPlayerState(); if (s !== 1 && s !== 3) player.playVideo();`
-              );
+              inject(ensurePlayingJs(isMuted));
+              keepPlaying();
             } else {
               // Hidden: warm the buffer muted, then park at `start`.
               inject('player.mute(); player.playVideo();');
@@ -390,7 +426,7 @@ export const TrailerVideoPlayer = forwardRef<TrailerVideoPlayerRef, TrailerVideo
           }
         }
       },
-      [inject, clearWarm]
+      [inject, clearWarm, keepPlaying]
     );
 
     return (

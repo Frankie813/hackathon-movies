@@ -300,6 +300,34 @@ describe('SwipeDeck unplayable cards', () => {
   });
 });
 
+describe('SwipeDeck off screen (#100)', () => {
+  it('stops the top trailer while paused and plays it again on return, same card', () => {
+    act(() => {
+      tree = renderer.create(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} />);
+    });
+    const topId = () => tree!.root.findAllByType(MovieCard).find((c) => c.props.active)?.props.movie.id;
+    const cardFor = (id: number) => tree!.root.findAllByType(MovieCard).find((c) => c.props.movie.id === id)!;
+    const first = topId();
+    expect(first).toBeDefined();
+    const player = () => cardFor(first).findByProps({ testID: 'trailer-webview' }).props.source;
+    const source = player();
+
+    // Off to the Group tab: nothing plays, the top card is still the top card.
+    act(() => {
+      tree!.update(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} paused />);
+    });
+    expect(tree!.root.findAllByType(MovieCard).some((c) => c.props.active)).toBe(false);
+    expect(cardFor(first).props.movie.id).toBe(first);
+
+    // Back on Swipe: the same card plays again, without remounting its player.
+    act(() => {
+      tree!.update(<SwipeDeck movies={SEED_MOVIES} autoSeed={false} paused={false} />);
+    });
+    expect(topId()).toBe(first);
+    expect(player()).toBe(source);
+  });
+});
+
 describe('SwipeDeck session order (#96)', () => {
   /** The deck order a fresh mount deals, with `random` behind makeJitter(). */
   function dealtOrder(random: () => number): number[] {

@@ -111,6 +111,13 @@ export interface SwipeDeckProps {
    * top-up time, so pass a stable getter rather than a snapshot.
    */
   seenIds?: () => Iterable<number>;
+  /**
+   * True while the deck is off screen, e.g. the user is on another tab (#100).
+   * The top card's trailer pauses, and plays again when this goes back to
+   * false. Bottom-tab screens stay mounted, so without it nothing tells the
+   * player the screen came back and the trailer is left stopped.
+   */
+  paused?: boolean;
 }
 
 export interface SwipeDeckRef {
@@ -160,6 +167,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
     autoSeed = true,
     maxCards = Infinity,
     seenIds,
+    paused = false,
   },
   ref
 ) {
@@ -683,15 +691,18 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
 
   const renderMovieContent = useCallback(
     (movie: Movie, index: number, active: boolean) => {
+      // Off screen (#100): the card stays the top card, only its trailer stops.
+      // Flipping `active` back to true is what makes the player play again.
+      const playing = active && !paused;
       if (renderCard) {
-        return renderCard(movie, index, active);
+        return renderCard(movie, index, playing);
       }
       return (
         <MovieCard
           movie={movie}
           width={cardW}
           height={cardH}
-          active={active}
+          active={playing}
           showDetails={active && showDetails}
           whyLine={whyFor ? whyFor(movie) : undefined}
           expectWhyLine={expectWhyLine}
@@ -700,7 +711,7 @@ export const SwipeDeck = forwardRef<SwipeDeckRef, SwipeDeckProps>(function Swipe
         />
       );
     },
-    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed]
+    [renderCard, cardW, cardH, whyFor, expectWhyLine, vibeFor, showDetails, handleCardFailed, paused]
   );
 
   return (
