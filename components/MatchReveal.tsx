@@ -6,7 +6,7 @@
 // show. This file only knows how to present a verdict; it has no Firestore or
 // TMDB calls of its own.
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -20,9 +20,32 @@ import Animated, {
 
 import type { Match, Movie } from '@/types';
 
-/** Shown until Gemini's line lands, or forever if it never does (offline). */
+/** Shown while Gemini's line is still in flight. */
 const WHY_PLACEHOLDER = 'Reel is weighing your tastes…';
-const MAX_PROVIDERS = 4;
+
+/**
+ * Shown once we stop expecting a line at all — offline, over quota, or a
+ * response that failed validation. Deliberately finished-looking rather than a
+ * permanent ellipsis: the reveal is the last thing judges look at, and copy
+ * that reads as a hung spinner is worse than copy that reads as an ending.
+ *
+ * It is not a compromise explanation and does not pretend to be one. Naming a
+ * trade-off here would mean inventing one, which is the thing #21 exists to
+ * prevent.
+ */
+const WHY_FALLBACK = 'Your group landed on this one.';
+
+/**
+ * How long to hold the placeholder before giving up on the line.
+ *
+ * A device cannot tell "still coming" from "never coming" by looking at the
+ * match document: the `why` is patched in later by whichever device claimed
+ * the match (#17), and a device that is not that one never learns the call
+ * failed. So this is a timer rather than a signal. 15s clears a healthy call
+ * (12s request timeout, usually answered in two or three) with room to spare,
+ * and a line that lands after the deadline still replaces the fallback.
+ */
+const WHY_TIMEOUT_MS = 15_000;
 
 export interface MatchRevealProps {
   match: Match;
@@ -40,6 +63,7 @@ export interface MatchRevealProps {
  * payoff rather than arriving with everything else at once.
  */
 export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
+  const [gaveUpOnWhy, setGaveUpOnWhy] = useState(false);
   const backdrop = useSharedValue(0);
   const ambient = useSharedValue(0);
   const eyebrow = useSharedValue(0);
@@ -63,6 +87,17 @@ export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Stop waiting on the why line once the deadline passes. Cleared as soon as
+  // one arrives, so a normal match never starts the timer's second life.
+  useEffect(() => {
+    if (match.why) {
+      setGaveUpOnWhy(false);
+      return;
+    }
+    const timer = setTimeout(() => setGaveUpOnWhy(true), WHY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [match.why]);
+
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value }));
   const ambientStyle = useAnimatedStyle(() => ({ opacity: ambient.value * 0.85 }));
   const eyebrowStyle = useAnimatedStyle(() => ({
@@ -78,8 +113,6 @@ export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
     transform: [{ translateY: (1 - why.value) * 10 }],
   }));
   const footerStyle = useAnimatedStyle(() => ({ opacity: footer.value }));
-
-  const providers = movie?.providers.slice(0, MAX_PROVIDERS) ?? [];
 
   return (
     <Animated.View
@@ -128,25 +161,21 @@ export function MatchReveal({ match, movie, onDismiss }: MatchRevealProps) {
         </Text>
         {movie?.year ? <Text style={styles.year}>{movie.year}</Text> : null}
 
-        {/* The payoff line (#21). Gemini's text is validated against the
-            catalog before it can reach the match document, so what lands
-            here is a trade-off about a real film — never a hallucination. */}
-        <Animated.Text style={[styles.why, whyStyle, !match.why && styles.whyPending]}>
-          {match.why ?? WHY_PLACEHOLDER}
-        </Animated.Text>
+        {/* The payoff line (#21), and the reveal's only where-to-watch: the
+            validated line ends with the film's providers, so a badge row here
+            would say the same thing twice on the one screen judges read
+            closely. Gemini's text is validated against the catalog before it
+            can reach the match document, so what lands here is a trade-off
+            about a real film — never a hallucination.
 
-        {providers.length > 0 ? (
-          <Animated.View style={[styles.providerBlock, whyStyle]}>
-            <Text style={styles.providerLabel}>WHERE TO WATCH</Text>
-            <View style={styles.providerRow}>
-              {providers.map((provider) => (
-                <View key={provider} style={styles.providerBadge}>
-                  <Text style={styles.providerName}>{provider}</Text>
-                </View>
-              ))}
-            </View>
-          </Animated.View>
-        ) : null}
+            Dimmed only while genuinely waiting: the fallback is a finished
+            line, and greying it out would put it back to looking like
+            something still loading. */}
+        <Animated.Text
+          style={[styles.why, whyStyle, !match.why && !gaveUpOnWhy && styles.whyPending]}
+        >
+          {match.why ?? (gaveUpOnWhy ? WHY_FALLBACK : WHY_PLACEHOLDER)}
+        </Animated.Text>
 
         <Animated.View style={footerStyle}>
           <Pressable
@@ -254,36 +283,6 @@ const styles = StyleSheet.create({
   },
   whyPending: {
     color: '#6a6a74',
-  },
-  providerBlock: {
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  providerLabel: {
-    color: '#6a6a74',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-  },
-  providerRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  providerBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  providerName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
   },
   button: {
     marginTop: 20,
