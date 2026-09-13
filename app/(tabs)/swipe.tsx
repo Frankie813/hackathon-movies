@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 
 import { MoodInput, type AppliedMood } from '@/components/MoodInput';
 import { SwipeDeck } from '@/components/SwipeDeck';
+import { TopPicks } from '@/components/TopPicks';
 import { SEED_MOVIES } from '@/data/seedMovies';
 import { useActiveCode } from '@/lib/active-session';
 import { useAnonymousAuth } from '@/lib/auth';
@@ -13,6 +14,7 @@ import { DECK_MAX, getDeck, isSeedDeck } from '@/lib/tmdb';
 import { useWhyLines } from '@/lib/use-why-lines';
 // Bundled tags only (#39): the swipe loop never spends an image request.
 import { cachedVibeTags, type MoodFilters } from '@/src/lib/gemini';
+import { buildNextRound } from '@/src/lib/picks';
 import {
   flushTaste,
   loadTaste,
@@ -78,6 +80,21 @@ export default function SwipeScreen() {
   const [deck, setDeck] = useState<Movie[] | null>(null);
   // The mood filtering the deck, if any (#11). null is the default deck.
   const [mood, setMood] = useState<AppliedMood | null>(null);
+  /**
+   * The end-of-round recommendations (#91, #97). `null` means "still swiping";
+   * `'loading'` is the picks screen covering the next round's fetch.
+   *
+   * Solo only. In a group the deck has no round boundary at all — everyone
+   * swipes until the group matches — so this stays null there.
+   */
+  const [picks, setPicks] = useState<Movie[] | 'loading' | null>(null);
+  /**
+   * The rest of the round the picks were skimmed off. "Keep swiping" hands
+   * this straight to the deck, so the press costs no network at all.
+   */
+  const nextDeckRef = useRef<Movie[]>([]);
+  /** The mood filters as last applied, so round two stays filtered too. */
+  const filtersRef = useRef<MoodFilters | undefined>(undefined);
   /**
    * Bumped by every mood-driven reload. The boot fetch below checks it before
    * it commits, so a slow first /discover can never land on top of a deck the
@@ -171,6 +188,9 @@ export default function SwipeScreen() {
   const swapDeck = useCallback((movies: Movie[]) => {
     setTaste(tasteRef.current);
     setDeck(orderDeck(movies));
+    // Whatever put a new deck on screen — a new round, a mood, clearing one —
+    // ends the picks screen. Leaving it up would hide a live deck behind it.
+    setPicks(null);
   }, []);
 
   /**
@@ -189,6 +209,9 @@ export default function SwipeScreen() {
       // the empty-page path, since TMDB did answer. Checked before orderDeck(),
       // which returns a new array.
       if (isSeedDeck(movies)) return false;
+      // Held so the next round is filtered the same way — a mood that only
+      // survived 30 cards would silently lapse mid-session.
+      filtersRef.current = filters;
       swapDeck(movies);
       setMood({ text, tone: filters.tone });
       return true;
@@ -200,6 +223,7 @@ export default function SwipeScreen() {
     const seq = (deckSeq.current += 1);
     const movies = await getDeck(undefined, { seen: getSeen() });
     if (seq !== deckSeq.current) return;
+    filtersRef.current = undefined;
     swapDeck(movies);
     setMood(null);
   }, [swapDeck]);
@@ -274,9 +298,106 @@ export default function SwipeScreen() {
     [uid],
   );
 
+  /**
+   * The round is over (#97). Build the next one — and in a solo session show
+   * its top few titles as recommendations first (#91).
+   *
+   * The picks and the deck behind them come from the same build, which is what
+   * lets the picks screen double as cover for a fetch that can take most of
+   * eight seconds on venue Wi-Fi. It also means the three titles the user has
+   * just declined are not dealt back to them as cards one to three.
+   *
+   * In a group there is no round boundary: everyone swipes until the group
+   * matches (#17), so the next deck is swapped in silently and the user never
+   * sees a break.
+   */
   const handleSwipedAll = useCallback(() => {
     console.log('[Swipe] Swiped all cards in deck');
-  }, []);
+    const seq = (deckSeq.current += 1);
+    const inGroup = code !== null;
+    if (!inGroup) setPicks('loading');
+
+    void buildNextRound(tasteRef.current, likesRef.current, {
+      seen: getSeen(),
+      filters: filtersRef.current,
+    }).then((round) => {
+      // The same guard applyMood uses: a mood applied while this was in flight
+      // owns the screen now, and a round landing on top of it would throw away
+      // the deck the user just asked for.
+      if (seq !== deckSeq.current) return;
+
+      if (inGroup) {
+        // No picks skimmed off — the group needs every title it can get.
+        swapDeck([...round.picks, ...round.deck]);
+        return;
+      }
+      nextDeckRef.current = round.deck;
+      setPicks(round.picks);
+    }).catch((error: unknown) => {
+      // buildNextRound() is documented not to reject, but the deck is spent by
+      // the time this runs: an unhandled rejection would leave a solo user on
+      // "Working out your top picks…" with no card to swipe and no button to
+      // press. An empty picks list still renders "Keep swiping", which retries.
+      console.warn('[Swipe] could not build the next round:', error);
+      if (seq !== deckSeq.current) return;
+      nextDeckRef.current = [];
+      if (!inGroup) setPicks([]);
+    });
+  }, [code, swapDeck]);
+
+  /**
+   * Joining a group while the picks screen is up (#97). A group has no picks
+   * screen, so `renderEmpty` switches to the refill spinner — and nothing would
+   * ever retrigger onSwipedAll on a deck that is already spent, leaving that
+   * spinner up for good. The round already in hand goes straight into the deck
+   * instead; with nothing in hand, the build is re-run.
+   */
+  useEffect(() => {
+    if (code === null || picks === null || picks === 'loading') return;
+    const held = nextDeckRef.current;
+    nextDeckRef.current = [];
+    if (picks.length === 0 && held.length === 0) {
+      handleSwipedAll();
+      return;
+    }
+    swapDeck([...picks, ...held]);
+  }, [code, picks, handleSwipedAll, swapDeck]);
+
+  /** "Keep swiping": the next round is already in hand, so this is instant. */
+  const handleKeepSwiping = useCallback(() => {
+    const next = nextDeckRef.current;
+    nextDeckRef.current = [];
+    // An empty next deck would leave the user staring at a deck that is
+    // already spent, so re-run the round build instead of swapping nothing in.
+    if (next.length === 0) {
+      handleSwipedAll();
+      return;
+    }
+    swapDeck(next);
+  }, [handleSwipedAll, swapDeck]);
+
+  /**
+   * Titles saved from the picks screen, so the bookmark reads as done. Local
+   * to this screen: #41's Saved tab is the source of truth, but a round-trip
+   * through Firestore to grey out an icon the user just tapped is not worth
+   * the latency on a demo network.
+   */
+  const [savedPicks, setSavedPicks] = useState<ReadonlySet<number>>(new Set());
+  const handleSavePick = useCallback(
+    (movie: Movie) => {
+      console.log(`[Swipe] Saved from top picks: ${movie.title}`);
+      setSavedPicks((prev) => new Set(prev).add(movie.id));
+      if (uid) void saveWatchLater(uid, movie.id);
+    },
+    [uid],
+  );
+
+  // The picks are worth a why line each — three requests at a natural pause,
+  // not in the swipe loop, which is where the 15 RPM budget actually matters.
+  useEffect(() => {
+    if (picks === null || picks === 'loading' || picks.length === 0) return;
+    prefetch(picks, likesRef.current);
+  }, [picks, prefetch]);
 
   if (!taste || !deck) {
     return (
@@ -285,6 +406,11 @@ export default function SwipeScreen() {
       </View>
     );
   }
+
+  // In a group the cap comes off entirely and there is no picks screen: the
+  // group swipes until it matches (#17), and a deck that stopped at 30 would
+  // strand whoever ran out first while the others were still going.
+  const inGroup = code !== null;
 
   return (
     <View style={styles.screen}>
@@ -300,8 +426,30 @@ export default function SwipeScreen() {
         whyFor={whyFor}
         expectWhyLine={expectWhyLine}
         vibeFor={cachedVibeTags}
-        maxCards={DECK_MAX}
+        maxCards={inGroup ? undefined : DECK_MAX}
         seenIds={getSeen}
+        renderEmpty={
+          inGroup
+            ? // A group never stops for picks, but the next deck still takes a
+              // moment to land. Without this the built-in "DECK COMPLETED /
+              // START OVER" flashes up mid-session and reads like the group
+              // hit a dead end while everyone else is still swiping.
+              () => (
+                <View style={styles.groupRefill}>
+                  <ActivityIndicator color="#fbbf24" />
+                  <Text style={styles.groupRefillText}>Finding more movies…</Text>
+                </View>
+              )
+            : () => (
+                <TopPicks
+                  picks={picks === 'loading' ? null : picks}
+                  onKeepSwiping={handleKeepSwiping}
+                  onSave={handleSavePick}
+                  savedIds={savedPicks}
+                  whyFor={whyFor}
+                />
+              )
+        }
         paused={!isFocused}
       />
       {/* Sits beside the deck rather than inside it: the sheet is a Modal, so
@@ -320,5 +468,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#080d1a',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  groupRefill: {
+    flex: 1,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  groupRefillText: {
+    color: '#9aa1b4',
+    fontSize: 15,
   },
 });

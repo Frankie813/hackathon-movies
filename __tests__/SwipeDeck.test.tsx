@@ -1,4 +1,5 @@
 import React from 'react';
+import { Text } from 'react-native';
 import renderer, { act } from 'react-test-renderer';
 import { SwipeDeck, type SwipeDeckRef } from '@/components/SwipeDeck';
 import { MovieCard } from '@/components/MovieCard';
@@ -500,6 +501,73 @@ describe('SwipeDeck deck cap (#97)', () => {
 
     expect(await swipeToEnd(ref, onSwipedAll)).toBe(SEED_MOVIES.length);
     expect(seedCandidates).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The end of a round belongs to the screen, not the deck (#91): only the
+   * screen can fetch what comes next. The deck just stops and renders whatever
+   * it is handed.
+   */
+  describe('renderEmpty', () => {
+    /** Every string rendered anywhere in the tree. */
+    const texts = () =>
+      tree!.root
+        .findAllByType(Text)
+        .flatMap((node) => node.props.children)
+        .filter((child: unknown): child is string => typeof child === 'string');
+
+    it('replaces the built-in empty state once the deck is spent', async () => {
+      seedCandidates.mockImplementation(async () => []);
+      const ref = React.createRef<SwipeDeckRef>();
+      const onSwipedAll = jest.fn();
+      act(() => {
+        tree = renderer.create(
+          <SwipeDeck
+            ref={ref}
+            movies={SEED_MOVIES}
+            autoSeed={false}
+            onSwipedAll={onSwipedAll}
+            renderEmpty={() => <Text>YOUR TOP PICKS</Text>}
+          />
+        );
+      });
+
+      await swipeToEnd(ref, onSwipedAll);
+
+      expect(texts()).toContain('YOUR TOP PICKS');
+      expect(texts()).not.toContain('DECK COMPLETED');
+    });
+
+    it('keeps the built-in empty state when nothing is passed', async () => {
+      seedCandidates.mockImplementation(async () => []);
+      const ref = React.createRef<SwipeDeckRef>();
+      const onSwipedAll = jest.fn();
+      act(() => {
+        tree = renderer.create(
+          <SwipeDeck ref={ref} movies={SEED_MOVIES} autoSeed={false} onSwipedAll={onSwipedAll} />
+        );
+      });
+
+      await swipeToEnd(ref, onSwipedAll);
+
+      expect(texts()).toContain('DECK COMPLETED');
+    });
+
+    it('is not shown while the deck still has cards', () => {
+      const ref = React.createRef<SwipeDeckRef>();
+      act(() => {
+        tree = renderer.create(
+          <SwipeDeck
+            ref={ref}
+            movies={SEED_MOVIES}
+            autoSeed={false}
+            renderEmpty={() => <Text>YOUR TOP PICKS</Text>}
+          />
+        );
+      });
+
+      expect(texts()).not.toContain('YOUR TOP PICKS');
+    });
   });
 });
 

@@ -31,7 +31,7 @@ import {
 import { ensureAnonymousUser } from '../../lib/auth';
 import { db } from '../../lib/firebase';
 import { normalizeCode, subscribe as subscribeMembers } from '../../lib/session';
-import type { Match, Member, Movie, TasteVector } from '../types';
+import type { Match, Member, Movie, SessionMatch, TasteVector } from '../types';
 import { applySwipe, score } from './taste';
 
 /**
@@ -49,6 +49,14 @@ export const MISERY_FLOOR = 0;
  */
 export const MIN_SWIPES_FOR_FALLBACK = 8;
 
+/**
+ * Extra swipes demanded of the group after a "Keep swiping" (#97), on top of
+ * whatever anyone had already swiped. Without it the fallback re-fires on the
+ * very next member snapshot — everyone is already past MIN_SWIPES_FOR_FALLBACK
+ * by then — and the group gets the runner-up instantly, having swiped nothing.
+ */
+export const REMATCH_SWIPES = 8;
+
 /** A group needs at least two people; one person agreeing with themselves is not a match. */
 export const MIN_MEMBERS = 2;
 
@@ -57,6 +65,17 @@ export interface MatchOptions {
   floor?: number;
   /** Override MIN_SWIPES_FOR_FALLBACK. Infinity disables the fallback entirely. */
   minSwipes?: number;
+  /**
+   * tmdbIds the group has already rejected (#97). Dropped from the ranking
+   * entirely, so neither the unanimous path nor the fallback can return one.
+   */
+  exclude?: Iterable<number>;
+  /**
+   * Raises the fallback's swipe bar without lowering it: the threshold is
+   * max(minSwipes, swipeFloor). Set from the match document after a rejection
+   * so the group swipes again before the next forced pick.
+   */
+  swipeFloor?: number;
 }
 
 const SESSIONS = 'sessions';
@@ -117,10 +136,16 @@ function vetoes(member: Member, movie: Movie, taste: TasteVector, floor: number)
  */
 export function rankGroup(members: Member[], movies: Movie[], opts: MatchOptions = {}): Movie[] {
   const floor = opts.floor ?? MISERY_FLOOR;
+  const excluded = new Set(opts.exclude ?? []);
   const tastes = members.map((member) => memberTaste(member, movies));
 
   return movies
     .map((movie, index) => {
+      // A rejected title leaves the ranking outright, which is what keeps it
+      // out of detectMatch's unanimous path too — dropping it from the
+      // fallback alone would let a title the whole group liked, and then
+      // rejected, re-fire on the very next snapshot.
+      if (excluded.has(movie.id)) return null;
       let total = 0;
       let likes = 0;
       for (let i = 0; i < members.length; i += 1) {
@@ -136,8 +161,20 @@ export function rankGroup(members: Member[], movies: Movie[], opts: MatchOptions
     .map((entry) => entry.movie);
 }
 
-function swipeCount(member: Member): number {
+/** Cards this member has judged, either way. Exported for clearMatch's floor. */
+export function swipeCount(member: Member): number {
   return member.likes.length + member.dislikes.length;
+}
+
+/**
+ * The bar the group must clear before the fallback may fire again, set when a
+ * verdict is rejected (#97). Anchored to the member who has swiped *most*, so
+ * in a lopsided group the quieter member may owe more than REMATCH_SWIPES —
+ * deliberate: a per-uid map would need rebuilding whenever somebody joins, and
+ * the ungated unanimous path is the pressure valve either way.
+ */
+export function nextSwipeFloor(members: Member[]): number {
+  return Math.max(0, ...members.map(swipeCount)) + REMATCH_SWIPES;
 }
 
 /**
@@ -148,8 +185,10 @@ function swipeCount(member: Member): number {
  *   2. Everyone has swiped `minSwipes` cards and still never agreed, so the
  *      top survivor takes it.
  *
- * Both draw from rankGroup(), so a vetoed title can never be returned by
- * either path.
+ * Both draw from rankGroup(), so neither a vetoed title nor one the group has
+ * already rejected via `opts.exclude` can be returned by either path. Only
+ * path 2 is held back by `opts.swipeFloor`: a group that genuinely agrees on
+ * something new should not have to swipe out a penalty first (#97).
  *
  * Pure and cheap — safe to call on every member snapshot. When it returns
  * non-null, fire #21's Gemini compromise call here at *detection* time, not
@@ -170,7 +209,9 @@ export function detectMatch(
   );
   if (unanimous) return unanimous;
 
-  const minSwipes = opts.minSwipes ?? MIN_SWIPES_FOR_FALLBACK;
+  // The floor raises the bar, never lowers it: a session that has never had a
+  // rejection carries swipeFloor 0 and behaves exactly as it did before (#97).
+  const minSwipes = Math.max(opts.minSwipes ?? MIN_SWIPES_FOR_FALLBACK, opts.swipeFloor ?? 0);
   if (members.every((member) => swipeCount(member) >= minSwipes)) return survivors[0];
 
   return null;
@@ -206,6 +247,38 @@ function toMatch(data: DocumentData | undefined): Match | null {
 }
 
 /**
+ * The session's verdict document, with the round bookkeeping (#97) defaulted.
+ *
+ * The defaults are load-bearing, not hygiene: a document written before rounds
+ * existed carries none of these fields, and it has to read back as a *live,
+ * uncleared round 1* or the reveal on an in-flight session would vanish the
+ * moment this ships.
+ */
+function toSessionMatch(data: DocumentData | undefined): SessionMatch | null {
+  const base = toMatch(data);
+  if (!base) return null;
+  return {
+    ...base,
+    round: typeof data?.round === 'number' && data.round > 0 ? data.round : 1,
+    rejected: Array.isArray(data?.rejected)
+      ? data.rejected.filter((id: unknown): id is number => Number.isInteger(id))
+      : [],
+    cleared: data?.cleared === true,
+    swipeFloor: typeof data?.swipeFloor === 'number' ? data.swipeFloor : 0,
+  };
+}
+
+/** The verdict as a Saved-tab row: the round fields have no business there. */
+function toSavedMatch(match: SessionMatch): Match {
+  return {
+    tmdbId: match.tmdbId,
+    sessionCode: match.sessionCode,
+    matchedAt: match.matchedAt,
+    ...(match.why ? { why: match.why } : {}),
+  };
+}
+
+/**
  * Writes the group's verdict and fans it out to every member's Saved tab.
  *
  * Double-fire guard: the session match document is claimed in a transaction and
@@ -225,43 +298,153 @@ function toMatch(data: DocumentData | undefined): Match | null {
  *          caller that goes on to describe the match must describe *this*,
  *          never the title it walked in with.
  */
-export async function persistMatch(
+export async function claimMatch(
   code: string,
   movie: Movie,
   members: Member[],
-  why?: string,
-): Promise<Match> {
+): Promise<SessionMatch> {
   const normalized = normalizeCode(code);
 
   const claimed = await runTransaction(db, async (tx) => {
     const existing = await tx.get(matchRef(normalized));
-    const previous = existing.exists() ? toMatch(existing.data()) : null;
-    if (previous) {
-      // Somebody beat us to it. Add the `why` if we have one and it doesn't.
-      if (why && !previous.why) {
-        tx.update(matchRef(normalized), { why });
-        return { ...previous, why };
-      }
-      return previous;
-    }
+    const previous = existing.exists() ? toSessionMatch(existing.data()) : null;
 
-    const match: Match = {
+    // Somebody holds the current round. Adopt their verdict rather than
+    // writing our own — this is what stops two phones revealing two films.
+    if (previous && !previous.cleared) return previous;
+
+    // The round is derived here, inside the transaction, from what the
+    // document actually says — never from a number the caller walked in with.
+    // A device whose last snapshot was a round behind would otherwise re-write
+    // a round number that is already taken, and the reveal's remount key
+    // (MatchOverlay keys on the round) would stop changing.
+    const match: SessionMatch = {
       tmdbId: movie.id,
       sessionCode: normalized,
       matchedAt: Date.now(),
-      ...(why ? { why } : {}),
+      round: (previous?.round ?? 0) + 1,
+      rejected: previous?.rejected ?? [],
+      cleared: false,
+      swipeFloor: previous?.swipeFloor ?? 0,
     };
+    // set, not update: the previous round's `why` must not survive into this
+    // one, or the group reveals a new film under a sentence about the film
+    // they just rejected.
     tx.set(matchRef(normalized), match);
     return match;
   });
 
-  console.log('[match] session', normalized, 'matched tmdbId', claimed.tmdbId);
+  console.log('[match] session', normalized, 'round', claimed.round, 'matched tmdbId', claimed.tmdbId);
   await writeMemberMatches(
-    claimed,
+    toSavedMatch(claimed),
     members.map((member) => member.uid),
   );
 
   return claimed;
+}
+
+/**
+ * Patches #21's compromise line onto a verdict that is still the current one.
+ *
+ * Guarded on the round *and* the title, because the gap between claiming and
+ * Gemini answering is seconds long and the group can reject and re-match
+ * inside it. An unguarded patch would then put round N's sentence under round
+ * N+1's poster — a real film described by a real line about a different film,
+ * which is exactly the failure the validation rule exists to prevent.
+ *
+ * A no-op when the round has moved on. Never throws.
+ */
+export async function attachWhy(
+  code: string,
+  round: number,
+  tmdbId: number,
+  why: string,
+  members: Member[],
+): Promise<void> {
+  const normalized = normalizeCode(code);
+
+  const patched = await runTransaction(db, async (tx) => {
+    const existing = await tx.get(matchRef(normalized));
+    const current = existing.exists() ? toSessionMatch(existing.data()) : null;
+    if (!current || current.cleared || current.round !== round || current.tmdbId !== tmdbId) {
+      return null;
+    }
+    // Already explained by whoever claimed it. Overwriting would spend a
+    // write to replace one valid line with another.
+    if (current.why) return null;
+    tx.update(matchRef(normalized), { why });
+    return { ...current, why };
+  }).catch((error: unknown) => {
+    console.warn('[match] could not attach the why line:', error);
+    return null;
+  });
+
+  if (!patched) return;
+
+  // The line is part of the verdict, so the Saved rows want it too — merged
+  // onto the rows claimMatch() already wrote. Best effort; the reveal itself
+  // reads the line straight off the document listener.
+  await writeMemberMatches(
+    toSavedMatch(patched),
+    members.map((member) => member.uid),
+  );
+}
+
+/**
+ * "Keep swiping" (#97): the group passes on this verdict and carries on.
+ *
+ * Shared, not local — it writes to the one document every device reveals off,
+ * so one press clears the reveal on every phone. The title joins `rejected`
+ * for the rest of the session and the fallback is held back by a fresh
+ * `swipeFloor` so the runner-up does not fire on the very next snapshot.
+ *
+ * A transaction rather than a blind update, and guarded on the round, for two
+ * reasons that both show up in a live demo: the button gets double-tapped
+ * while the write is in flight, and two phones press it within the same
+ * second. Either way the second call reads `cleared` and does nothing, so the
+ * round advances once and `swipeFloor` is written once — a blind update would
+ * let a stale clear land on a round nobody rejected.
+ *
+ * Never throws: a failed clear leaves the reveal up, which is the honest
+ * outcome, and the caller re-enables its button.
+ */
+export async function clearMatch(
+  code: string,
+  round: number,
+  tmdbId: number,
+  members: Member[],
+): Promise<void> {
+  const normalized = normalizeCode(code);
+  try {
+    await runTransaction(db, async (tx) => {
+      const existing = await tx.get(matchRef(normalized));
+      const current = existing.exists() ? toSessionMatch(existing.data()) : null;
+      if (!current || current.cleared || current.round !== round) return;
+
+      // Computed explicitly rather than with arrayUnion(): the value is
+      // already in hand from the read, and a sentinel would be one more thing
+      // for every caller and test double to understand.
+      const rejected = current.rejected.includes(tmdbId)
+        ? current.rejected
+        : [...current.rejected, tmdbId];
+
+      tx.update(matchRef(normalized), {
+        cleared: true,
+        rejected,
+        // Never below the floor already on the document. Callers hand over
+        // their own snapshot of the member list, and an empty one would
+        // otherwise drop the floor to a bare REMATCH_SWIPES — letting the
+        // fallback re-fire with the runner-up on the next snapshot, which is
+        // the exact thing this field exists to prevent. watchForMatch's
+        // onMembers is the supported way to get a list that is never empty
+        // once a verdict exists.
+        swipeFloor: Math.max(current.swipeFloor, nextSwipeFloor(members)),
+      });
+    });
+    console.log('[match] session', normalized, 'rejected tmdbId', tmdbId, '— round', round);
+  } catch (error) {
+    console.warn('[match] could not clear the match:', error);
+  }
 }
 
 /**
@@ -306,6 +489,29 @@ export async function saveMatchForCurrentUser(match: Match): Promise<void> {
 }
 
 /**
+ * Takes a rejected verdict back off the signed-in user's Saved tab (#97).
+ *
+ * The rows are written the moment a match is claimed, so without this a group
+ * that rejects three titles leaves four rows behind — three of them films the
+ * group explicitly said no to — on the screen that closes the demo (#42).
+ *
+ * Each device does this for itself: the rules only allow deleting your own
+ * row, which is stricter than the write path but also means a member who was
+ * offline for the clear still tidies up when they come back. Never throws.
+ */
+export async function removeMatchForCurrentUser(
+  sessionCode: string,
+  tmdbId: number,
+): Promise<void> {
+  try {
+    const user = await ensureAnonymousUser();
+    await removeUserMatch(user.uid, sessionCode, tmdbId);
+  } catch (error) {
+    console.warn('[match] could not drop the rejected match:', error);
+  }
+}
+
+/**
  * Live subscription to the group's verdict — the match *event*.
  *
  * This is what #10's reveal mounts on, and it is the only thing that should
@@ -317,18 +523,41 @@ export async function saveMatchForCurrentUser(match: Match): Promise<void> {
  *
  * @returns the Firestore unsubscribe — call it on unmount or listeners leak.
  */
-export function subscribeMatch(code: string, cb: (match: Match | null) => void): Unsubscribe {
+export function subscribeMatch(
+  code: string,
+  cb: (match: SessionMatch | null) => void,
+): Unsubscribe {
   const normalized = normalizeCode(code);
   let saved = '';
+  /** Rejected ids this device has already tidied, so it does not retry forever. */
+  const dropped = new Set<number>();
 
   return onSnapshot(
     matchRef(normalized),
     (snapshot) => {
-      const match = snapshot.exists() ? toMatch(snapshot.data()) : null;
-      if (match && saved !== `${match.sessionCode}-${match.tmdbId}`) {
-        saved = `${match.sessionCode}-${match.tmdbId}`;
-        void saveMatchForCurrentUser(match);
+      const match = snapshot.exists() ? toSessionMatch(snapshot.data()) : null;
+
+      if (match) {
+        // Everything the group has passed on comes off this device's Saved
+        // tab. Driven off the cumulative `rejected` list rather than off the
+        // clear event, so a device that was closed or offline when the group
+        // rejected something still reconciles on its next snapshot.
+        for (const id of match.rejected) {
+          if (dropped.has(id)) continue;
+          dropped.add(id);
+          void removeMatchForCurrentUser(match.sessionCode, id);
+        }
+
+        // A cleared document names a title the group has rejected, so there is
+        // nothing to save from it. Keyed by round as well as title: the why
+        // line lands as a second snapshot and has to reach the row too.
+        const key = `${match.sessionCode}-${match.round}-${match.tmdbId}-${match.why ? 1 : 0}`;
+        if (!match.cleared && saved !== key) {
+          saved = key;
+          void saveMatchForCurrentUser(toSavedMatch(match));
+        }
       }
+
       cb(match);
     },
     (error) => {
@@ -404,6 +633,18 @@ export interface WatchMatchOptions extends MatchOptions {
    * device detected — see watchForMatch below. Describe what you are handed.
    */
   onDetect?: (movie: Movie, members: Member[]) => Promise<string | undefined> | string | undefined;
+  /**
+   * Every member snapshot, as it arrives. Exists so a caller that needs the
+   * member list — clearMatch() does, to work out the next swipe floor — can
+   * have this subscription's copy instead of opening a second listener of its
+   * own and racing it.
+   *
+   * That race is not theoretical: a device that joins a session which has
+   * already matched receives the match document before its own first member
+   * snapshot, and a "Keep swiping" pressed in that window would compute the
+   * floor from an empty list.
+   */
+  onMembers?: (members: Member[]) => void;
 }
 
 /**
@@ -423,7 +664,7 @@ export interface WatchMatchOptions extends MatchOptions {
 export function watchForMatch(
   code: string,
   movies: Movie[] | (() => Movie[]),
-  cb: (match: Match | null) => void,
+  cb: (match: SessionMatch | null) => void,
   opts: WatchMatchOptions = {},
 ): Unsubscribe {
   const normalized = normalizeCode(code);
@@ -431,17 +672,38 @@ export function watchForMatch(
   // Member snapshots arrive faster than a transaction round-trips, so without
   // this the same match is claimed several times over.
   let claiming = false;
-  let matched = false;
+  let claimedRound = 0;
+  /**
+   * The last document this device saw. Detection is gated on it rather than on
+   * a latch of its own (#97): while any device can still see a reveal the
+   * document reads `cleared: false`, so every device that has received it is
+   * blocked, and the window to detect the next match opens on all of them only
+   * once the cleared snapshot has fanned out. `rejected` and `swipeFloor` are
+   * read from here too, so they can never go stale the way an option captured
+   * at subscribe time would.
+   */
+  let current: SessionMatch | null = null;
 
   const stopMatch = subscribeMatch(normalized, (match) => {
-    if (match) matched = true;
+    current = match;
+    // A cleared round releases the claim guard so this device can compete for
+    // the next one — but only once the clear is at least as new as our own
+    // last claim, or a stale snapshot would unlatch us mid-transaction.
+    if (match?.cleared && match.round >= claimedRound) claiming = false;
     cb(match);
   });
 
   const stopMembers = subscribeMembers(normalized, (members) => {
-    if (matched || claiming) return;
+    opts.onMembers?.(members);
+    if (claiming) return;
+    // A live, uncleared verdict is on screen: nothing to detect.
+    if (current && !current.cleared) return;
 
-    const winner = detectMatch(members, catalog(), opts);
+    const winner = detectMatch(members, catalog(), {
+      ...opts,
+      exclude: [...(opts.exclude ?? []), ...(current?.rejected ?? [])],
+      swipeFloor: Math.max(opts.swipeFloor ?? 0, current?.swipeFloor ?? 0),
+    });
     if (!winner) return;
 
     claiming = true;
@@ -451,7 +713,8 @@ export function watchForMatch(
         // the transaction adopts another device's verdict when that device
         // claimed first, and two devices a snapshot apart can detect two
         // different titles. Everything after this point follows the document.
-        const claimed = await persistMatch(normalized, winner, members);
+        const claimed = await claimMatch(normalized, winner, members);
+        claimedRound = claimed.round;
 
         // Already explained by whoever claimed it — asking again would spend a
         // request from a 15 RPM budget to produce a line the transaction will
@@ -468,7 +731,10 @@ export function watchForMatch(
         if (!film) return;
 
         const why = await opts.onDetect?.(film, members);
-        if (why) await persistMatch(normalized, film, members, why);
+        // Round-scoped: the group can reject and re-match while Gemini is
+        // answering, and this line describes the round we claimed, not
+        // whatever is on screen by the time it lands.
+        if (why) await attachWhy(normalized, claimed.round, claimed.tmdbId, why, members);
       } catch (error) {
         console.warn('[match] could not claim the match:', error);
         claiming = false; // Let the next member snapshot try again.

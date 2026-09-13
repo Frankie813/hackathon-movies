@@ -78,8 +78,14 @@ jest.mock('../lib/session', () => ({
   },
 }));
 
-import { watchForMatch } from '../src/lib/match';
-import type { Match, Member, Movie } from '../src/types';
+import {
+  attachWhy,
+  clearMatch,
+  REMATCH_SWIPES,
+  subscribeMatch,
+  watchForMatch,
+} from '../src/lib/match';
+import type { Member, Movie, SessionMatch } from '../src/types';
 
 /** Delivers a match-document snapshot to watchForMatch's listener on demand. */
 function emitMatchDoc(path: string): void {
@@ -204,7 +210,7 @@ describe('watchForMatch — claim and explain', () => {
       matchedAt: 1,
     });
 
-    const seen: (Match | null)[] = [];
+    const seen: (SessionMatch | null)[] = [];
     const stop = watchForMatch(CODE, catalog, (match) => seen.push(match), {
       onDetect: async (film: Movie) => `A line about ${film.title}.`,
     });
@@ -215,6 +221,243 @@ describe('watchForMatch — claim and explain', () => {
 
     const last = seen.at(-1);
     expect(last).toMatchObject({ tmdbId: beta.id, why: 'A line about Beta.' });
+    stop();
+  });
+});
+
+/**
+ * The rejection loop (#97). "Keep swiping" is shared: it writes to the one
+ * document every phone reveals off, so a press on either device clears both.
+ *
+ * Note what these can and cannot prove. The fake's runTransaction runs its
+ * callback once against the live store with no contention detection and no
+ * retry, so these pin *sequencing* — a later caller reads the earlier one's
+ * write and behaves — not genuine concurrency. Two phones claiming in the same
+ * tick is left to the real SDK's retry and to the on-device rehearsal.
+ */
+describe('watchForMatch — rejection and the next round', () => {
+  /** Everyone liked both titles, so Beta is waiting once Alpha is rejected. */
+  const bothLiked: Member[] = [
+    { uid: 'a', likes: [1, 2], dislikes: [] },
+    { uid: 'b', likes: [1, 2], dislikes: [] },
+  ];
+
+  it('records the rejection without disturbing the round or the verdict', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [], cleared: false, swipeFloor: 0,
+    });
+
+    await clearMatch(CODE, 1, alpha.id, bothLiked);
+
+    expect(mockStore.get(MATCH_PATH)).toMatchObject({
+      tmdbId: alpha.id,
+      round: 1,
+      cleared: true,
+      rejected: [alpha.id],
+      swipeFloor: 2 + REMATCH_SWIPES,
+    });
+  });
+
+  it('ignores a second press for the same round', async () => {
+    // The demo case: the button is tapped twice while the write is in flight,
+    // or both phones press it within the same second. The title must be
+    // rejected once and swipeFloor written once.
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [], cleared: false, swipeFloor: 0,
+    });
+
+    await clearMatch(CODE, 1, alpha.id, bothLiked);
+    await clearMatch(CODE, 1, alpha.id, [...bothLiked, { uid: 'c', likes: [1], dislikes: [] }]);
+
+    expect(mockStore.get(MATCH_PATH)).toMatchObject({
+      rejected: [alpha.id],
+      swipeFloor: 2 + REMATCH_SWIPES,
+    });
+  });
+
+  it('never lowers a floor the group has already earned', async () => {
+    // A device that joins a session which has already matched receives the
+    // match document before its own first member snapshot. Pressing "Keep
+    // swiping" in that window used to write a floor of bare REMATCH_SWIPES,
+    // which everyone is already past — so the fallback re-fired with the
+    // runner-up immediately and the rejection bought the group nothing.
+    mockStore.set(MATCH_PATH, {
+      tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,
+      rejected: [alpha.id], cleared: false, swipeFloor: 40,
+    });
+
+    await clearMatch(CODE, 2, beta.id, []);
+
+    expect(mockStore.get(MATCH_PATH)?.swipeFloor).toBe(40);
+  });
+
+  it('hands the member list to clearMatch from the match watcher itself', async () => {
+    // The supported way to avoid the empty-list window above: watchForMatch
+    // already subscribes to members, so callers take its copy rather than
+    // racing a second listener.
+    const seen: Member[][] = [];
+    const stop = watchForMatch(CODE, catalog, () => {}, { onMembers: (m) => seen.push(m) });
+
+    emitMembers!(bothLiked);
+    await flush();
+
+    expect(seen.at(-1)).toEqual(bothLiked);
+    stop();
+  });
+
+  it('does nothing when the round has already moved on', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,
+      rejected: [alpha.id], cleared: false, swipeFloor: 0,
+    });
+
+    await clearMatch(CODE, 1, alpha.id, bothLiked);
+
+    expect(mockStore.get(MATCH_PATH)).toMatchObject({ round: 2, cleared: false });
+  });
+
+  it('claims a new round with a different title, carrying no stale why line', async () => {
+    // Only Alpha gets a line, so a `why` on round 2's document could only have
+    // been inherited from round 1 — which is the bug this pins.
+    const onDetect = jest.fn(async (film: Movie) =>
+      film.id === alpha.id ? 'A line about Alpha.' : undefined,
+    );
+    const stop = watchForMatch(CODE, catalog, () => {}, { onDetect });
+
+    emitMembers!(bothLiked);
+    await flush();
+    emitMatchDoc(MATCH_PATH);
+    expect(mockStore.get(MATCH_PATH)).toMatchObject({ tmdbId: alpha.id, round: 1 });
+
+    await clearMatch(CODE, 1, alpha.id, bothLiked);
+    emitMatchDoc(MATCH_PATH);
+    emitMembers!(bothLiked);
+    await flush();
+
+    const stored = mockStore.get(MATCH_PATH);
+    expect(stored).toMatchObject({ tmdbId: beta.id, round: 2, cleared: false });
+    expect(stored?.rejected).toEqual([alpha.id]);
+    expect(stored?.why).toBeUndefined();
+    stop();
+  });
+
+  it('never re-claims a rejected title, even one every member liked', async () => {
+    const stop = watchForMatch(CODE, [alpha], () => {}, {});
+
+    emitMembers!(bothLiked);
+    await flush();
+    emitMatchDoc(MATCH_PATH);
+    await clearMatch(CODE, 1, alpha.id, bothLiked);
+    emitMatchDoc(MATCH_PATH);
+
+    // Alpha is the only title in this catalog and everyone liked it, so
+    // without the exclusion the unanimous path re-fires it immediately.
+    emitMembers!(bothLiked);
+    await flush();
+
+    expect(mockStore.get(MATCH_PATH)).toMatchObject({ round: 1, cleared: true });
+    stop();
+  });
+
+  it('holds while a live verdict is still on screen', async () => {
+    const stop = watchForMatch(CODE, catalog, () => {}, {});
+
+    emitMembers!(bothLiked);
+    await flush();
+    emitMatchDoc(MATCH_PATH);
+    const claimed = mockStore.get(MATCH_PATH);
+
+    emitMembers!(bothLiked);
+    await flush();
+
+    expect(mockStore.get(MATCH_PATH)).toBe(claimed);
+    stop();
+  });
+});
+
+describe('attachWhy', () => {
+  it('drops a line whose round advanced while Gemini was answering', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,
+      rejected: [alpha.id], cleared: false, swipeFloor: 0,
+    });
+
+    await attachWhy(CODE, 1, alpha.id, 'A line about Alpha.', members);
+
+    expect(mockStore.get(MATCH_PATH)?.why).toBeUndefined();
+  });
+
+  it('drops a line for a verdict the group has since rejected', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [alpha.id], cleared: true, swipeFloor: 10,
+    });
+
+    await attachWhy(CODE, 1, alpha.id, 'A line about Alpha.', members);
+
+    expect(mockStore.get(MATCH_PATH)?.why).toBeUndefined();
+  });
+
+  it('patches the line when the round is still current', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [], cleared: false, swipeFloor: 0,
+    });
+
+    await attachWhy(CODE, 1, alpha.id, 'A line about Alpha.', members);
+
+    expect(mockStore.get(MATCH_PATH)?.why).toBe('A line about Alpha.');
+  });
+});
+
+describe('subscribeMatch — Saved tab hygiene', () => {
+  const savedRow = `users/me/matches/${CODE}-${alpha.id}`;
+
+  it('takes a rejected verdict back off this device Saved tab', async () => {
+    mockStore.set(savedRow, { tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1 });
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [alpha.id], cleared: true, swipeFloor: 10,
+    });
+
+    const stop = subscribeMatch(CODE, () => {});
+    emitMatchDoc(MATCH_PATH);
+    await flush();
+
+    expect(mockStore.has(savedRow)).toBe(false);
+    stop();
+  });
+
+  it('reconciles a rejection this device was not around for', async () => {
+    // Round 2 is live and uncleared, but Alpha is still in `rejected` — the
+    // cumulative list is what lets a device that missed the clear tidy up.
+    mockStore.set(savedRow, { tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1 });
+    mockStore.set(MATCH_PATH, {
+      tmdbId: beta.id, sessionCode: CODE, matchedAt: 2, round: 2,
+      rejected: [alpha.id], cleared: false, swipeFloor: 10,
+    });
+
+    const stop = subscribeMatch(CODE, () => {});
+    emitMatchDoc(MATCH_PATH);
+    await flush();
+
+    expect(mockStore.has(savedRow)).toBe(false);
+    stop();
+  });
+
+  it('leaves a live verdict on the Saved tab', async () => {
+    mockStore.set(MATCH_PATH, {
+      tmdbId: alpha.id, sessionCode: CODE, matchedAt: 1, round: 1,
+      rejected: [], cleared: false, swipeFloor: 0,
+    });
+
+    const stop = subscribeMatch(CODE, () => {});
+    emitMatchDoc(MATCH_PATH);
+    await flush();
+
+    expect(mockStore.has(savedRow)).toBe(true);
     stop();
   });
 });

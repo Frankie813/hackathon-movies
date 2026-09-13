@@ -78,6 +78,33 @@ export interface Match {
   why?: string;
 }
 
+/**
+ * The group's live verdict document, sessions/{code}/match/current (#17, #97).
+ *
+ * Deliberately a superset of Match rather than a widening of it: Match is also
+ * the shape of users/{uid}/matches rows, and the round bookkeeping below has no
+ * business on a saved row. Keeping them separate makes it structurally
+ * impossible to leak `rejected` into somebody's Saved tab.
+ *
+ * Every field is required here, with defaults applied when the document is
+ * parsed — a document written before rounds existed still reads as a live,
+ * uncleared round 1.
+ */
+export interface SessionMatch extends Match {
+  /** 1-based. Bumped every time the group claims a new verdict. */
+  round: number;
+  /** tmdbIds the group has passed on with "Keep swiping". Cumulative. */
+  rejected: number[];
+  /** True between a "Keep swiping" and the next claim — the reveal is hidden. */
+  cleared: boolean;
+  /**
+   * Swipes every member must reach before the forced fallback may fire again,
+   * so a rejection doesn't immediately re-fire with the runner-up. Gates the
+   * fallback only; a genuine unanimous like is never held back by it.
+   */
+  swipeFloor: number;
+}
+
 // ─── TMDB query surface (#15) ────────────────────────────────────────────────
 // Deliberately TMDB-shaped rather than prose-shaped: #22 turns a Gemini mood
 // string into these fields and lib/tmdb.ts maps them 1:1 onto /discover/movie

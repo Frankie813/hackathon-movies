@@ -9,7 +9,14 @@ jest.mock('firebase/firestore', () => new Proxy({}, { get: () => jest.fn() }));
 jest.mock('firebase/auth', () => new Proxy({}, { get: () => jest.fn() }));
 jest.mock('../lib/firebase', () => ({ app: {}, db: {}, auth: {} }));
 
-import { detectMatch, MIN_SWIPES_FOR_FALLBACK, memberTaste, rankGroup } from '../src/lib/match';
+import {
+  detectMatch,
+  MIN_SWIPES_FOR_FALLBACK,
+  memberTaste,
+  nextSwipeFloor,
+  rankGroup,
+  REMATCH_SWIPES,
+} from '../src/lib/match';
 import type { Member, Movie } from '../src/types';
 
 function movie(id: number, genreIds: number[], keywords: string[] = []): Movie {
@@ -121,5 +128,69 @@ describe('detectMatch', () => {
   it('honors an overridden swipe threshold', () => {
     const members = [member('a', [10]), member('b', [11])];
     expect(detectMatch(members, catalog, { minSwipes: 1 })).not.toBeNull();
+  });
+});
+
+/**
+ * The rejection loop (#97): "Keep swiping" takes a verdict off the table for
+ * the rest of the session, and holds the forced fallback back until the group
+ * has actually swiped again rather than handing over the runner-up instantly.
+ */
+describe('detectMatch — rejected titles and the rematch floor', () => {
+  it('keeps a rejected title out of the unanimous path, even when everyone liked it', () => {
+    // The load-bearing case. A mutual like outranks every other signal, so a
+    // rejection that only filtered the fallback would re-fire this on the very
+    // next member snapshot and "Keep swiping" would do nothing at all.
+    const members = [member('a', [2]), member('b', [2])];
+    expect(detectMatch(members, catalog)?.id).toBe(2);
+    expect(detectMatch(members, catalog, { exclude: [2] })?.id).not.toBe(2);
+  });
+
+  it('keeps a rejected title out of the fallback', () => {
+    const a = { ...member('a', padding()), taste: { 'genre:28': 9 } };
+    const b = { ...member('b', padding()), taste: { 'genre:28': 9 } };
+    expect(detectMatch([a, b], catalog)?.id).toBe(1);
+    expect(detectMatch([a, b], catalog, { exclude: [1] })?.id).not.toBe(1);
+  });
+
+  it('returns null once every survivor has been rejected', () => {
+    const members = [member('a', padding()), member('b', padding())];
+    expect(detectMatch(members, catalog, { exclude: [1, 2, 3] })).toBeNull();
+  });
+
+  it('holds the fallback until every member reaches the floor', () => {
+    const floor = MIN_SWIPES_FOR_FALLBACK + REMATCH_SWIPES;
+    const members = [member('a', padding()), member('b', padding())];
+    // Past MIN_SWIPES_FOR_FALLBACK, so this would fire without the floor.
+    expect(detectMatch(members, catalog)).not.toBeNull();
+    expect(detectMatch(members, catalog, { swipeFloor: floor })).toBeNull();
+    expect(
+      detectMatch([member('a', padding(floor)), member('b', padding(floor))], catalog, {
+        swipeFloor: floor,
+      }),
+    ).not.toBeNull();
+  });
+
+  it('never lets the floor lower the bar', () => {
+    // swipeFloor below MIN_SWIPES_FOR_FALLBACK must not buy an early fallback.
+    const members = [member('a', [10]), member('b', [11])];
+    expect(detectMatch(members, catalog, { swipeFloor: 1 })).toBeNull();
+  });
+
+  it('lets a genuine unanimous like through while the floor is unmet', () => {
+    // The pressure valve: the floor gates the forced pick, not real agreement.
+    const members = [member('a', [2]), member('b', [2])];
+    expect(detectMatch(members, catalog, { swipeFloor: 99 })?.id).toBe(2);
+  });
+});
+
+describe('nextSwipeFloor', () => {
+  it('anchors to the busiest member so nobody is let off by a quiet partner', () => {
+    const members = [member('a', padding(3)), member('b', padding(10))];
+    expect(nextSwipeFloor(members)).toBe(10 + REMATCH_SWIPES);
+  });
+
+  it('survives an empty member list rather than returning -Infinity', () => {
+    expect(nextSwipeFloor([])).toBe(REMATCH_SWIPES);
   });
 });
