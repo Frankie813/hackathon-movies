@@ -3,12 +3,18 @@
 //
 // Rendering only. Scanning is the phone's own camera app, so there is no
 // barcode-scanner dependency here and nothing to ask camera permission for.
+//
+// There is deliberately no "Open in app" affordance here (issue #90). This card
+// is only ever drawn inside MovieMatch, on the screen of someone already in the
+// session — a scheme link would hand them off to the app they are holding. That
+// handoff belongs to the page a guest actually lands on: public/j/index.html
+// offers it, and joinSchemeUrl() in lib/join-link.ts documents the link shape.
 
 import QRCode from 'react-native-qrcode-svg';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { isValidCode, normalizeCode } from '@/lib/session';
-import { joinSchemeUrl, joinUrl } from '@/lib/join-link';
+import { joinUrl } from '@/lib/join-link';
 
 interface JoinQRProps {
   code: string;
@@ -42,25 +48,12 @@ export function JoinQR({ code, size = 180 }: JoinQRProps) {
       </View>
 
       {/* The domain is a prize-track detail (PLAN.md §B) — it has to be legible
-          in the demo video, not just encoded in the pixels above. */}
+          in the demo video, not just encoded in the pixels above. It doubles as
+          the no-camera path: read it out or send it over text, and the guest's
+          browser lands on the join page, which is where "Open in app" lives. */}
       <Text style={styles.url} selectable>
         {url.replace(/^https:\/\//, '')}
       </Text>
-
-      {/* Only useful on the same phone, but that is exactly the case where the
-          camera can't help: a code sent over text rather than shown across a
-          table. Opens the app straight into the session. */}
-      <Pressable
-        accessibilityRole="link"
-        onPress={() => {
-          void Linking.openURL(joinSchemeUrl(normalized)).catch((cause: unknown) => {
-            console.warn('[join] could not open the scheme link:', cause);
-          });
-        }}
-        style={({ pressed }) => [styles.schemeLink, pressed && styles.pressed]}
-      >
-        <Text style={styles.schemeLabel}>Open in app</Text>
-      </Pressable>
     </View>
   );
 }
@@ -79,20 +72,5 @@ const styles = StyleSheet.create({
     color: '#9a9aa2',
     fontSize: 14,
     letterSpacing: 0.3,
-  },
-  schemeLink: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#3a3a44',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-  },
-  schemeLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  pressed: {
-    opacity: 0.7,
   },
 });
