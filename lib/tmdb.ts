@@ -453,6 +453,8 @@ function discoverParams(filters: DiscoverFilters | undefined, page: number): Que
     // that carries any of the listed ids.
     without_genres: filters?.withoutGenres?.join(','),
     with_keywords: filters?.withKeywords?.join('|'),
+    // Same rule as without_genres: drop a title carrying any of these (#22).
+    without_keywords: filters?.withoutKeywords?.join(','),
     with_watch_providers: providers?.join('|'),
     watch_region: providers && providers.length > 0 ? 'US' : undefined,
     'vote_average.gte': filters?.minRating,
@@ -587,5 +589,31 @@ export async function similar(id: number): Promise<Movie[]> {
     if (error instanceof EmptyResultError) markOnline();
     else markOffline();
     return similarFromSeed(id);
+  }
+}
+
+/**
+ * TMDB keyword id for a word, for #22's mood filters: /discover takes keyword
+ * ids, not names. Prefers an exact name match over TMDB's fuzzy first hit.
+ * Null when TMDB has no match or can't be reached. Never throws, and leaves
+ * the offline flag alone, since a keyword lookup is not a deck fetch.
+ */
+export async function searchKeywordId(name: string): Promise<number | null> {
+  const query = name.trim().toLowerCase();
+  if (!query) return null;
+  try {
+    const found = await tmdb<{ results?: { id?: number; name?: string }[] }>(
+      '/search/keyword',
+      { query, page: 1 },
+      Date.now() + REQUEST_TIMEOUT_MS,
+    );
+    const results = (found.results ?? []).filter(
+      (result): result is { id: number; name: string } =>
+        typeof result.id === 'number' && typeof result.name === 'string',
+    );
+    return (results.find((result) => result.name.toLowerCase() === query) ?? results[0])?.id ?? null;
+  } catch (error) {
+    if (__DEV__) console.warn(`[tmdb] searchKeywordId(${query}) failed:`, error);
+    return null;
   }
 }

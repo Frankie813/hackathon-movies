@@ -1,4 +1,5 @@
 import type { Member, Movie } from '../types';
+import { createMoodToFilters } from './mood';
 
 export interface Compromise {
   pick: string;
@@ -161,4 +162,12 @@ export function algorithmicWinner(members: Member[], catalog: Movie[]): Movie | 
 export const groupCompromise = createGroupCompromise({
   generate: generateCompromiseText,
   fallback: algorithmicWinner,
+});
+
+// Issue #22: natural-language mood → TMDB /discover filters. Firebase and
+// TMDB load lazily, as with the compromise, so importing this costs nothing.
+export type { MoodFilters } from './mood';
+export const moodToFilters = createMoodToFilters({
+  generate: async (text) => (await import('./mood-model')).generateMoodText(text),
+  resolveKeyword: async (name) => (await import('../../lib/tmdb')).searchKeywordId(name),
 });

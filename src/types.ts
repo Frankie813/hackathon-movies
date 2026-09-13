@@ -99,6 +99,8 @@ export interface DiscoverFilters {
    * to carry all of them returns nothing.
    */
   withKeywords?: number[];
+  /** TMDB keyword ids to exclude (`without_keywords`), e.g. slapstick for "not dumb". */
+  withoutKeywords?: number[];
   /** TMDB watch-provider ids. Implies `watch_region=US`. */
   withWatchProviders?: number[];
   /** `vote_average.gte`, 0–10. */
